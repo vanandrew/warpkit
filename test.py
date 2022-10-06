@@ -75,7 +75,6 @@ class MRSystem:
         grad_integral = np.sum(self.Gy[0 : t + 1])
         return self.kalpha(grad_integral) / self.shape[0]
 
-
     def get_sample(self, t):
         kx = self.kx(t)
         ky = self.ky(t)
@@ -83,7 +82,8 @@ class MRSystem:
         print(f"kx: {kx:.3f}, ky: {ky:.3f}", end="\r")
         res = 1 / self.shape[0]
         self.or_term[np.round(ky / res).astype(int), np.round(kx / res).astype(int)] *= t
-        return np.sum(self.signal * np.exp(-1j * 2 * np.pi * (self.off_resonance * t + kx * self.xx + ky * self.yy)))
+        sample = np.sum(self.signal * np.exp(-1j * 2 * np.pi * (self.off_resonance * t + kx * self.xx + ky * self.yy)))
+        return sample
 
 
 def subsample_kspace(k_space, cut):
@@ -118,7 +118,8 @@ if __name__ == "__main__":
             odd[m, sys.shape[1] - n - 1] = sys.get_sample(t)
     print()
     kspace = even + odd
-    orig_kspace = subsample_kspace(np.fft.fft2(phantom), 5)
+    # orig_kspace = subsample_kspace(np.fft.fft2(phantom), 5)
+    orig_kspace = np.fft.fft2(phantom)
 
     # apply hamming window
     kspace_win = apply_window(kspace)
