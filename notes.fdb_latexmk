@@ -1,6 +1,6 @@
 # Fdb version 3
-["pdflatex"] 1666901112 "/home/vanandrew/Projects/mosaic/notes.tex" "notes.pdf" "notes" 1666901112
-  "/home/vanandrew/Projects/mosaic/notes.tex" 1666901111 3199 7f725cf9ebb7d0be7a646edd9e4a3b46 ""
+["pdflatex"] 1666919826 "/home/vanandrew/Projects/mosaic/notes.tex" "notes.pdf" "notes" 1666919826
+  "/home/vanandrew/Projects/mosaic/notes.tex" 1666919826 3934 2ec23eb8f9ac79480512dfa088d24c88 ""
   "/usr/share/texmf-dist/fonts/map/fontname/texfonts.map" 1650183167 3524 cb3e574dea2d1052e39280babc910dc8 ""
   "/usr/share/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1650183167 1004 54797486969f23fa377b128694d548df ""
   "/usr/share/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1650183167 1324 c910af8c371558dc20f2d7822f66fe64 ""
@@ -27,10 +27,10 @@
   "/usr/share/texmf-dist/tex/latex/graphics/keyval.sty" 1650183167 2671 4de6781a30211fe0ea4c672e4a2a8166 ""
   "/usr/share/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def" 1650183167 31644 9b75b7ffdb38fbd7bb4502cd6b086a3c ""
   "/usr/share/texmf-dist/web2c/texmf.cnf" 1650183167 39911 2da6c67557ec033436fe5418a70a8a61 ""
-  "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1666896922 4278762 af3ac1370db81a450c1118eabf1fe718 ""
-  "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1666896902 2927662 8709275f0da061158eb7e21c82098e25 ""
-  "notes.aux" 1666901112 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
-  "notes.tex" 1666901111 3199 7f725cf9ebb7d0be7a646edd9e4a3b46 ""
+  "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1666593892 4278762 af3ac1370db81a450c1118eabf1fe718 ""
+  "/var/lib/texmf/web2c/pdftex/pdflatex.fmt" 1666593884 2927659 148566ddeee5814e9dc545a54b6a1500 ""
+  "notes.aux" 1666919826 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "notes.tex" 1666919826 3934 2ec23eb8f9ac79480512dfa088d24c88 ""
   (generated)
   "notes.aux"
   "notes.log"

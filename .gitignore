@@ -131,3 +131,7 @@ dmypy.json
 # ignore data files
 *.mat
 
+# ignore test
+test/
+test2/
+

@@ -1,5 +1,5 @@
 [project]
-name = "memori"
+name = "mosaic"
 description = "A python library for creating memoized data and code for neuroimaging pipelines"
 readme = "README.md"
 requires-python = ">=3.7"
@@ -35,17 +35,3 @@ exclude = ["tests"]
 line-length = 120
 target-version = ["py37", "py38", "py39", "py310"]
 
-[tool.pytest.ini_options]
-addopts = "-v --pycodestyle --junitxml=test-results/junit.xml"
-testpaths = [
-    "tests",
-    "memori"
-]
-
-[tool.coverage.run]
-command_line = "-m pytest"
-source = ["memori"]
-
-[tool.coverage.report]
-show_missing = true
-precision = 2
