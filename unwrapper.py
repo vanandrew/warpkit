@@ -1,3 +1,4 @@
+import os
 import tempfile
 import nibabel as nib
 import numpy as np
@@ -12,11 +13,25 @@ from memori.pathman import PathManager as PathMan
 setup_logging()
 
 # Load the data
-layout = BIDSLayout('/home/vanandrew/Data/bidsdata/')
+# layout = BIDSLayout('/home/vanandrew/Data/bidsdata/')
 
 # get the magnitude and phase data separately
-mag_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="mag", extension='nii.gz')
-phase_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="phase", extension='nii.gz')
+# mag_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="mag", extension='nii.gz')
+# phase_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="phase", extension='nii.gz')
+
+
+class Image:
+    def __init__(self, filename):
+        self.img = nib.load(filename)
+
+    def get_image(self):
+        return self.img
+
+
+mag_imgs = [Image(f"/mnt/func/{f}") for f in os.listdir("/mnt/func") if ".nii.gz" in f and "mag" in f and "run-01" in f]
+phase_imgs = [
+    Image(f"/mnt/func/{f}") for f in os.listdir("/mnt/func") if ".nii.gz" in f and "phase" in f and "run-01" in f
+]
 assert len(mag_imgs) == len(phase_imgs)
 
 # get number of frames in image
@@ -33,7 +48,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     tmp_path = PathMan(tmpdir)
 
     # output dir
-    out = "test3"
+    out = "/mnt/test3"
     PathMan(out).mkdir(exist_ok=True)
 
     # make names for temp each frame mag and phase images
@@ -43,7 +58,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     # combine echos for each frame, then run romeo to unwrap and obtain the fieldmap
     for frame_num in range(nframes):
         # setup output path
-        output = (PathMan(out) / "temp" / f'frame{frame_num:05d}')
+        output = PathMan(out) / "temp" / f"frame{frame_num:05d}"
         output.mkdir(exist_ok=True, parents=True)
         output = output.path
 
@@ -56,24 +71,25 @@ with tempfile.TemporaryDirectory() as tmpdir:
         nib.Nifti1Image(phase_data, mag_img0.affine).to_filename(phase)
 
         # make mask of magnitude image
-        magnitude0 = (PathMan(tmp_path) / 'magnitude0.nii.gz').path
+        magnitude0 = (PathMan(tmp_path) / "magnitude0.nii.gz").path
         nib.Nifti1Image(mag_data[..., 0], mag_img0.affine).to_filename(magnitude0)
 
         # run bet and erode 1
-        magnitude0_bet = (PathMan(tmp_path) / 'magnitude0_bet.nii.gz').path
-        magnitude0_bet_mask = (PathMan(tmp_path) / 'magnitude0_bet_mask.nii.gz').path
-        mask = (PathMan(output) / 'mask.nii.gz').path
-        #run_process(f"bet {magnitude0} {magnitude0_bet} -m -R -v")
+        magnitude0_bet = (PathMan(tmp_path) / "magnitude0_bet.nii.gz").path
+        magnitude0_bet_mask = (PathMan(tmp_path) / "magnitude0_bet_mask.nii.gz").path
+        mask = (PathMan(output) / "mask.nii.gz").path
+        # run_process(f"bet {magnitude0} {magnitude0_bet} -m -R -v")
         # run_process(f"fslmaths {magnitude0_bet_mask} -ero {mask}")
-        #run_process(f"cp {magnitude0_bet_mask} {mask}")
+        # run_process(f"cp {magnitude0_bet_mask} {mask}")
 
         # run romeo to unwrap the phase data
         run_process(
             f"romeo -p {phase} -m {mag} "
             f"-t [14.2,38.93,63.66,88.39,113.12] "
             f"-o {output} -B -k robustmask "
-            #f"--individual-unwrapping --phase-offset-correction off"
-            f"-g --template 1 -v")
+            f"--individual-unwrapping --phase-offset-correction off"
+            f"-g --template 3 -v"
+        )
         # breakpoint()
         # load in the fieldmap
         b0 = nib.load(PathMan(output) / "B0.nii").get_fdata()
