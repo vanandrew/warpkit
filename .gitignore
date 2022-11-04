@@ -133,5 +133,5 @@ dmypy.json
 
 # ignore test
 test/
-test2/
+test*/
 
