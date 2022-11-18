@@ -28,9 +28,16 @@ class Image:
         return self.img
 
 
-mag_imgs = [Image(f"/mnt/func/{f}") for f in os.listdir("/mnt/func") if ".nii.gz" in f and "mag" in f and "run-01" in f]
+path = "/home/vanandrew/Data"
+mag_imgs = [
+    Image(f"{path}/func/{f}")
+    for f in sorted(os.listdir(f"{path}/func"))
+    if ".nii.gz" in f and "mag" in f and "run-04" in f
+]
 phase_imgs = [
-    Image(f"/mnt/func/{f}") for f in os.listdir("/mnt/func") if ".nii.gz" in f and "phase" in f and "run-01" in f
+    Image(f"{path}/func/{f}")
+    for f in sorted(os.listdir(f"{path}/func"))
+    if ".nii.gz" in f and "phase" in f and "run-04" in f
 ]
 assert len(mag_imgs) == len(phase_imgs)
 
@@ -48,7 +55,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     tmp_path = PathMan(tmpdir)
 
     # output dir
-    out = "/mnt/test3"
+    out = "/home/vanandrew/Data/test5"
     PathMan(out).mkdir(exist_ok=True)
 
     # make names for temp each frame mag and phase images
@@ -83,13 +90,18 @@ with tempfile.TemporaryDirectory() as tmpdir:
         # run_process(f"cp {magnitude0_bet_mask} {mask}")
 
         # run romeo to unwrap the phase data
-        run_process(
-            f"romeo -p {phase} -m {mag} "
-            f"-t [14.2,38.93,63.66,88.39,113.12] "
-            f"-o {output} -B -k robustmask "
-            f"--individual-unwrapping --phase-offset-correction off"
-            f"-g --template 3 -v"
-        )
+        if os.path.exists(PathMan(output) / "B0.nii"):
+            print("Skipping frame", frame_num)
+        else:
+            run_process(
+                f"romeo -p {phase} -m {mag} "
+                f"-t [14.2,38.93,63.66,88.39,113.12] "
+                f"-o {output} -B -k robustmask "
+                f"--phase-offset-correction off "
+                f"--individual-unwrapping "
+                f"-g -v"
+            )
+
         # breakpoint()
         # load in the fieldmap
         b0 = nib.load(PathMan(output) / "B0.nii").get_fdata()
