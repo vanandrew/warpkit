@@ -4,6 +4,10 @@
     "files.associations": {
         ".gitignore": "ignore",
         "julia.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "romeo.h": "c",
+        "julia_fasttls.h": "c",
+        "julia_threads.h": "c",
+        "julia_atomics.h": "c"
     }
 }

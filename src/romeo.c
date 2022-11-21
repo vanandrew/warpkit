@@ -1,22 +1,54 @@
+#include <romeo.h>
 #include <julia.h>
 #include <stdio.h>
 
-int main() {
+int jl_unwrap_individual() {
     // initialize Julia context
     jl_init();
-    // // Create array
-    // jl_value_t* array_type = jl_apply_array_type((jl_value_t*)jl_float64_type, 1);
-    // jl_array_t* x = jl_alloc_array_1d(array_type, 3);
-    // JL_GC_PUSH1(&x);
-    // for (int i = 0; i < 3; i++) jl_arrayset(x, jl_box_float64(i), i);
-    // // get array data
-    // double* x_data = (double*)jl_array_data(x);
-    // // print array data
-    // for (int i = 0; i < 3; i++) printf("%f\n", x_data[i]);
-    // JL_GC_POP();
-    jl_eval_string("using MriResearchTools");
-    jl_eval_string("phase = readphase(\"/home/vanandrew/combined.nii\");");
-    jl_eval_string("unwrapped = unwrap_individual(phase, TEs=[14.2, 38.93, 63.66, 88.39, 113.12]);");
-    jl_eval_string("savenii(unwrapped, \"/home/vanandrew/unwrapped.nii\", header=header(phase));");
+
+    // load MriResearchTools
+    jl_eval_string("using MriResearchTools;");
+    if (jl_exception_occurred())
+        printf("0: %s \n", jl_typeof_str(jl_exception_occurred()));
+    
+    // Get functions
+    jl_eval_string("unwrap_individual_pos(phase, TEs) = unwrap_individual(phase, TEs=TEs);");
+    if (jl_exception_occurred())
+        printf("1: %s \n", jl_typeof_str(jl_exception_occurred()));
+    jl_function_t *jl_unwrap_individual = (jl_function_t*) jl_eval_string("unwrap_individual_pos;");
+    if (jl_exception_occurred())
+        printf("2: %s \n", jl_typeof_str(jl_exception_occurred()));
+    jl_eval_string("savenii_pos(data, filename, header_data) = savenii(data, filename, header=header(header_data));");
+    if (jl_exception_occurred())
+        printf("3: %s \n", jl_typeof_str(jl_exception_occurred()));
+    jl_function_t *jl_savenii = (jl_function_t*) jl_eval_string("savenii_pos;");
+    if (jl_exception_occurred())
+        printf("4: %s \n", jl_typeof_str(jl_exception_occurred()));
+
+    jl_value_t **root;
+    JL_GC_PUSHARGS(root, 4);
+
+    // Get phase data and TEs
+    root[0] = jl_eval_string("readphase(\"/home/vanandrew/Data/combined.nii\");");
+    if (jl_exception_occurred())
+        printf("5: %s \n", jl_typeof_str(jl_exception_occurred()));
+    root[1] = jl_eval_string("[14.2, 38.93, 63.66, 88.39, 113.12]");
+    if (jl_exception_occurred())
+        printf("6: %s \n", jl_typeof_str(jl_exception_occurred()));
+    
+    // Get unwrapped phase
+    root[2] = jl_call2(jl_unwrap_individual, root[0], root[1]);
+    if (jl_exception_occurred())
+        printf("7: %s \n", jl_typeof_str(jl_exception_occurred()));
+    
+    // Save the data
+    root[3] = jl_eval_string("\"/home/vanandrew/Data/unwrapped.nii\"");
+    if (jl_exception_occurred())
+        printf("8: %s \n", jl_typeof_str(jl_exception_occurred()));
+    jl_call3(jl_savenii, root[2], root[3], root[0]);
+    if (jl_exception_occurred())
+        printf("9: %s \n", jl_typeof_str(jl_exception_occurred()));
+
+    JL_GC_POP();
     return 0;
 }
