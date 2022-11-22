@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 cmake_policy(VERSION 3.13)
 
 # set project name and languages
-project(mosaic LANGUAGES CXX C)
+project(mosaic LANGUAGES CXX)
 
 # set C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -36,11 +36,13 @@ endif()
 # display all warnings
 add_compile_options(-Wall)
 
-# compile ROMEO C bindings
-add_library(romeo STATIC ${CMAKE_SOURCE_DIR}/src/romeo.c)
-target_include_directories(romeo PUBLIC ${PROJECT_SOURCE_DIR}/include)
-target_link_libraries(romeo PRIVATE Julia)
-
 # compile pybind11 interface
 pybind11_add_module(mosaic_cpp MODULE ${CMAKE_SOURCE_DIR}/src/mosaic.cpp)
-target_link_libraries(mosaic_cpp PRIVATE romeo)
+target_include_directories(mosaic_cpp PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(mosaic_cpp PRIVATE Julia)
+
+# install target
+install(
+    TARGETS mosaic_cpp
+    LIBRARY DESTINATION lib
+)
