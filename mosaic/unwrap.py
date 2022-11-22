@@ -2,11 +2,24 @@ from types import SimpleNamespace
 from typing import List, Tuple, Union
 import nibabel as nib
 import numpy as np
+from skimage.filters import threshold_otsu
+from scipy.ndimage import (
+    generate_binary_structure,
+    binary_opening,
+    binary_dilation,
+)
+
+from .utilities import rescale_phase
 
 try:
-    from mosaic.mosaic_cpp import unwrap  # type: ignore
+    from mosaic.mosaic_cpp import JuliaContext as _JuliaContext  # type: ignore
 except ImportError:
-    from build.mosaic_cpp import JuliaContext
+    from build.mosaic_cpp import JuliaContext as _JuliaContext
+
+
+# This should only be initialized once
+# so we make it a global that can be used anywhere
+julia = _JuliaContext()
 
 
 def unwrap_phases(
@@ -14,8 +27,9 @@ def unwrap_phases(
     mag: List[nib.Nifti1Image],
     TEs: Union[List[float], Tuple[float]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
+    automask: bool = False,
     correctglobal: bool = True,
-):
+) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data.
 
     Parameters
@@ -28,8 +42,15 @@ def unwrap_phases(
         Echo times associated with each phase
     mask : nib.Nifti1Image, optional
         Boolean mask, by default None
+    automask : bool, optional
+        Automatically generate a mask (ignore mask option), by default False
     correctglobal : bool, optional
         Corrects global n2π offsets, by default True
+
+    Returns
+    -------
+    nib.Nifti1Image
+        Unwrapped phase image
     """
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
@@ -63,30 +84,60 @@ def unwrap_phases(
     if len(TEs) != len(phase) or len(TEs) != len(mag):
         raise ValueError("Number of echo times must equal number of mag and phase images.")
 
-    # allocate space for unwrapped data
-    unwrapped = np.zeros(phase[0].shape)
+    # allocate space for field maps
+    field_maps = np.zeros(phase[0].shape)
 
     # allocate mask if needed
     if not mask:
         mask = SimpleNamespace()
-        mask.dataobj = np.ones(phase[0].shape, dtype=bool)
-
-    # initalize Julia context
-    julia_context = JuliaContext()
+        mask.dataobj = np.ones(phase[0].shape)
 
     # loop over the total number of frames
-    n_frames = 1
     for idx in range(n_frames):
+        print(f"Processing frame: {idx}")
         # get the phase and magnitude data from each echo
-        phase_data = np.stack([p.dataobj[..., idx] for p in phase], axis=-1)
+        phase_data = rescale_phase(np.stack([p.dataobj[..., idx] for p in phase], axis=-1))
         mag_data = np.stack([m.dataobj[..., idx] for m in mag], axis=-1)
-        mask_data = mask.dataobj[..., idx]
+        if automask:
+            # create structuring element
+            strel = generate_binary_structure(3, 2)
+            # get the index with the shortest echo time
+            idx = np.argmin(TEs)
+            mag_shortest = mag_data[..., idx]
+            # get the otsu threshold
+            threshold = threshold_otsu(mag_shortest)
+            # get the mask and open
+            mask_data = binary_opening(mag_shortest > threshold, structure=strel, iterations=5)
+            # now dilate the mask
+            mask_data = binary_dilation(mask_data, structure=strel, iterations=10)
+            if np.all(np.isclose(mask_data, 0)):
+                mask_data = np.ones(mask_data.shape).astype(bool)
+        else:
+            mask_data = mask.dataobj[..., idx]
+            mask_data = mask_data.astype(bool)
 
-        julia_context.romeo_unwrap_individual(
+        # unwrap the phase data
+        unwrapped = julia.romeo_unwrap_individual(
             phase=phase_data,
-            TEs=TEs,
+            TEs=np.array(TEs),
             weights="romeo",
             mag=mag_data,
             mask=mask_data,
             correctglobal=correctglobal,
         )
+
+        # broadcast TEs to match shape of data
+        TEs_data = np.array(TEs)[np.newaxis, np.newaxis, np.newaxis, :]
+
+        # compute the B0 field from the phase data
+        B0 = np.zeros(unwrapped.shape[:3])
+        numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
+        denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
+        np.divide(numer, denom, out=B0, where=(denom != 0))
+        B0 *= 1000 / (2 * np.pi)
+
+        # save the field map
+        field_maps[..., idx] = B0
+
+    # return the field map as a nifti image
+    return nib.Nifti1Image(field_maps, phase[0].affine)

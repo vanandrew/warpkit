@@ -13,32 +13,32 @@ from memori.pathman import PathManager as PathMan
 setup_logging()
 
 # Load the data
-# layout = BIDSLayout('/home/vanandrew/Data/bidsdata/')
+layout = BIDSLayout('/home/vanandrew/Data/bidsdata/')
 
 # get the magnitude and phase data separately
-# mag_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="mag", extension='nii.gz')
-# phase_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="phase", extension='nii.gz')
+mag_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="mag", extension='nii.gz')
+phase_imgs = layout.get(subject='MSCHD02', datatype='func', task="rest", part="phase", extension='nii.gz')
 
 
-class Image:
-    def __init__(self, filename):
-        self.img = nib.load(filename)
+# class Image:
+#     def __init__(self, filename):
+#         self.img = nib.load(filename)
 
-    def get_image(self):
-        return self.img
+#     def get_image(self):
+#         return self.img
 
 
-path = "/home/vanandrew/Data"
-mag_imgs = [
-    Image(f"{path}/func/{f}")
-    for f in sorted(os.listdir(f"{path}/func"))
-    if ".nii.gz" in f and "mag" in f and "run-04" in f
-]
-phase_imgs = [
-    Image(f"{path}/func/{f}")
-    for f in sorted(os.listdir(f"{path}/func"))
-    if ".nii.gz" in f and "phase" in f and "run-04" in f
-]
+# path = "/home/vanandrew/Data"
+# mag_imgs = [
+#     Image(f"{path}/func/{f}")
+#     for f in sorted(os.listdir(f"{path}/func"))
+#     if ".nii.gz" in f and "mag" in f and "run-04" in f
+# ]
+# phase_imgs = [
+#     Image(f"{path}/func/{f}")
+#     for f in sorted(os.listdir(f"{path}/func"))
+#     if ".nii.gz" in f and "phase" in f and "run-04" in f
+# ]
 assert len(mag_imgs) == len(phase_imgs)
 
 # get number of frames in image
@@ -55,7 +55,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
     tmp_path = PathMan(tmpdir)
 
     # output dir
-    out = "/home/vanandrew/Data/test5"
+    out = "/home/vanandrew/Data/test2"
     PathMan(out).mkdir(exist_ok=True)
 
     # make names for temp each frame mag and phase images
@@ -96,7 +96,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
             run_process(
                 f"romeo -p {phase} -m {mag} "
                 f"-t [14.2,38.93,63.66,88.39,113.12] "
-                f"-o {output} -B -k robustmask "
+                f"-o {output} -B -k nomask "
                 f"--phase-offset-correction off "
                 f"--individual-unwrapping "
                 f"-g -v"
@@ -108,7 +108,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
         fieldmap[..., frame_num] = b0
 
 # save the fieldmap
-nib.Nifti1Image(fieldmap, mag_img0.affine).to_filename((PathMan(out) / "fieldmap.nii.gz").path)
+nib.Nifti1Image(fieldmap, mag_img0.affine).to_filename((PathMan(out) / "field_map.nii.gz").path)
 
 # # remove temp files
 # shutil.rmtree((PathMan(out) / "temp").path)
