@@ -11,7 +11,8 @@ classifiers = [
   "Programming Language :: Python :: 3",
 ]
 urls = { github = "https://github.com/vanandrew/mosaic" }
-version = "0.2.1"
+version = "0.0.1"
+dynamic = ["entry-points"]
 dependencies = [
   "nibabel >= 4.0.2",
   "numpy >= 1.23.3",

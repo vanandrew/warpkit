@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import signal
 from typing import List, Tuple, Union
 import nibabel as nib
 import numpy as np
@@ -14,15 +15,22 @@ from .utilities import rescale_phase
 try:
     from mosaic.mosaic_cpp import JuliaContext as _JuliaContext  # type: ignore
 except ImportError:
-    from build.mosaic_cpp import JuliaContext as _JuliaContext
+    from build.mosaic_cpp import JuliaContext as _JuliaContext  # type: ignore
 
+
+# The Julia init overrides the default python SIGINT handler, so we need to restore it
+# after Julia is initialized.
+original_sigint_handler = signal.getsignal(signal.SIGINT)
 
 # This should only be initialized once
 # so we make it a global that can be used anywhere
 julia = _JuliaContext()
 
+# Now that Julia is initialized, we can restore the original SIGINT handler
+signal.signal(signal.SIGINT, original_sigint_handler)
 
-def unwrap_phases(
+
+def unwrap_and_compute_field_maps(
     phase: List[nib.Nifti1Image],
     mag: List[nib.Nifti1Image],
     TEs: Union[List[float], Tuple[float]],
@@ -30,14 +38,14 @@ def unwrap_phases(
     automask: bool = False,
     correctglobal: bool = True,
 ) -> nib.Nifti1Image:
-    """Unwrap phase of data weighted by magnitude data.
+    """Unwrap phase of data weighted by magnitude data and compute field maps.
 
     Parameters
     ----------
     phase : List[nib.Nifti1Image]
-        phases to unwrap
+        Phases to unwrap
     mag : List[nib.Nifti1Image]
-        magnitudes associated with each phase
+        Magnitudes associated with each phase
     TEs : Tuple[float]
         Echo times associated with each phase
     mask : nib.Nifti1Image, optional
@@ -50,7 +58,7 @@ def unwrap_phases(
     Returns
     -------
     nib.Nifti1Image
-        Unwrapped phase image
+        Field maps in Hz
     """
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
@@ -102,8 +110,8 @@ def unwrap_phases(
             # create structuring element
             strel = generate_binary_structure(3, 2)
             # get the index with the shortest echo time
-            idx = np.argmin(TEs)
-            mag_shortest = mag_data[..., idx]
+            echo_idx = np.argmin(TEs)
+            mag_shortest = mag_data[..., echo_idx]
             # get the otsu threshold
             threshold = threshold_otsu(mag_shortest)
             # get the mask and open

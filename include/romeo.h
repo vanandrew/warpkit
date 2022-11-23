@@ -1,23 +1,23 @@
 #ifndef ROMEO_H
 #define ROMEO_H
 
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <type_traits>
-
 #include <julia.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <utilities.h>
 
+#include <csignal>
+#include <iostream>
+#include <sstream>
+#include <string>
+
 namespace py = pybind11;
 
 /**
  * @brief Class to call julia functions from python
- * 
- * @tparam T 
- * @tparam jl_t 
+ *
+ * @tparam T
+ * @tparam jl_t
  */
 template <typename T>
 class JuliaContext {
@@ -78,13 +78,17 @@ class JuliaContext {
      * @param correctglobal
      * @return py::array_t<T, py::array::f_style>
      */
-    py::array_t<T, py::array::f_style> romeo_unwrap_individual(
-        py::array_t<T, py::array::f_style> phase, py::array_t<T, py::array::f_style> TEs, std::string weights,
-        py::array_t<T, py::array::f_style> mag, py::array_t<bool, py::array::f_style> mask, bool correctglobal = false) {
+    py::array_t<T, py::array::f_style> romeo_unwrap_individual(py::array_t<T, py::array::f_style> phase,
+                                                               py::array_t<T, py::array::f_style> TEs,
+                                                               std::string weights,
+                                                               py::array_t<T, py::array::f_style> mag,
+                                                               py::array_t<bool, py::array::f_style> mask,
+                                                               bool correctglobal = false) {
         // jl_function_t* println = jl_get_function(jl_base_module, "println");
         // jl_function_t* display = jl_get_function(jl_base_module, "display");
         // jl_function_t* type_of = static_cast<jl_function_t*>(jl_eval_string("x -> println(typeof(x))"));
         // std::cout << "\n";
+
         if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
         // Get dimensions as julia tuples
@@ -113,7 +117,8 @@ class JuliaContext {
             jl_ptr_to_array(jl_array4d, const_cast<T*>(phase.data()), reinterpret_cast<jl_value_t*>(phase_dims), 0);
         jl_TEs = jl_ptr_to_array_1d(jl_vector, const_cast<T*>(TEs.data()), TEs.size(), 0);
         jl_mag = jl_ptr_to_array(jl_array4d, const_cast<T*>(mag.data()), reinterpret_cast<jl_value_t*>(mag_dims), 0);
-        jl_mask = jl_ptr_to_array(jl_array3d, const_cast<bool*>(mask.data()), reinterpret_cast<jl_value_t*>(mask_dims), 0);
+        jl_mask =
+            jl_ptr_to_array(jl_array3d, const_cast<bool*>(mask.data()), reinterpret_cast<jl_value_t*>(mask_dims), 0);
 
         // get weights symbol
         auto jl_weights = string_to_symbol(weights);
