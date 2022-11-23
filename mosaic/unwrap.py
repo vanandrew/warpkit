@@ -35,7 +35,7 @@ def unwrap_and_compute_field_maps(
     mag: List[nib.Nifti1Image],
     TEs: Union[List[float], Tuple[float]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
-    automask: bool = False,
+    automask: bool = True,
     correctglobal: bool = True,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute field maps.
@@ -51,7 +51,7 @@ def unwrap_and_compute_field_maps(
     mask : nib.Nifti1Image, optional
         Boolean mask, by default None
     automask : bool, optional
-        Automatically generate a mask (ignore mask option), by default False
+        Automatically generate a mask (ignore mask option), by default True
     correctglobal : bool, optional
         Corrects global n2π offsets, by default True
 
