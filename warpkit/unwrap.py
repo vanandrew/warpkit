@@ -11,12 +11,7 @@ from scipy.ndimage import (
 )
 
 from .utilities import rescale_phase
-
-try:
-    from mosaic.mosaic_cpp import JuliaContext as _JuliaContext  # type: ignore
-except ImportError:
-    from build.mosaic_cpp import JuliaContext as _JuliaContext  # type: ignore
-
+from .warpkit_cpp import JuliaContext as _JuliaContext
 
 # The Julia init overrides the default python SIGINT handler, so we need to restore it
 # after Julia is initialized.
@@ -24,7 +19,7 @@ original_sigint_handler = signal.getsignal(signal.SIGINT)
 
 # This should only be initialized once
 # so we make it a global that can be used anywhere
-julia = _JuliaContext()
+JULIA = _JuliaContext()
 
 # Now that Julia is initialized, we can restore the original SIGINT handler
 signal.signal(signal.SIGINT, original_sigint_handler)
@@ -36,7 +31,7 @@ def unwrap_and_compute_field_maps(
     TEs: Union[List[float], Tuple[float]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
-    correctglobal: bool = True,
+    correct_global: bool = True,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute field maps.
 
@@ -52,7 +47,7 @@ def unwrap_and_compute_field_maps(
         Boolean mask, by default None
     automask : bool, optional
         Automatically generate a mask (ignore mask option), by default True
-    correctglobal : bool, optional
+    correct_global : bool, optional
         Corrects global n2π offsets, by default True
 
     Returns
@@ -125,13 +120,13 @@ def unwrap_and_compute_field_maps(
             mask_data = mask_data.astype(bool)
 
         # unwrap the phase data
-        unwrapped = julia.romeo_unwrap_individual(
+        unwrapped = JULIA.romeo_unwrap_individual(
             phase=phase_data,
             TEs=np.array(TEs),
             weights="romeo",
             mag=mag_data,
             mask=mask_data,
-            correctglobal=correctglobal,
+            correct_global=correct_global,
         )
 
         # broadcast TEs to match shape of data

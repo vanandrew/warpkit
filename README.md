@@ -1,5 +1,5 @@
-# mosaic
-Multi-echO based Susceptibility ArtIfact Correction (Tentative name, subject to change)
+# warp-kit
+A python library for neuroimaging transforms
 
 ## Installation
 To install, clone this repo and run the following in the repo directory:
@@ -7,15 +7,14 @@ To install, clone this repo and run the following in the repo directory:
 pip install ./ -v
 ```
 
-> :warning: You will need Julia with the ROMEO package pre-installed on your system.
+> :warning: You need Julia pre-installed on your system.
 
-## Usage
+## ME-SDC Usage
 
 There is currently only a python interface:
 ```python
 import nibabel as nib
 from mosaic.unwrap import unwrap_and_compute_field_maps
-
 
 # paths to your phase and magnitude images...
 # phases_paths, magnitude_paths, TEs...

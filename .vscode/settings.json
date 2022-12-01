@@ -3,9 +3,10 @@
     "python.analysis.typeCheckingMode": "basic",
     "files.associations": {
         ".gitignore": "ignore",
+        "*.h": "cpp",
         "julia.h": "c",
         "stdio.h": "c",
-        "romeo.h": "c",
+        "romeo.h": "cpp",
         "julia_fasttls.h": "c",
         "julia_threads.h": "c",
         "julia_atomics.h": "c",
@@ -56,6 +57,18 @@
         "tuple": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "cfenv": "cpp",
+        "condition_variable": "cpp",
+        "csignal": "cpp",
+        "ctime": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "mutex": "cpp",
+        "ratio": "cpp",
+        "semaphore": "cpp",
+        "stop_token": "cpp",
+        "thread": "cpp",
+        "valarray": "cpp"
     },
 }

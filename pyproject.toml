@@ -1,6 +1,6 @@
 [project]
-name = "mosaic"
-description = "Multi-echO based Susceptibility ArtIfact Correction"
+name = "warpkit"
+description = "A python library for neuroimaging transformations"
 readme = "README.md"
 requires-python = ">=3.7"
 license = { text = "MIT License" }
@@ -10,7 +10,7 @@ classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
 ]
-urls = { github = "https://github.com/vanandrew/mosaic" }
+urls = { github = "https://github.com/vanandrew/warp-kit" }
 version = "0.0.1"
 dynamic = ["entry-points"]
 dependencies = [
@@ -20,6 +20,7 @@ dependencies = [
   "scipy >= 1.8.1",
   "pybids >= 0.15.1",
   "memori >= 0.2.1",
+  "transforms3d >= 0.4.1",
 ]
 
 [project.optional-dependencies]

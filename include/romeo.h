@@ -84,11 +84,6 @@ class JuliaContext {
                                                                py::array_t<T, py::array::f_style> mag,
                                                                py::array_t<bool, py::array::f_style> mask,
                                                                bool correctglobal = false) {
-        // jl_function_t* println = jl_get_function(jl_base_module, "println");
-        // jl_function_t* display = jl_get_function(jl_base_module, "display");
-        // jl_function_t* type_of = static_cast<jl_function_t*>(jl_eval_string("x -> println(typeof(x))"));
-        // std::cout << "\n";
-
         if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
         // Get dimensions as julia tuples
