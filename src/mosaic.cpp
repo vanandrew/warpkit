@@ -19,4 +19,10 @@ PYBIND11_MODULE(warpkit_cpp, m) {
     m.def("invert_displacement_field", &invert_displacement_field<double>, "Invert a displacement field",
           py::arg("displacement_field"), py::arg("origin"), py::arg("direction"), py::arg("spacing"),
           py::arg("iterations") = 50, py::arg("verbose") = false, py::return_value_policy::move);
+
+    m.def("resample", &resample<double>, "Resample an image with transform", py::arg("input_image"),
+          py::arg("input_origin"), py::arg("input_direction"), py::arg("input_spacing"), py::arg("output_shape"),
+          py::arg("output_origin"), py::arg("output_direction"), py::arg("output_spacing"), py::arg("transform"),
+          py::arg("transform_origin"), py::arg("transform_direction"), py::arg("transform_spacing"),
+          py::return_value_policy::move);
 }

@@ -3,8 +3,9 @@ import nibabel as nib
 from transforms3d.affines import decompose44
 from typing import cast, Tuple
 from . import (
-    invert_displacement_map,  # type: ignore
+    invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
     invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
+    resample as resample_cpp,  # type: ignore
 )
 
 
@@ -99,7 +100,7 @@ def displacement_maps_to_field_maps(
 
 
 def displacement_map_to_field(
-    displacement_map: nib.Nifti1Image, axis: str = "y", format: str = "itk"
+    displacement_map: nib.Nifti1Image, axis: str = "y", format: str = "ants"
 ) -> nib.Nifti1Image:
     """Convert a displacement map to a displacement field
 
@@ -110,7 +111,7 @@ def displacement_map_to_field(
     axis : str, optional
         Axis displacement maps are along, by default "y"
     format : str, optional
-        Format of the displacement field, by default "itk"
+        Format of the displacement field, by default "ants"
 
     Returns
     -------
@@ -137,7 +138,7 @@ def displacement_map_to_field(
     header.set_intent("vector")
 
     # change data format based on format
-    if format == "itk" or format == "afni":
+    if format == "ants" or format == "afni":
         # just return the displacement field
         return nib.Nifti1Image(new_data, affine, header)
     elif format == "fsl":
@@ -213,7 +214,7 @@ def invert_displacement_maps(
     print("Inverting displacement maps...")
     for i in range(data.shape[-1]):
         print(f"Processing frame: {i}")
-        new_data[..., i] = invert_displacement_map(data[..., i], translations, rotations, zooms, verbose=verbose)
+        new_data[..., i] = invert_displacement_map_cpp(data[..., i], translations, rotations, zooms, verbose=verbose)
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(
@@ -262,3 +263,67 @@ def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool
 
     # return inverted maps
     return cast(nib.Nifti1Image, inv_displacement_field)
+
+
+def resample_image(
+    reference_image: nib.Nifti1Image, input_image: nib.Nifti1Image, transform: nib.Nifti1Image
+) -> nib.Nifti1Image:
+    """Resample an image in a reference image space with a given transform.
+
+    Parameters
+    ----------
+    reference_image : nib.Nifti1Image
+        Reference image grid to use.
+    input_image : nib.Nifti1Image
+        Input image to resample.
+    transform : nib.Nifti1Image
+        Transform to apply to input image.
+
+    Returns
+    -------
+    nib.Nifti1Image
+        Transformed input image in reference space.
+    """
+    # get all data in RAS orientation
+    ref_to_canonical, ref_from_canonical = get_ras_orient_transform(reference_image)
+    in_to_canonical, _ = get_ras_orient_transform(input_image)
+    tr_to_canonical, _ = get_ras_orient_transform(transform)
+
+    # get to RAS orientation
+    reference_image_ras = reference_image.as_reoriented(ref_to_canonical)
+    input_image_ras = input_image.as_reoriented(in_to_canonical)
+    transform_ras = transform.as_reoriented(tr_to_canonical)
+
+    # get data
+    ref_shape = reference_image_ras.shape
+    input_data = input_image_ras.get_fdata()
+    transform_data = transform_ras.get_fdata()
+
+    # split affine into components
+    ref_origin, ref_rotations, ref_zooms, _ = decompose44(reference_image_ras.affine)
+    in_origin, in_rotations, in_zooms, _ = decompose44(input_image_ras.affine)
+    tr_origin, tr_rotations, tr_zooms, _ = decompose44(transform_ras.affine)
+
+    # call resample function
+    resampled_data = resample_cpp(
+        input_data,
+        in_origin,
+        in_rotations,
+        in_zooms,
+        ref_shape,
+        ref_origin,
+        ref_rotations,
+        ref_zooms,
+        transform_data,
+        tr_origin,
+        tr_rotations,
+        tr_zooms,
+    )
+
+    # make new image
+    resampled_image = nib.Nifti1Image(
+        resampled_data, reference_image_ras.affine, reference_image_ras.header
+    ).as_reoriented(ref_from_canonical)
+
+    # return resampled image
+    return cast(nib.Nifti1Image, resampled_image)

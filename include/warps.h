@@ -12,7 +12,6 @@
 #include <utilities.h>
 
 #include <iostream>
-#include <vector>
 
 namespace py = pybind11;
 
@@ -139,9 +138,14 @@ py::array_t<T, py::array::f_style> invert_displacement_map(py::array_t<T, py::ar
     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     inv_map->Update();
     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
-    std::vector<T> inv_map_data(inv_map->GetBufferPointer(),
-                                inv_map->GetBufferPointer() + inv_map->GetBufferedRegion().GetNumberOfPixels());
-    return as_pyarray(inv_map_data, {shape[0], shape[1], shape[2]});
+    itk::ImageRegionConstIteratorWithIndex<DisplacementMapType> inv_map_it(inv_map,
+                                                                           inv_map->GetLargestPossibleRegion());
+    py::array_t<T, py::array::f_style> inverted_displacement_map(displacement_map);
+    for (inv_map_it.GoToBegin(); !inv_map_it.IsAtEnd(); ++inv_map_it) {
+        inverted_displacement_map.mutable_at(inv_map_it.GetIndex()[0], inv_map_it.GetIndex()[1],
+                                             inv_map_it.GetIndex()[2]) = inv_map_it.Get();
+    }
+    return inverted_displacement_map;
 }
 
 /**
@@ -224,16 +228,148 @@ py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::
     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     itk::ImageRegionConstIteratorWithIndex<DisplacementFieldType> inv_field_it(inv_field,
                                                                                inv_field->GetLargestPossibleRegion());
-    py::array_t<T, py::array::f_style> invert_displacement_field(displacement_field);
+    py::array_t<T, py::array::f_style> inverted_displacement_field(displacement_field);
     for (inv_field_it.GoToBegin(); !inv_field_it.IsAtEnd(); ++inv_field_it) {
-        invert_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
-                                             inv_field_it.GetIndex()[2], 0) = inv_field_it.Get()[0];
-        invert_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
-                                             inv_field_it.GetIndex()[2], 1) = inv_field_it.Get()[1];
-        invert_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
-                                             inv_field_it.GetIndex()[2], 2) = inv_field_it.Get()[2];
+        inverted_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
+                                               inv_field_it.GetIndex()[2], 0) = inv_field_it.Get()[0];
+        inverted_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
+                                               inv_field_it.GetIndex()[2], 1) = inv_field_it.Get()[1];
+        inverted_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
+                                               inv_field_it.GetIndex()[2], 2) = inv_field_it.Get()[2];
     }
-    return invert_displacement_field;
+    return inverted_displacement_field;
+}
+
+/**
+ * @brief Resample an image with a given transformation (displacement field)
+ *
+ * @tparam T
+ * @param input_image
+ * @param input_origin
+ * @param input_direction
+ * @param input_spacing
+ * @param output_shape
+ * @param output_origin
+ * @param output_direction
+ * @param output_spacing
+ * @param transform
+ * @param transform_origin
+ * @param transform_direction
+ * @param transform_spacing
+ * @return py::array_t<T, py::array::f_style>
+ */
+template <typename T>
+py::array_t<T, py::array::f_style> resample(
+    py::array_t<T, py::array::f_style> input_image, py::array_t<T, py::array::f_style> input_origin,
+    py::array_t<T, py::array::f_style> input_direction, py::array_t<T, py::array::f_style> input_spacing,
+    py::array_t<T, py::array::f_style> output_shape, py::array_t<T, py::array::f_style> output_origin,
+    py::array_t<T, py::array::f_style> output_direction, py::array_t<T, py::array::f_style> output_spacing,
+    py::array_t<T, py::array::f_style> transform, py::array_t<T, py::array::f_style> transform_origin,
+    py::array_t<T, py::array::f_style> transform_direction, py::array_t<T, py::array::f_style> transform_spacing) {
+    // Setup types
+    using InputImageType = typename itk::Image<T, 3>;
+    using OutputImageType = InputImageType;
+    using TransformImageType = typename itk::Image<itk::Vector<T, 3>, 3>;
+
+    // Use ImportImageFilter to import the input image and output image
+    using ImportImageFilterType = typename itk::ImportImageFilter<T, 3>;
+    typename ImportImageFilterType::Pointer input_import_filter = ImportImageFilterType::New();
+
+    // Setup input import filter
+    typename InputImageType::IndexType input_start({0, 0, 0});
+    using size_value_type = typename InputImageType::SizeValueType;
+    typename InputImageType::SizeType input_size({static_cast<size_value_type>(input_image.shape(0)),
+                                                  static_cast<size_value_type>(input_image.shape(1)),
+                                                  static_cast<size_value_type>(input_image.shape(2))});
+    typename InputImageType::RegionType input_region(input_start, input_size);
+    typename InputImageType::PointType input_origin_point({input_origin.at(0), input_origin.at(1), input_origin.at(2)});
+    typename InputImageType::DirectionType input_direction_type;
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            input_direction_type[i][j] = input_direction.at(i, j);
+        }
+    }
+    typename InputImageType::SpacingType input_spacing_type(
+        {input_spacing.at(0), input_spacing.at(1), input_spacing.at(2)});
+    input_import_filter->SetRegion(input_region);
+    input_import_filter->SetOrigin(input_origin_point);
+    input_import_filter->SetDirection(input_direction_type);
+    input_import_filter->SetSpacing(input_spacing_type);
+    input_import_filter->SetImportPointer(input_image.mutable_data(), input_image.size(), false);
+
+    // Create the transform type and fill with transform input
+    typename TransformImageType::Pointer transform_image = TransformImageType::New();
+    typename TransformImageType::IndexType transform_start({0, 0, 0});
+    using transform_size_value_type = typename TransformImageType::SizeValueType;
+    typename TransformImageType::SizeType transform_size({static_cast<transform_size_value_type>(transform.shape(0)),
+                                                          static_cast<transform_size_value_type>(transform.shape(1)),
+                                                          static_cast<transform_size_value_type>(transform.shape(2))});
+    typename TransformImageType::RegionType transform_region(transform_start, transform_size);
+    typename TransformImageType::PointType transform_origin_point(
+        {transform_origin.at(0), transform_origin.at(1), transform_origin.at(2)});
+    typename TransformImageType::DirectionType transform_direction_type;
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            transform_direction_type[i][j] = transform_direction.at(i, j);
+        }
+    }
+    typename TransformImageType::SpacingType transform_spacing_type(
+        {transform_spacing.at(0), transform_spacing.at(1), transform_spacing.at(2)});
+    transform_image->SetRegions(transform_region);
+    transform_image->SetOrigin(transform_origin_point);
+    transform_image->SetDirection(transform_direction_type);
+    transform_image->SetSpacing(transform_spacing_type);
+    transform_image->Allocate();
+    itk::ImageRegionIteratorWithIndex<TransformImageType> transform_iterator(transform_image, transform_region);
+    // Our transforms have x and y pointing in opposite directions
+    // So multiply the x and y components by 1 to flip them.
+    for (transform_iterator.GoToBegin(); !transform_iterator.IsAtEnd(); ++transform_iterator) {
+        transform_iterator.Set(
+            itk::Vector<T, 3>({-1 * transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
+                                                 transform_iterator.GetIndex()[2], 0),
+                               -1 * transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
+                                                 transform_iterator.GetIndex()[2], 1),
+                               transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
+                                                 transform_iterator.GetIndex()[2], 2)}));
+    }
+
+    // Create the WarpImageFilter
+    using WarpImageFilterType = typename itk::WarpImageFilter<InputImageType, OutputImageType, TransformImageType>;
+    typename WarpImageFilterType::Pointer warp_filter = WarpImageFilterType::New();
+    using output_size_value_type = typename OutputImageType::SizeValueType;
+    typename OutputImageType::SizeType output_size({static_cast<output_size_value_type>(output_shape.at(0)),
+                                                    static_cast<output_size_value_type>(output_shape.at(1)),
+                                                    static_cast<output_size_value_type>(output_shape.at(2))});
+    typename OutputImageType::PointType output_origin_point(
+        {output_origin.at(0), output_origin.at(1), output_origin.at(2)});
+    typename OutputImageType::DirectionType output_direction_type;
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            output_direction_type[i][j] = output_direction.at(i, j);
+        }
+    }
+    typename OutputImageType::SpacingType output_spacing_type(
+        {output_spacing.at(0), output_spacing.at(1), output_spacing.at(2)});
+    warp_filter->SetInput(input_import_filter->GetOutput());
+    warp_filter->SetOutputSize(output_size);
+    warp_filter->SetOutputOrigin(output_origin_point);
+    warp_filter->SetOutputDirection(output_direction_type);
+    warp_filter->SetOutputSpacing(output_spacing_type);
+    warp_filter->SetDisplacementField(transform_image);
+
+    // Get the output
+    typename OutputImageType::Pointer output_image = warp_filter->GetOutput();
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+    output_image->Update();
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+    itk::ImageRegionConstIteratorWithIndex<OutputImageType> output_iterator(output_image,
+                                                                            output_image->GetLargestPossibleRegion());
+    py::array_t<T, py::array::f_style> output_array({output_shape.at(0), output_shape.at(1), output_shape.at(2)});
+    for (output_iterator.GoToBegin(); !output_iterator.IsAtEnd(); ++output_iterator) {
+        output_array.mutable_at(output_iterator.GetIndex()[0], output_iterator.GetIndex()[1],
+                                output_iterator.GetIndex()[2]) = output_iterator.Get();
+    }
+    return output_array;
 }
 
 #endif

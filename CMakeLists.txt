@@ -60,7 +60,10 @@ add_compile_options(-Wall)
 
 # compile pybind11 interface
 pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/mosaic.cpp)
-target_include_directories(warpkit_cpp PUBLIC ${PROJECT_SOURCE_DIR}/include PRIVATE ${ITK_INCLUDE_DIRS})
+target_include_directories(warpkit_cpp
+    PUBLIC ${PROJECT_SOURCE_DIR}/include
+    PRIVATE ${ITK_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/include/itk
+)
 target_link_libraries(warpkit_cpp PRIVATE Julia ITKCommon)
 
 # install target
