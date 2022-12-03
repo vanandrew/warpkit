@@ -11,7 +11,7 @@ from scipy.ndimage import (
 )
 
 from .utilities import rescale_phase
-from .warpkit_cpp import JuliaContext as _JuliaContext
+from . import JuliaContext as _JuliaContext  # type: ignore
 
 # The Julia init overrides the default python SIGINT handler, so we need to restore it
 # after Julia is initialized.
@@ -42,7 +42,7 @@ def unwrap_and_compute_field_maps(
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
     TEs : Tuple[float]
-        Echo times associated with each phase
+        Echo times associated with each phase (in ms)
     mask : nib.Nifti1Image, optional
         Boolean mask, by default None
     automask : bool, optional
@@ -55,6 +55,10 @@ def unwrap_and_compute_field_maps(
     nib.Nifti1Image
         Field maps in Hz
     """
+    # check TEs if < 0.1, tell user they probably need to convert to ms
+    if np.min(TEs) < 0.1:
+        print("WARNING: TEs are unusually small. Your inputs may be incorrect. Did you forget to convert to ms?")
+
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
         for p2, m2 in zip(phase, mag):
@@ -143,4 +147,4 @@ def unwrap_and_compute_field_maps(
         field_maps[..., idx] = B0
 
     # return the field map as a nifti image
-    return nib.Nifti1Image(field_maps, phase[0].affine)
+    return nib.Nifti1Image(field_maps, phase[0].affine, phase[0].header)

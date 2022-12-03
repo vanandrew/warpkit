@@ -135,3 +135,6 @@ dmypy.json
 test/
 test*/
 
+# ignore vscode
+.vscode/
+
