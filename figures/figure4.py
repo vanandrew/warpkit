@@ -1,6 +1,7 @@
 import nibabel as nib
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 # import simplebrainviewer as sbv
 
 sns.set(font="Lato", style="dark")
@@ -76,13 +77,13 @@ axB_2.set_visible(False)
 
 cbar = f.colorbar(im1, ax=[ax1_2, ax3_2], aspect=30, pad=0.25, location="left", orientation="vertical")
 cbar.ax.yaxis.set_ticks_position("left")
-cbar.ax.set_ylabel('Hz', rotation=90)
+cbar.ax.set_ylabel("Hz", rotation=90)
 cax = cbar.ax.twinx()
 cax.set_ylim(-3.08, 6.16)
 cax.set_ylabel("pixels", rotation=90)
 
 cbar = f.colorbar(imB_2, ax=[axA_2, axB_2], aspect=30, pad=0.35, location="right", orientation="vertical")
-cbar.ax.set_ylabel('pixels', rotation=270)
+cbar.ax.set_ylabel("pixels", rotation=270)
 cax = cbar.ax.twinx()
 cax.set_ylim(v_min, v_max)
 cax.yaxis.set_ticks_position("left")

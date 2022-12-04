@@ -11,6 +11,7 @@ def me_sdc(
     TEs: Union[List[float], Tuple[float]],
     effective_echo_spacing: float,
     phase_encoding_direction: str,
+    up_to_frame: Union[int, None] = None,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute displacment maps
     for correction.
@@ -23,6 +24,12 @@ def me_sdc(
         Magnitudes associated with each phase
     TEs : Tuple[float]
         Echo times associated with each phase
+    effective_echo_spacing : float
+        Effective echo spacing
+    phase_encoding_direction : str
+        Phase encoding direction (can be i, j, k, i-, j-, k-) or (x, y, z, x-, y-, z-)
+    up_to_frame : int, optional
+        Only use up to this frame, by default None
 
     Returns
     -------
@@ -41,7 +48,7 @@ def me_sdc(
                 raise ValueError("Affines and shapes must match")
 
     # unwrap phase and compute field maps
-    field_maps = unwrap_and_compute_field_maps(phase, mag, TEs)
+    field_maps = unwrap_and_compute_field_maps(phase, mag, TEs, up_to_frame=up_to_frame)
 
     # convert to displacement maps
     displacement_maps = field_maps_to_displacement_maps(field_maps, effective_echo_spacing, phase_encoding_direction)

@@ -61,6 +61,11 @@ def field_maps_to_displacement_maps(
     # get voxel size
     voxel_size = field_maps.header.get_zooms()[axis_code]  # type: ignore
 
+    # if there is a negative sign in the phase encoding direction
+    # we need to flip the direction of the displacment map
+    if "-" in phase_encoding_direction:
+        voxel_size *= -1
+
     # convert field maps to displacement maps
     data = field_maps.get_fdata()
     new_data = data * effective_echo_spacing * phase_encoding_lines * voxel_size
@@ -92,6 +97,11 @@ def displacement_maps_to_field_maps(
 
     # get voxel size
     voxel_size = displacement_maps.header.get_zooms()[axis_code]  # type: ignore
+
+    # if there is a negative sign in the phase encoding direction
+    # we need to flip the direction of the displacment map
+    if "-" in phase_encoding_direction:
+        voxel_size *= -1
 
     # convert displacement maps to field maps
     data = displacement_maps.get_fdata()
@@ -156,6 +166,15 @@ def displacement_map_to_field(
 
 def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarray]:
     """Get the transform to RAS orientation and back
+
+    RAS orientation ensures no zooms are negative, which is necessary for
+    passing orientation infromation into ITK. Since ITK internally uses
+    LPS orientation, transforms passed into ITK must be flipped in x/y and
+    vice-versa to be usable. To prevent user confusion, this should all
+    be handled internally on the C++ end, meaning that the end user should
+    only need to pass in data in RAS orientation. But any code on the C++
+    side of things should take care to do the necessary conversions from
+    RAS to LPS and back.
 
     Parameters
     ----------
@@ -298,6 +317,14 @@ def resample_image(
     ref_shape = reference_image_ras.shape
     input_data = input_image_ras.get_fdata()
     transform_data = transform_ras.get_fdata()
+
+    # if the transform data is 5D do a squeeze
+    if transform_data.ndim == 5:
+        transform_data = transform_data.squeeze()
+
+    # check the last dimension for size 3
+    if transform_data.shape[-1] != 3:
+        raise ValueError("Transform data must have size 3 in last axis")
 
     # split affine into components
     ref_origin, ref_rotations, ref_zooms, _ = decompose44(reference_image_ras.affine)

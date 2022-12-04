@@ -32,6 +32,7 @@ def unwrap_and_compute_field_maps(
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
     correct_global: bool = True,
+    up_to_frame: Union[int, None] = None,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute field maps.
 
@@ -49,6 +50,8 @@ def unwrap_and_compute_field_maps(
         Automatically generate a mask (ignore mask option), by default True
     correct_global : bool, optional
         Corrects global n2π offsets, by default True
+    up_to_frame : int, optional
+        Only use up to this frame, by default None
 
     Returns
     -------
@@ -84,6 +87,11 @@ def unwrap_and_compute_field_maps(
     elif len(phase[0].shape) == 4:
         # get the total number of frames
         n_frames = phase[0].shape[3]
+        # if up_to_frame is set, make sure it is not greater than n_frames
+        if up_to_frame is not None:
+            if up_to_frame > n_frames:
+                raise ValueError("up_to_frame is greater than the number of frames in the data.")
+            n_frames = up_to_frame
     else:
         raise ValueError("Data must be 3D or 4D.")
 
@@ -92,12 +100,12 @@ def unwrap_and_compute_field_maps(
         raise ValueError("Number of echo times must equal number of mag and phase images.")
 
     # allocate space for field maps
-    field_maps = np.zeros(phase[0].shape)
+    field_maps = np.zeros((*phase[0].shape[:3], n_frames))
 
     # allocate mask if needed
     if not mask:
         mask = SimpleNamespace()
-        mask.dataobj = np.ones(phase[0].shape)
+        mask.dataobj = np.ones((*phase[0].shape[:3], n_frames))
 
     # loop over the total number of frames
     for idx in range(n_frames):
