@@ -13,6 +13,15 @@ from . import (
 AXIS_MAP = {"x": 0, "y": 1, "z": 2, "x-": 0, "y-": 1, "z-": 2, "i": 0, "j": 1, "k": 2, "i-": 0, "j-": 1, "k-": 2}
 
 
+# warp_itk_flips
+WARP_ITK_FLIPS = {
+    "itk": np.array([1, 1, 1]),
+    "fsl": np.array([-1, 1, 1]),
+    "ants": np.array([-1, -1, 1]),
+    "afni": np.array([-1, -1, 1]),
+}
+
+
 def rescale_phase(data: np.ndarray, min: int = -4096, max: int = 4096) -> np.ndarray:
     """Rescale phase data to [-pi, pi]
 
@@ -66,6 +75,10 @@ def field_maps_to_displacement_maps(
     if "-" in phase_encoding_direction:
         voxel_size *= -1
 
+    # for itk form, we need to flip x/y axis
+    if axis_code == 0 or axis_code == 1:
+        voxel_size *= -1
+
     # convert field maps to displacement maps
     data = field_maps.get_fdata()
     new_data = data * effective_echo_spacing * phase_encoding_lines * voxel_size
@@ -101,6 +114,10 @@ def displacement_maps_to_field_maps(
     # if there is a negative sign in the phase encoding direction
     # we need to flip the direction of the displacment map
     if "-" in phase_encoding_direction:
+        voxel_size *= -1
+
+    # for itk form, we need to flip x/y axis
+    if axis_code == 0 or axis_code == 1:
         voxel_size *= -1
 
     # convert displacement maps to field maps
@@ -354,3 +371,73 @@ def resample_image(
 
     # return resampled image
     return cast(nib.Nifti1Image, resampled_image)
+
+
+def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.Nifti1Image:
+    """Converts warp from one type to another.
+
+    Parameters
+    ----------
+    in_warp : nib.Nifti1Image
+        Input warp to convert.
+    in_type : str
+        Type of the input warp. Can be "fsl", "ants", "itk", or "afni"
+    out_type : str
+        Type of warp to output. Can be "fsl", "ants", "itk", or "afni"
+
+    Returns
+    -------
+    nib.Nifti1Image
+        Output warp in desired format.
+    """
+    # check data shape
+    if len(in_warp.shape) != 4:
+        if len(in_warp.shape) != 5:
+            raise ValueError("Input warp must be 4D or 5D.")
+        else:
+            if in_warp.shape[3] == 1 and in_warp.shape[-1]:
+                raise ValueError("Input warp must have singleton dimension in 4th axis and size in last axis.")
+    else:
+        # check last axis size
+        if in_warp.shape[-1] != 3:
+            raise ValueError("Warp must have size 3 in last axis.")
+
+    # get input in RAS orientation
+    to_canonical, from_canonical = get_ras_orient_transform(in_warp)
+
+    # get to RAS orientation
+    in_warp_ras = in_warp.as_reoriented(to_canonical)
+
+    # get data in itk form
+    warp_data = in_warp.ras().get_fdata().squeeze()
+
+    # convert input to itk form
+    if in_type in WARP_ITK_FLIPS:
+        flip_array = WARP_ITK_FLIPS[in_type]
+        warp_data[..., 0] = warp_data[..., 0] * flip_array[0]
+        warp_data[..., 1] = warp_data[..., 1] * flip_array[1]
+        warp_data[..., 2] = warp_data[..., 2] * flip_array[2]
+    else:
+        raise ValueError(f"Input type {in_type} not recognized")
+
+    # now convert the data into output type
+    if out_type in WARP_ITK_FLIPS:
+        flip_array = WARP_ITK_FLIPS[out_type]
+        warp_data[..., 0] = warp_data[..., 0] * flip_array[0]
+        warp_data[..., 1] = warp_data[..., 1] * flip_array[1]
+        warp_data[..., 2] = warp_data[..., 2] * flip_array[2]
+    else:
+        raise ValueError(f"Output type {out_type} not recognized")
+
+    # for afni and ants types we need to add a 4th dimension
+    if out_type in ["afni", "ants"]:
+        warp_data = warp_data[..., np.newaxis, :]
+
+    # create nifti image
+    out_warp = nib.Nifti1Image(warp_data, in_warp_ras.affine, in_warp_ras.header).as_reoriented(from_canonical)
+
+    # add the vector intent code to the header
+    out_warp.header.set_intent("vector", (), "")
+
+    # return the warp
+    return cast(nib.Nifti1Image, out_warp)

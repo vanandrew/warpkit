@@ -326,9 +326,9 @@ py::array_t<T, py::array::f_style> resample(
     // We multiply the x and y components by -1 to flip them.
     for (transform_iterator.GoToBegin(); !transform_iterator.IsAtEnd(); ++transform_iterator) {
         transform_iterator.Set(
-            itk::Vector<T, 3>({-1 * transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
+            itk::Vector<T, 3>({transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
                                                  transform_iterator.GetIndex()[2], 0),
-                               -1 * transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
+                               transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
                                                  transform_iterator.GetIndex()[2], 1),
                                transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
                                             transform_iterator.GetIndex()[2], 2)}));
