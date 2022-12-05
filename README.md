@@ -14,20 +14,22 @@ pip install ./ -v
 There is currently only a python interface:
 ```python
 import nibabel as nib
-from mosaic.unwrap import unwrap_and_compute_field_maps
-
-# paths to your phase and magnitude images...
-# phases_paths, magnitude_paths, TEs...
+from warpkit.distortion import me_sdc
 
 # load phase and magnitude images into lists
 # each element in list is a different echo
 phases = [nib.load(p) for p in phases_paths]
 magnitudes = [nib.load(p) for p in magnitude_paths]
+TEs = [TE1, TE2, ...] # in milliseconds
+effective_echo_spacing = ... # in seconds
+phase_encoding_direction = either i, j, k, i-, j-, k-, x , y, z, x-, y-, z- 
 
-# call the unwrapper and field map computer
-field_maps = unwrap_and_compute_field_maps(phases, magnitudes, TEs)
+# call the me_sdc function
+displacement_maps = me_sdc(phases, magnitudes, TEs, effective_echo_spacing, phase_encoding_direction)
 
-# save the field maps
-field_maps.to_filename("/path/to/save.nii.gz")
-
+# displacement_maps to file
+displacement_maps.to_filename("/path/to/save.nii.gz")
+# these should be converted to displacement fields
+# by extracting a frame and calling the displacement_map_to_warp function
+# and specifying the appropriate type (i.e. itk, ants, afni, fsl)
 ```

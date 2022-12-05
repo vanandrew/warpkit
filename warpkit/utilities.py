@@ -126,8 +126,8 @@ def displacement_maps_to_field_maps(
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
 
 
-def displacement_map_to_field(
-    displacement_map: nib.Nifti1Image, axis: str = "y", format: str = "ants"
+def displacement_map_to_warp(
+    displacement_map: nib.Nifti1Image, axis: str = "y", format: str = "itk"
 ) -> nib.Nifti1Image:
     """Convert a displacement map to a displacement field
 
@@ -138,7 +138,7 @@ def displacement_map_to_field(
     axis : str, optional
         Axis displacement maps are along, by default "y"
     format : str, optional
-        Format of the displacement field, by default "ants"
+        Format of the displacement field, by default "itk"
 
     Returns
     -------
@@ -155,30 +155,20 @@ def displacement_map_to_field(
     header = cast(nib.Nifti1Header, displacement_map.header)
 
     # create a new array to hold the displacement field
-    new_data = np.zeros((*data.shape, 1, 3))
+    new_data = np.zeros((*data.shape, 3))
 
     # insert data at axis
-    new_data[..., axis_code] = data[..., np.newaxis]  # type: ignore
+    new_data[..., axis_code] = data  # type: ignore
 
     # set the header to the correct intent code
     # this is needed for ANTs, but has no effect on FSL/AFNI
     header.set_intent("vector")
 
-    # change data format based on format
-    if format == "ants" or format == "afni":
-        # just return the displacement field
-        return nib.Nifti1Image(new_data, affine, header)
-    elif format == "fsl":
-        # for fsl get rid of extra dim
-        new_data = new_data.squeeze()
+    # form the image
+    warp = nib.Nifti1Image(new_data, affine, header)
 
-        # multiply y direction by -1
-        new_data[..., 1] *= -1
-
-        # return the warp field
-        return nib.Nifti1Image(new_data, affine, header)
-    else:
-        raise ValueError(f"Format {format} not recognized")
+    # convert to whatever format is needed and return
+    return convert_warp(warp, in_type="itk", out_type=format)
 
 
 def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarray]:
