@@ -22,7 +22,7 @@ def me_sdc(
         Phases to unwrap
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
-    TEs : Tuple[float]
+    TEs : Union[List[float], Tuple[float]]
         Echo times associated with each phase
     effective_echo_spacing : float
         Effective echo spacing
@@ -34,7 +34,9 @@ def me_sdc(
     Returns
     -------
     nib.Nifti1Image
-        Displacement maps (distorted -> undistorted) in mm
+        Field maps in Hz
+    nib.Nifti1Image
+        Correction maps (distorted -> undistorted) in mm
     """
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
@@ -57,4 +59,4 @@ def me_sdc(
     correction_maps = invert_displacement_maps(displacement_maps, phase_encoding_direction, True)
 
     # return correction maps
-    return correction_maps
+    return field_maps, correction_maps

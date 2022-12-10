@@ -36,7 +36,7 @@ except subprocess.CalledProcessError:
     raise OSError("ROMEO failed to install. Check your Julia installation.")
 
 setup(
-    ext_modules=[CMakeExtension("mosaic.moasic_cpp", cmakelists)],
+    ext_modules=[CMakeExtension("warpkit.warpkit_cpp", cmakelists)],
     cmdclass={"build_ext": CMakeBuild},
     entry_points={
         "console_scripts": [
