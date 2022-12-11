@@ -132,7 +132,7 @@ class JuliaContext {
         auto unwrapped_ptr = static_cast<T*>(jl_array_data(jl_unwrapped));
 
         // copy julia array to c++ vector
-        std::vector unwrapped_vec(unwrapped_ptr, unwrapped_ptr + phase.size());
+        std::vector<T> unwrapped_vec(unwrapped_ptr, unwrapped_ptr + phase.size());
 
         // pop arrays from root set
         JL_GC_POP();
