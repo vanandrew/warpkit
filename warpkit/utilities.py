@@ -45,7 +45,7 @@ def rescale_phase(data: np.ndarray, min: int = -4096, max: int = 4096) -> np.nda
 
 
 def field_maps_to_displacement_maps(
-    field_maps: nib.Nifti1Image, effective_echo_spacing: float, phase_encoding_direction: str
+    field_maps: nib.Nifti1Image, total_readout_time: float, phase_encoding_direction: str
 ) -> nib.Nifti1Image:
     """Convert field maps (Hz) to displacement maps (mm)
 
@@ -53,8 +53,8 @@ def field_maps_to_displacement_maps(
     ----------
     field_maps : nib.Nifti1Image
         Field map data in Hz
-    effective_echo_spacing : float
-        Effective echo spacing in seconds
+    total_readout_time : float
+        Total readout time (in seconds)
     phase_encoding_direction : str
         Phase encoding direction
 
@@ -81,12 +81,12 @@ def field_maps_to_displacement_maps(
 
     # convert field maps to displacement maps
     data = field_maps.get_fdata()
-    new_data = data * effective_echo_spacing * phase_encoding_lines * voxel_size
+    new_data = data * total_readout_time * voxel_size
     return nib.Nifti1Image(new_data, field_maps.affine, field_maps.header)
 
 
 def displacement_maps_to_field_maps(
-    displacement_maps: nib.Nifti1Image, effective_echo_spacing: float, phase_encoding_direction: str
+    displacement_maps: nib.Nifti1Image, total_readout_time: float, phase_encoding_direction: str
 ) -> nib.Nifti1Image:
     """Convert displacement maps (mm) to field maps (Hz)
 
@@ -94,8 +94,8 @@ def displacement_maps_to_field_maps(
     ----------
     displacement_maps : nib.Nifti1Image
         Displacement map data in mm
-    effective_echo_spacing : float
-        Effective echo spacing in seconds
+    total_readout_time : float
+        Total readout time (in seconds)
     phase_encoding_direction : str
         Phase encoding direction
 
@@ -122,7 +122,7 @@ def displacement_maps_to_field_maps(
 
     # convert displacement maps to field maps
     data = displacement_maps.get_fdata()
-    new_data = data / (effective_echo_spacing * phase_encoding_lines * voxel_size)
+    new_data = data / (total_readout_time * voxel_size)
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
 
 

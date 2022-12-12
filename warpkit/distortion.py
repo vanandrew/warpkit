@@ -9,9 +9,10 @@ def me_sdc(
     phase: List[nib.Nifti1Image],
     mag: List[nib.Nifti1Image],
     TEs: Union[List[float], Tuple[float]],
-    effective_echo_spacing: float,
+    total_readout_time: float,
     phase_encoding_direction: str,
-    up_to_frame: Union[int, None] = None,
+    frames: Union[List[int], None] = None,
+    n_cpus: int = 4,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute displacment maps
     for correction.
@@ -24,12 +25,14 @@ def me_sdc(
         Magnitudes associated with each phase
     TEs : Union[List[float], Tuple[float]]
         Echo times associated with each phase
-    effective_echo_spacing : float
-        Effective echo spacing
+    total_readout_time : float
+        Total readout time
     phase_encoding_direction : str
         Phase encoding direction (can be i, j, k, i-, j-, k-) or (x, y, z, x-, y-, z-)
-    up_to_frame : int, optional
-        Only use up to this frame, by default None
+    frames : int, optional
+        Only process these frame indices, by default None (which means all frames)
+    n_cpus : int, optional
+        Number of CPUs to use, by default 4
 
     Returns
     -------
@@ -50,13 +53,13 @@ def me_sdc(
                 raise ValueError("Affines and shapes must match")
 
     # unwrap phase and compute field maps
-    field_maps = unwrap_and_compute_field_maps(phase, mag, TEs, up_to_frame=up_to_frame)
+    field_maps = unwrap_and_compute_field_maps(phase, mag, TEs, frames, n_cpus=n_cpus)
 
     # convert to displacement maps
-    displacement_maps = field_maps_to_displacement_maps(field_maps, effective_echo_spacing, phase_encoding_direction)
+    displacement_maps = field_maps_to_displacement_maps(field_maps, total_readout_time, phase_encoding_direction)
 
     # invert displacement maps
-    correction_maps = invert_displacement_maps(displacement_maps, phase_encoding_direction, True)
+    correction_maps = invert_displacement_maps(displacement_maps, phase_encoding_direction)
 
     # return correction maps
     return field_maps, correction_maps

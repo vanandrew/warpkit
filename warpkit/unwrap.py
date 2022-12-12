@@ -1,6 +1,8 @@
-from types import SimpleNamespace
+import sys
 import signal
+from types import SimpleNamespace
 from typing import List, Tuple, Union
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import nibabel as nib
 import numpy as np
 from skimage.filters import threshold_otsu
@@ -9,20 +11,103 @@ from scipy.ndimage import (
     binary_opening,
     binary_dilation,
 )
-
 from .utilities import rescale_phase
 from . import JuliaContext as _JuliaContext  # type: ignore
 
-# The Julia init overrides the default python SIGINT handler, so we need to restore it
-# after Julia is initialized.
-original_sigint_handler = signal.getsignal(signal.SIGINT)
 
-# This should only be initialized once
-# so we make it a global that can be used anywhere
-JULIA = _JuliaContext()
+def initialize_julia_context():
+    """Initialize a Julia context in the global variable JULIA."""
 
-# Now that Julia is initialized, we can restore the original SIGINT handler
-signal.signal(signal.SIGINT, original_sigint_handler)
+    # This should only be initialized once
+    global JULIA
+    JULIA = _JuliaContext()
+
+    # Set the process's signal handler to ignore SIGINT
+    signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT])
+
+
+def compute_fieldmap(
+    phase_data: np.ndarray,
+    mag_data: np.ndarray,
+    TEs: np.ndarray,
+    mask_data: np.ndarray,
+    automask: bool = True,
+    correct_global: bool = True,
+    idx: Union[int, None] = None,
+) -> np.ndarray:
+    """Computes the field map for a single ME frame.
+
+    Parameters
+    ----------
+    phase_data : np.ndarray
+        Single frame of phase data with shape (x, y, z, echo)
+    mag_data : np.ndarray
+        Single frame of magnitude data with shape (x, y, z, echo)
+    TEs : np.ndarray
+        Echo times associated with each phase
+    mask_data : np.ndarray
+        Mask of voxels to use for unwrapping
+    automask : bool, optional
+        Automatically compute a mask, by default True
+    correct_global : bool, optional
+        Corrects global n2π offset, by default True
+    idx : int, optional
+        Index of the frame being processed for verbosity, by default None
+
+    Returns
+    -------
+    np.ndarray
+        field map in Hz
+    """
+    if idx is not None:
+        print(f"Processing frame {idx}")
+
+    # if automask is True, generate a mask for the frame, instead of using mask_data
+    if automask:
+        # create structuring element
+        strel = generate_binary_structure(3, 2)
+
+        # get the index with the shortest echo time
+        echo_idx = np.argmin(TEs)
+        mag_shortest = mag_data[..., echo_idx]
+
+        # get the otsu threshold
+        threshold = threshold_otsu(mag_shortest)
+
+        # get the mask and open
+        mask_data = binary_opening(mag_shortest > threshold, structure=strel, iterations=5)
+
+        # now dilate the mask
+        mask_data = binary_dilation(mask_data, structure=strel, iterations=10)
+
+        # since we can't have a completely empty mask, set all zeros to ones
+        # if the mask is all empty
+        if np.all(np.isclose(mask_data, 0)):
+            mask_data = np.ones(mask_data.shape).astype(bool)
+
+    # unwrap the phase data
+    global JULIA
+    unwrapped = JULIA.romeo_unwrap_individual(
+        phase=phase_data,
+        TEs=TEs,
+        weights="romeo",
+        mag=mag_data,
+        mask=mask_data,
+        correct_global=correct_global,
+    )
+
+    # broadcast TEs to match shape of data
+    TEs_data = np.array(TEs)[np.newaxis, np.newaxis, np.newaxis, :]
+
+    # compute the B0 field from the phase data
+    B0 = np.zeros(unwrapped.shape[:3])
+    numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
+    denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
+    np.divide(numer, denom, out=B0, where=(denom != 0))
+    B0 *= 1000 / (2 * np.pi)
+
+    # save the field map
+    return B0
 
 
 def unwrap_and_compute_field_maps(
@@ -32,7 +117,8 @@ def unwrap_and_compute_field_maps(
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
     correct_global: bool = True,
-    up_to_frame: Union[int, None] = None,
+    frames: Union[List[int], None] = None,
+    n_cpus: int = 4,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute field maps.
 
@@ -50,8 +136,10 @@ def unwrap_and_compute_field_maps(
         Automatically generate a mask (ignore mask option), by default True
     correct_global : bool, optional
         Corrects global n2π offsets, by default True
-    up_to_frame : int, optional
-        Only use up to this frame, by default None
+    frames : List[int], optional
+        Only process these frame indices, by default None (which means all frames)
+    n_cpus : int, optional
+        Number of CPUs to use, by default 4
 
     Returns
     -------
@@ -61,6 +149,9 @@ def unwrap_and_compute_field_maps(
     # check TEs if < 0.1, tell user they probably need to convert to ms
     if np.min(TEs) < 0.1:
         print("WARNING: TEs are unusually small. Your inputs may be incorrect. Did you forget to convert to ms?")
+
+    # convert TEs to np array
+    TEs = np.array(TEs)
 
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
@@ -87,11 +178,9 @@ def unwrap_and_compute_field_maps(
     elif len(phase[0].shape) == 4:
         # get the total number of frames
         n_frames = phase[0].shape[3]
-        # if up_to_frame is set, make sure it is not greater than n_frames
-        if up_to_frame is not None:
-            if up_to_frame > n_frames:
-                raise ValueError("up_to_frame is greater than the number of frames in the data.")
-            n_frames = up_to_frame
+        # if frames is None, set it to all frames
+        if frames is None:
+            frames = np.arange(n_frames)
     else:
         raise ValueError("Data must be 3D or 4D.")
 
@@ -107,52 +196,46 @@ def unwrap_and_compute_field_maps(
         mask = SimpleNamespace()
         mask.dataobj = np.ones((*phase[0].shape[:3], n_frames))
 
-    # loop over the total number of frames
-    for idx in range(n_frames):
-        print(f"Processing frame: {idx}")
-        # get the phase and magnitude data from each echo
-        phase_data = rescale_phase(np.stack([p.dataobj[..., idx] for p in phase], axis=-1))
-        mag_data = np.stack([m.dataobj[..., idx] for m in mag], axis=-1)
-        if automask:
-            # create structuring element
-            strel = generate_binary_structure(3, 2)
-            # get the index with the shortest echo time
-            echo_idx = np.argmin(TEs)
-            mag_shortest = mag_data[..., echo_idx]
-            # get the otsu threshold
-            threshold = threshold_otsu(mag_shortest)
-            # get the mask and open
-            mask_data = binary_opening(mag_shortest > threshold, structure=strel, iterations=5)
-            # now dilate the mask
-            mask_data = binary_dilation(mask_data, structure=strel, iterations=10)
-            if np.all(np.isclose(mask_data, 0)):
-                mask_data = np.ones(mask_data.shape).astype(bool)
-        else:
+    # use a process pool to speed up the computation
+    executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
+
+    # set error flag for process pool
+    PROCESS_POOL_ERROR = False
+
+    try:
+        # collect futures in a dictionary, where the value is the frame index
+        futures = dict()
+        # loop over the total number of frames
+        for idx in frames:
+            # get the phase and magnitude data from each echo
+            phase_data = rescale_phase(np.stack([p.dataobj[..., idx] for p in phase], axis=-1))
+            mag_data = np.stack([m.dataobj[..., idx] for m in mag], axis=-1)
             mask_data = mask.dataobj[..., idx]
             mask_data = mask_data.astype(bool)
 
-        # unwrap the phase data
-        unwrapped = JULIA.romeo_unwrap_individual(
-            phase=phase_data,
-            TEs=np.array(TEs),
-            weights="romeo",
-            mag=mag_data,
-            mask=mask_data,
-            correct_global=correct_global,
-        )
+            # submit field map computation to the process pool
+            futures[
+                executor.submit(compute_fieldmap, phase_data, mag_data, TEs, mask_data, automask, correct_global, idx)
+            ] = idx
 
-        # broadcast TEs to match shape of data
-        TEs_data = np.array(TEs)[np.newaxis, np.newaxis, np.newaxis, :]
-
-        # compute the B0 field from the phase data
-        B0 = np.zeros(unwrapped.shape[:3])
-        numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
-        denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
-        np.divide(numer, denom, out=B0, where=(denom != 0))
-        B0 *= 1000 / (2 * np.pi)
-
-        # save the field map
-        field_maps[..., idx] = B0
+        # loop over the futures
+        for future in as_completed(futures):
+            # get the frame index
+            idx = futures[future]
+            # get the field map
+            field_maps[..., idx] = future.result()
+    except KeyboardInterrupt:
+        # on keyboard interrupt, just kill all processes in the executor pool
+        for proc in executor._processes.values():
+            proc.kill()
+        # set global error flag
+        PROCESS_POOL_ERROR = True
+    finally:
+        if PROCESS_POOL_ERROR:
+            sys.exit(1)
+        # close the executor
+        else:
+            executor.shutdown()
 
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps, phase[0].affine, phase[0].header)

@@ -6,11 +6,8 @@ requires-python = ">=3.7"
 license = { text = "MIT License" }
 authors = [{ name = "Andrew Van", email = "vanandrew@wustl.edu" }]
 keywords = ["neuroimaging"]
-classifiers = [
-  "License :: OSI Approved :: MIT License",
-  "Programming Language :: Python :: 3",
-]
-urls = { github = "https://github.com/vanandrew/warp-kit" }
+classifiers = ["License :: OSI Approved :: MIT License", "Programming Language :: Python :: 3"]
+urls = { github = "https://github.com/vanandrew/warpkit" }
 version = "0.0.1"
 dynamic = ["entry-points"]
 dependencies = [
@@ -24,15 +21,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-  "black >= 22.3.0",
-  "coverage[toml] >= 5.5",
-  "pytest >= 6.2.5",
-  "pytest-pycodestyle >= 2.2.0",
-]
+dev = ["black >= 22.3.0", "coverage[toml] >= 5.5", "pytest >= 6.2.5", "pytest-pycodestyle >= 2.2.0"]
 
 [build-system]
-requires = ["setuptools", "wheel", "cmake >= 3.13", "cmake-setuptools-ext"]
+requires = ["setuptools", "wheel", "cmake >= 3.13", "cmake-setuptools-ext >= 0.1.2"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

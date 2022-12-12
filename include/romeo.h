@@ -126,9 +126,9 @@ class JuliaContext {
             reinterpret_cast<jl_value_t*>(jl_phase),   reinterpret_cast<jl_value_t*>(jl_TEs),
             reinterpret_cast<jl_value_t*>(jl_weights), reinterpret_cast<jl_value_t*>(jl_mag),
             reinterpret_cast<jl_value_t*>(jl_mask),    reinterpret_cast<jl_value_t*>(jl_correctglobal)};
-        std::cout << "Unwrapping..." << std::endl;
+        // std::cout << "Unwrapping..." << std::endl;
         jl_value_t* jl_unwrapped = jl_call(jl_unwrap_individual, args, 6);
-        std::cout << "Unwrapping complete." << std::endl;
+        // std::cout << "Unwrapping complete." << std::endl;
         auto unwrapped_ptr = static_cast<T*>(jl_array_data(jl_unwrapped));
 
         // copy julia array to c++ vector
