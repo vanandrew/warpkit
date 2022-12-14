@@ -1,5 +1,6 @@
 import sys
 import signal
+import logging
 from types import SimpleNamespace
 from typing import List, Tuple, Union
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -60,7 +61,7 @@ def compute_fieldmap(
         field map in Hz
     """
     if idx is not None:
-        print(f"Processing frame {idx}")
+        logging.info(f"Processing frame {idx}")
 
     # if automask is True, generate a mask for the frame, instead of using mask_data
     if automask:
@@ -153,7 +154,9 @@ def unwrap_and_compute_field_maps(
     """
     # check TEs if < 0.1, tell user they probably need to convert to ms
     if np.min(TEs) < 0.1:
-        print("WARNING: TEs are unusually small. Your inputs may be incorrect. Did you forget to convert to ms?")
+        logging.warning(
+            "WARNING: TEs are unusually small. Your inputs may be incorrect. Did you forget to convert to ms?"
+        )
 
     # convert TEs to np array
     TEs = np.array(TEs)

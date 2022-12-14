@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import nibabel as nib
 from transforms3d.affines import decompose44
@@ -237,9 +238,9 @@ def invert_displacement_maps(
 
     # invert maps
     new_data = np.zeros(data.shape)
-    print("Inverting displacement maps...")
+    logging.info("Inverting displacement maps...")
     for i in range(data.shape[-1]):
-        print(f"Processing frame: {i}")
+        logging.info(f"Processing frame: {i}")
         new_data[..., i] = invert_displacement_map_cpp(data[..., i], translations, rotations, zooms, verbose=verbose)
 
     # make new image in original orientation
