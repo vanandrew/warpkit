@@ -14,7 +14,7 @@ pip install ./ -v
 There is currently only a python interface:
 ```python
 import nibabel as nib
-from warpkit.distortion import me_sdc
+from warpkit.distortion import medic
 
 # load phase and magnitude images into lists
 # each element in list is a different echo
@@ -24,8 +24,8 @@ TEs = [TE1, TE2, ...] # in milliseconds
 effective_echo_spacing = ... # in seconds
 phase_encoding_direction = either i, j, k, i-, j-, k-, x , y, z, x-, y-, z- 
 
-# call the me_sdc function
-displacement_maps = me_sdc(phases, magnitudes, TEs, effective_echo_spacing, phase_encoding_direction)
+# call the medic function
+displacement_maps = medic(phases, magnitudes, TEs, effective_echo_spacing, phase_encoding_direction)
 
 # displacement_maps to file
 displacement_maps.to_filename("/path/to/save.nii.gz")

@@ -5,7 +5,7 @@ from warpkit.unwrap import unwrap_and_compute_field_maps
 from warpkit.utilities import field_maps_to_displacement_maps, invert_displacement_maps
 
 
-def me_sdc(
+def medic(
     phase: List[nib.Nifti1Image],
     mag: List[nib.Nifti1Image],
     TEs: Union[List[float], Tuple[float]],
@@ -14,8 +14,15 @@ def me_sdc(
     frames: Union[List[int], None] = None,
     n_cpus: int = 4,
 ) -> nib.Nifti1Image:
-    """Unwrap phase of data weighted by magnitude data and compute displacment maps
-    for correction.
+    """This runs Multi-Echo DIstortion Correction (MEDIC) on a set of phase and magnitude images.
+
+    Computes field maps from unwrapped phase images, converts to displacement maps, and inverts to
+    get a set of correction maps for a Multi-Echo EPI sequence. Underneath the hood, this uses
+    the ROMEO algorithm to unwrap the phase images. To learn more, see the following paper:
+
+    Dymerska, B., Eckstein, K., Bachrata, B., Siow, B., Trattnig, S., Shmueli, K., Robinson, S.D., 2020.
+    Phase Unwrapping with a Rapid Opensource Minimum Spanning TreE AlgOrithm (ROMEO).
+    Magnetic Resonance in Medicine. https://doi.org/10.1002/mrm.28563
 
     Parameters
     ----------

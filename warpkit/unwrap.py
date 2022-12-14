@@ -120,7 +120,12 @@ def unwrap_and_compute_field_maps(
     frames: Union[List[int], None] = None,
     n_cpus: int = 4,
 ) -> nib.Nifti1Image:
-    """Unwrap phase of data weighted by magnitude data and compute field maps.
+    """Unwrap phase of data weighted by magnitude data and compute field maps. This makes a call
+    to the ROMEO phase unwrapping algorithm for each frame. To learn more about ROMEO, see this paper:
+
+    Dymerska, B., Eckstein, K., Bachrata, B., Siow, B., Trattnig, S., Shmueli, K., Robinson, S.D., 2020.
+    Phase Unwrapping with a Rapid Opensource Minimum Spanning TreE AlgOrithm (ROMEO).
+    Magnetic Resonance in Medicine. https://doi.org/10.1002/mrm.28563
 
     Parameters
     ----------
