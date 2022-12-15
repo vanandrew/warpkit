@@ -31,9 +31,9 @@ def medic(
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
     TEs : Union[List[float], Tuple[float]]
-        Echo times associated with each phase
+        Echo times associated with each phase (in miiiseconds)
     total_readout_time : float
-        Total readout time
+        Total readout time (in seconds)
     phase_encoding_direction : str
         Phase encoding direction (can be i, j, k, i-, j-, k-) or (x, y, z, x-, y-, z-)
     frames : int, optional

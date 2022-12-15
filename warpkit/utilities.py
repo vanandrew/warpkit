@@ -66,7 +66,6 @@ def field_maps_to_displacement_maps(
     """
     # get number of phase encoding lines
     axis_code = AXIS_MAP[phase_encoding_direction]
-    phase_encoding_lines = field_maps.shape[axis_code]
 
     # get voxel size
     voxel_size = field_maps.header.get_zooms()[axis_code]  # type: ignore
@@ -107,7 +106,6 @@ def displacement_maps_to_field_maps(
     """
     # get number of phase encoding lines
     axis_code = AXIS_MAP[phase_encoding_direction]
-    phase_encoding_lines = displacement_maps.shape[axis_code]
 
     # get voxel size
     voxel_size = displacement_maps.header.get_zooms()[axis_code]  # type: ignore
@@ -127,7 +125,7 @@ def displacement_maps_to_field_maps(
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
 
 
-def displacement_map_to_warp(
+def displacement_map_to_field(
     displacement_map: nib.Nifti1Image, axis: str = "y", format: str = "itk"
 ) -> nib.Nifti1Image:
     """Convert a displacement map to a displacement field
@@ -176,7 +174,7 @@ def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarr
     """Get the transform to RAS orientation and back
 
     RAS orientation ensures no zooms are negative, which is necessary for
-    passing orientation infromation into ITK. Since ITK internally uses
+    passing orientation information into ITK. Since ITK internally uses
     LPS orientation, transforms passed into ITK must be flipped in x/y and
     vice-versa to be usable. To prevent user confusion, this should all
     be handled internally on the C++ end, meaning that the end user should
@@ -241,7 +239,9 @@ def invert_displacement_maps(
     logging.info("Inverting displacement maps...")
     for i in range(data.shape[-1]):
         logging.info(f"Processing frame: {i}")
-        new_data[..., i] = invert_displacement_map_cpp(data[..., i], translations, rotations, zooms, verbose=verbose)
+        new_data[..., i] = invert_displacement_map_cpp(
+            data[..., i], translations, rotations, zooms, axis=axis_code, verbose=verbose
+        )
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(
@@ -399,8 +399,8 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
     # get to RAS orientation
     in_warp_ras = in_warp.as_reoriented(to_canonical)
 
-    # get data in itk form
-    warp_data = in_warp.ras().get_fdata().squeeze()
+    # get data in itk form (without extra dim)
+    warp_data = in_warp_ras.get_fdata().squeeze()
 
     # convert input to itk form
     if in_type in WARP_ITK_FLIPS:

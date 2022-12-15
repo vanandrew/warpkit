@@ -10,7 +10,7 @@ THISDIR = Path(__file__).parent
 cmakelists = (Path(THISDIR) / "CMakeLists.txt").absolute().as_posix()
 
 # get scripts path
-scripts_path = THISDIR / "mosaic" / "scripts"
+scripts_path = THISDIR / "warpkit" / "scripts"
 
 # ensure julia is installed
 try:
