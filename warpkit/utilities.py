@@ -86,7 +86,10 @@ def field_maps_to_displacement_maps(
 
 
 def displacement_maps_to_field_maps(
-    displacement_maps: nib.Nifti1Image, total_readout_time: float, phase_encoding_direction: str
+    displacement_maps: nib.Nifti1Image,
+    total_readout_time: float,
+    phase_encoding_direction: str,
+    flip_sign: bool = False,
 ) -> nib.Nifti1Image:
     """Convert displacement maps (mm) to field maps (Hz)
 
@@ -98,6 +101,8 @@ def displacement_maps_to_field_maps(
         Total readout time (in seconds)
     phase_encoding_direction : str
         Phase encoding direction
+    flip_sign : bool, optional
+        Flips the sign of the field maps, by default False
 
     Returns
     -------
@@ -122,6 +127,8 @@ def displacement_maps_to_field_maps(
     # convert displacement maps to field maps
     data = displacement_maps.get_fdata()
     new_data = data / (total_readout_time * voxel_size)
+    if flip_sign:
+        new_data *= -1
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
 
 
