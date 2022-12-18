@@ -1,15 +1,16 @@
-# warp-kit
+# warpkit
 A python library for neuroimaging transforms
+
+It includes our implementation of the Multi-Echo DIstortion Correction (MEDIC) algorithm.
 
 ## Installation
 To install, clone this repo and run the following in the repo directory:
 ```
 pip install ./ -v
 ```
+> :warning: You need Julia pre-installed on your system. The installer will raise an error if it is not found.
 
-> :warning: You need Julia pre-installed on your system.
-
-## ME-SDC Usage
+## MEDIC Usage
 
 There is currently only a python interface:
 ```python
@@ -25,7 +26,10 @@ effective_echo_spacing = ... # in seconds
 phase_encoding_direction = either i, j, k, i-, j-, k-, x , y, z, x-, y-, z- 
 
 # call the medic function
-displacement_maps = medic(phases, magnitudes, TEs, effective_echo_spacing, phase_encoding_direction)
+field_maps, displacement_maps = medic(phases, magnitudes, TEs, effective_echo_spacing, phase_encoding_direction)
+
+# field_maps are returned in the distorted space (Hz)
+# displacement_maps are returned in the undistorted space (mm)
 
 # displacement_maps to file
 displacement_maps.to_filename("/path/to/save.nii.gz")

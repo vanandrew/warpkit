@@ -133,7 +133,7 @@ dmypy.json
 
 # ignore test
 test/
-test*/
+tests/bidsdata_sustest/
 
 # ignore vscode
 .vscode/
