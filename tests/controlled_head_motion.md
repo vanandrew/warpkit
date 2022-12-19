@@ -48,12 +48,15 @@ These figures were generated to check acquisition and alignment quality:
   <source src="test_outputs/alignment_check_bold.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208332969-2dfdc78d-cf22-4ebf-86e2-2cea852d33e6.mp4
+
 ### SE-EPI field map data:
 
 <video controls loop>
   <source src="test_outputs/alignment_check_topup.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208333190-2194ca71-0bf2-42c9-86d6-39391af2826e.mp4
 
 ### Alignment between SE-EPI field map and ME-EPI BOLD data (1st run: neutral position):
 
