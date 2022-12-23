@@ -2,7 +2,7 @@ from typing import List, Tuple, Union
 import nibabel as nib
 import numpy as np
 from warpkit.unwrap import unwrap_and_compute_field_maps
-from warpkit.utilities import field_maps_to_displacement_maps, invert_displacement_maps
+from warpkit.utilities import field_maps_to_displacement_maps, invert_displacement_maps, displacement_maps_to_field_maps
 
 
 def medic(
@@ -44,9 +44,11 @@ def medic(
     Returns
     -------
     nib.Nifti1Image
-        Field maps in Hz
+        Field maps in Hz (distorted space)
     nib.Nifti1Image
         Correction maps (distorted -> undistorted) in mm
+    nib.Nifti1Image
+        Field maps in Hz (undistorted space)
     """
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
@@ -62,11 +64,16 @@ def medic(
     # unwrap phase and compute field maps
     field_maps = unwrap_and_compute_field_maps(phase, mag, TEs, frames, n_cpus=n_cpus)
 
-    # convert to displacement maps
+    # convert to displacement maps (these are in distorted space)
     displacement_maps = field_maps_to_displacement_maps(field_maps, total_readout_time, phase_encoding_direction)
 
-    # invert displacement maps
+    # invert displacement maps (these are in undistorted space)
     correction_maps = invert_displacement_maps(displacement_maps, phase_encoding_direction)
 
+    # convert correction maps back to undistorted space field map
+    field_maps_undistorted = displacement_maps_to_field_maps(
+        correction_maps, total_readout_time, phase_encoding_direction, flip_sign=True
+    )
+
     # return correction maps
-    return field_maps, correction_maps
+    return field_maps, correction_maps, field_maps_undistorted

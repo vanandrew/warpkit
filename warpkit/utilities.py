@@ -102,7 +102,8 @@ def displacement_maps_to_field_maps(
     phase_encoding_direction : str
         Phase encoding direction
     flip_sign : bool, optional
-        Flips the sign of the field maps, by default False
+        Flips the sign of the field maps. This is needed depending on how the reference frame was defined.
+        By default False
 
     Returns
     -------
