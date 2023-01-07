@@ -18,6 +18,7 @@ dependencies = [
   "pybids >= 0.15.1",
   "memori >= 0.2.1",
   "transforms3d >= 0.4.1",
+  "indexed-gzip >= 1.7.0",
 ]
 
 [project.optional-dependencies]

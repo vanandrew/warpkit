@@ -101,6 +101,11 @@ def compute_fieldmap(
     TEs_data = np.array(TEs)[np.newaxis, np.newaxis, np.newaxis, :]
 
     # compute the B0 field from the phase data
+    # Average each echo across the frames (5 means images)
+    # (subtract each mean image from each frame for echo to estimate noise)
+    # at each voxel (we have measurement of variance across echoes)
+    # weight by 1 / sqrt(var)
+
     B0 = np.zeros(unwrapped.shape[:3])
     numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
     denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
