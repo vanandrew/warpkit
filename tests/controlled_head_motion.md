@@ -150,6 +150,7 @@ cannot be explained by motion (there was insignificant motion between SE-EPI and
 | Translation -z | -3.088 (0.108)      | 0.127 (0.045)       | -1.529 (0.022)     | -1.473 (0.059) | 0.179 (0.067)  | **8.081 (0.066)** |
 
 ![](fd.png)
+![fd](https://user-images.githubusercontent.com/3641187/208522415-5b47dcb5-a8ee-4e54-85d3-ea93060602bb.png)
 
 ## Set 1 Results
 
@@ -161,11 +162,15 @@ cannot be explained by motion (there was insignificant motion between SE-EPI and
   <source src="test_outputs/medic_run-00.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208522624-ac43dffe-c8a1-4c8b-9ebb-e0b2f2d3272d.mp4
+
 #### Rotation +z
 
 <video controls loop>
   <source src="test_outputs/medic_run-01.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208522667-7d0ccc1c-d226-4c91-9775-7ec969502591.mp4
 
 #### Rotation -z
 
@@ -173,11 +178,15 @@ cannot be explained by motion (there was insignificant motion between SE-EPI and
   <source src="test_outputs/medic_run-02.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208522703-7e9cb26f-95c3-4672-8f97-c94de82d6002.mp4
+
 #### Rotation +x
 
 <video controls loop>
   <source src="test_outputs/medic_run-03.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208522753-718ed534-8bf2-41e2-a4d1-4fba3c75061c.mp4
 
 #### Rotation -x
 
@@ -185,11 +194,15 @@ cannot be explained by motion (there was insignificant motion between SE-EPI and
   <source src="test_outputs/medic_run-04.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208522825-4907e863-d964-4c4b-a1a1-76ff21d5cf57.mp4
+
 #### Rotation +y
 
 <video controls loop>
   <source src="test_outputs/medic_run-05.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208522862-b5f82eee-7cd8-468a-8a7b-4be3372ab8aa.mp4
 
 #### Rotation -y
 
@@ -197,49 +210,61 @@ cannot be explained by motion (there was insignificant motion between SE-EPI and
   <source src="test_outputs/medic_run-06.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208522894-406ed073-f1c5-4374-bdbb-85b4f23f8b13.mp4
+
 #### Translation -z
 
 <video controls loop>
   <source src="test_outputs/medic_run-14.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208522937-17ea1758-73b2-4884-ba3d-05f211fdd426.mp4
+
 ### MEDIC avg field map vs. topup field map
 
 #### Neutral Position
 
 ![](medic_topup_compare-00.png)
+![medic_topup_compare-00](https://user-images.githubusercontent.com/3641187/208523046-3e4a15ae-406f-4822-bf9f-57439b4990d4.png)
 
 #### Rotation +z
 
 ![](medic_topup_compare-01.png)
+![medic_topup_compare-01](https://user-images.githubusercontent.com/3641187/208523076-8853c4e5-1ef8-4da8-a737-5bdeee479d3e.png)
 
 #### Rotation -z
 
 ![](medic_topup_compare-02.png)
+![medic_topup_compare-02](https://user-images.githubusercontent.com/3641187/208523091-09d063ba-bb41-490e-97fd-0f197fcac42b.png)
 
 #### Rotation +x
 
 ![](medic_topup_compare-03.png)
+![medic_topup_compare-03](https://user-images.githubusercontent.com/3641187/208523122-8e3bc1a8-e10f-4c46-bdd5-52c1379c8b06.png)
 
 #### Rotation -x
 
 ![](medic_topup_compare-04.png)
+![medic_topup_compare-04](https://user-images.githubusercontent.com/3641187/208523142-ab26f648-1e2b-4be4-9dbf-6d9f2db62cb1.png)
 
 #### Rotation +y
 
 ![](medic_topup_compare-05.png)
+![medic_topup_compare-05](https://user-images.githubusercontent.com/3641187/208523161-e6805151-0203-4bc9-861d-c6bbdbc7f33e.png)
 
 #### Rotation -y
 
 ![](medic_topup_compare-06.png)
+![medic_topup_compare-06](https://user-images.githubusercontent.com/3641187/208523180-9ee61375-0ff1-458f-ba91-25f84ba3a866.png)
 
 #### Translation -z
 
 ![](medic_topup_compare-14.png)
+![medic_topup_compare-14](https://user-images.githubusercontent.com/3641187/208523212-44f683d4-f151-4a23-a399-76a8bc78570e.png)
 
 ### Uncorrected vs. MEDIC (avg) correction vs. TOPUP correction vs. T2w
 
-This is just for run 1, I messed up the code for the other runs..., but will fix when I'm back from the holidays.
+This is just for the Neutral Position, I messed up the code for the other runs..., but will fix when I'm back from the holidays.
 
 ####  Uncorrected
 
@@ -247,11 +272,15 @@ This is just for run 1, I messed up the code for the other runs..., but will fix
   <source src="test_outputs/correction_compare_run-00_uncor.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208523424-efb136c5-106c-4f00-af82-372c9b6a87b8.mp4
+
 #### MEDIC (avg) correction
 
 <video controls loop>
   <source src="test_outputs/correction_compare_run-00_medic.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208523355-053ce862-bc69-4248-8535-286f5719ce6d.mp4
 
 #### TOPUP correction
 
@@ -259,11 +288,15 @@ This is just for run 1, I messed up the code for the other runs..., but will fix
   <source src="test_outputs/correction_compare_run-00_topup.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208523463-cdd271eb-aae4-48e9-8a23-a3d17486519e.mp4
+
 ### Uncorrected vs. MEDIC (avg) correction vs. TOPUP correction
 
 <video controls loop>
   <source src="test_outputs/correction_compare_run-00_three.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208523520-68c1ae27-b0b3-4d58-81fc-12c3d261ecba.mp4
 
 ## Set 2 Results
 
@@ -275,11 +308,15 @@ This is just for run 1, I messed up the code for the other runs..., but will fix
   <source src="test_outputs/medic_run-07.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208523594-57fbb789-37dc-42ce-a200-2790dadcc15f.mp4
+
 #### Neutral to Rotation -z
 
 <video controls loop>
   <source src="test_outputs/medic_run-08.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208523633-cb2ea6a5-be22-4bb0-9cfa-b0ecd12a0df8.mp4
 
 #### Neutral to Rotation +x
 
@@ -287,11 +324,15 @@ This is just for run 1, I messed up the code for the other runs..., but will fix
   <source src="test_outputs/medic_run-09.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208523685-384a698c-f1ae-45ab-887b-84c873af56d4.mp4
+
 #### Neutral to Rotation -x
 
 <video controls loop>
   <source src="test_outputs/medic_run-10.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208523721-deb6d093-c347-443d-a3d2-d65a8ca1751b.mp4
 
 #### Neutral to Rotation +y
 
@@ -299,17 +340,23 @@ This is just for run 1, I messed up the code for the other runs..., but will fix
   <source src="test_outputs/medic_run-11.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208523759-9650f451-5663-4738-8fc8-c7c59479cb86.mp4
+
 #### Neutral to Rotation -y
 
 <video controls loop>
   <source src="test_outputs/medic_run-12.mp4" type="video/mp4">
 </video>
 
+https://user-images.githubusercontent.com/3641187/208523792-556a2ddf-7d49-415a-bbd7-71b7cae22688.mp4
+
 #### Neutral to Translation -z
 
 <video controls loop>
   <source src="test_outputs/medic_run-13.mp4" type="video/mp4">
 </video>
+
+https://user-images.githubusercontent.com/3641187/208523824-d1eedb13-3818-449f-83c8-df61a6b93453.mp4
 
 # Summary
 
@@ -324,4 +371,3 @@ This is just for run 1, I messed up the code for the other runs..., but will fix
 motion effects). Possible Reasons?
   - SE-EPI field maps seem to have slightly different distortions than ME-EPI BOLD data (what could cause this?)
   - Invertibility of TOPUP solution vs. MEDIC solution
-
