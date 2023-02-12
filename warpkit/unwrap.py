@@ -2,15 +2,19 @@ import sys
 import signal
 import logging
 from types import SimpleNamespace
-from typing import List, Tuple, Union
+from typing import cast, List, Tuple, Union
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import nibabel as nib
 import numpy as np
+import numpy.typing as npt
 from skimage.filters import threshold_otsu
+from skimage.measure import label, regionprops
 from scipy.ndimage import (
     generate_binary_structure,
-    binary_opening,
+    binary_erosion,
     binary_dilation,
+    binary_closing,
+    binary_opening,
 )
 from .utilities import rescale_phase
 from . import JuliaContext as _JuliaContext  # type: ignore
@@ -27,26 +31,70 @@ def initialize_julia_context():
     signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT])
 
 
+def create_mask(mag_shortest: npt.NDArray[np.float64]) -> npt.NDArray[np.bool8]:
+    """Create a mask for the phase data.
+
+    Parameters
+    ----------
+    mag_shortest : npt.NDArray[np.float64]
+        Magnitude data with the shortest echo time
+
+    Returns
+    -------
+    npt.NDArray[np.bool8]
+        Mask of voxels to use for unwrapping
+    """
+    # create structuring element
+    strel = generate_binary_structure(3, 2)
+
+    # get the otsu threshold
+    threshold = threshold_otsu(mag_shortest)
+
+    # threshold the data (use 25% of otsu threshold)
+    mask_data = mag_shortest > threshold * 0.25
+
+    # erode mask
+    mask_data = binary_erosion(mask_data, structure=strel, iterations=1, border_value=1)
+
+    # get largest connected component
+    labelled_mask = label(mask_data)
+    props = regionprops(labelled_mask)
+    sorted_props = sorted(props, key=lambda x: x.area, reverse=True)
+    mask_data = labelled_mask == sorted_props[0].label
+
+    # now open and close the mask
+    mask_data = binary_closing(mask_data, structure=strel, iterations=2, border_value=1)
+    mask_data = binary_dilation(mask_data, structure=strel, iterations=2)
+
+    # since we can't have a completely empty mask, set all zeros to ones
+    # if the mask is all empty
+    if np.all(np.isclose(mask_data, 0)):
+        mask_data = np.ones(mask_data.shape)
+
+    # return the mask
+    return mask_data.astype(np.bool8)
+
+
 def compute_fieldmap(
-    phase_data: np.ndarray,
-    mag_data: np.ndarray,
-    TEs: np.ndarray,
-    mask_data: np.ndarray,
+    phase_data: npt.NDArray[np.float64],
+    mag_data: npt.NDArray[np.float64],
+    TEs: npt.NDArray[np.float64],
+    mask_data: npt.NDArray[np.bool8],
     automask: bool = True,
     correct_global: bool = True,
     idx: Union[int, None] = None,
-) -> np.ndarray:
+) -> npt.NDArray[np.float64]:
     """Computes the field map for a single ME frame.
 
     Parameters
     ----------
-    phase_data : np.ndarray
+    phase_data : npt.NDArray[np.float64]
         Single frame of phase data with shape (x, y, z, echo)
-    mag_data : np.ndarray
+    mag_data : npt.NDArray[np.float64]
         Single frame of magnitude data with shape (x, y, z, echo)
-    TEs : np.ndarray
+    TEs : npt.NDArray[np.float64]
         Echo times associated with each phase
-    mask_data : np.ndarray
+    mask_data : npt.NDArray[np.bool8]
         Mask of voxels to use for unwrapping
     automask : bool, optional
         Automatically compute a mask, by default True
@@ -57,7 +105,7 @@ def compute_fieldmap(
 
     Returns
     -------
-    np.ndarray
+    npt.NDArray[np.float64]
         field map in Hz
     """
     if idx is not None:
@@ -65,26 +113,12 @@ def compute_fieldmap(
 
     # if automask is True, generate a mask for the frame, instead of using mask_data
     if automask:
-        # create structuring element
-        strel = generate_binary_structure(3, 2)
-
         # get the index with the shortest echo time
         echo_idx = np.argmin(TEs)
         mag_shortest = mag_data[..., echo_idx]
 
-        # get the otsu threshold
-        threshold = threshold_otsu(mag_shortest)
-
-        # get the mask and open
-        mask_data = binary_opening(mag_shortest > threshold, structure=strel, iterations=5)
-
-        # now dilate the mask
-        mask_data = binary_dilation(mask_data, structure=strel, iterations=10)
-
-        # since we can't have a completely empty mask, set all zeros to ones
-        # if the mask is all empty
-        if np.all(np.isclose(mask_data, 0)):
-            mask_data = np.ones(mask_data.shape).astype(bool)
+        # create the mask
+        mask_data = create_mask(mag_shortest)
 
     # unwrap the phase data
     global JULIA
@@ -101,11 +135,6 @@ def compute_fieldmap(
     TEs_data = np.array(TEs)[np.newaxis, np.newaxis, np.newaxis, :]
 
     # compute the B0 field from the phase data
-    # Average each echo across the frames (5 means images)
-    # (subtract each mean image from each frame for echo to estimate noise)
-    # at each voxel (we have measurement of variance across echoes)
-    # weight by 1 / sqrt(var)
-
     B0 = np.zeros(unwrapped.shape[:3])
     numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
     denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
@@ -119,7 +148,7 @@ def compute_fieldmap(
 def unwrap_and_compute_field_maps(
     phase: List[nib.Nifti1Image],
     mag: List[nib.Nifti1Image],
-    TEs: Union[List[float], Tuple[float]],
+    TEs: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
     correct_global: bool = True,
@@ -139,7 +168,7 @@ def unwrap_and_compute_field_maps(
         Phases to unwrap
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
-    TEs : Tuple[float]
+    TEs : Union[List[float], Tuple[float], npt.NDArray[np.float64]]
         Echo times associated with each phase (in ms)
     mask : nib.Nifti1Image, optional
         Boolean mask, by default None
@@ -164,20 +193,20 @@ def unwrap_and_compute_field_maps(
         )
 
     # convert TEs to np array
-    TEs = np.array(TEs)
+    TEs = cast(npt.NDArray[np.float64], np.array(TEs))
 
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
         for p2, m2 in zip(phase, mag):
             if not (
-                np.allclose(p1.affine, p2.affine)
-                and np.allclose(p1.shape, p2.shape)
-                and np.allclose(m1.affine, m2.affine)
-                and np.allclose(m1.shape, m2.shape)
-                and np.allclose(p1.affine, m1.affine)
-                and np.allclose(p1.shape, m1.shape)
-                and np.allclose(p2.affine, m2.affine)
-                and np.allclose(p2.shape, m2.shape)
+                np.allclose(p1.affine, p2.affine, rtol=1e-3, atol=1e-3)
+                and np.allclose(p1.shape, p2.shape, rtol=1e-3, atol=1e-3)
+                and np.allclose(m1.affine, m2.affine, rtol=1e-3, atol=1e-3)
+                and np.allclose(m1.shape, m2.shape, rtol=1e-3, atol=1e-3)
+                and np.allclose(p1.affine, m1.affine, rtol=1e-3, atol=1e-3)
+                and np.allclose(p1.shape, m1.shape, rtol=1e-3, atol=1e-3)
+                and np.allclose(p2.affine, m2.affine, rtol=1e-3, atol=1e-3)
+                and np.allclose(p2.shape, m2.shape, rtol=1e-3, atol=1e-3)
             ):
                 raise ValueError("Affines/Shapes of images do not all match.")
 
@@ -196,6 +225,8 @@ def unwrap_and_compute_field_maps(
             frames = np.arange(n_frames)
     else:
         raise ValueError("Data must be 3D or 4D.")
+    # frames should be a list at this point
+    frames = cast(List[int], frames)
 
     # check echo times = number of mag and phase images
     if len(TEs) != len(phase) or len(TEs) != len(mag):
@@ -221,10 +252,11 @@ def unwrap_and_compute_field_maps(
         # loop over the total number of frames
         for idx in frames:
             # get the phase and magnitude data from each echo
-            phase_data = rescale_phase(np.stack([p.dataobj[..., idx] for p in phase], axis=-1))
-            mag_data = np.stack([m.dataobj[..., idx] for m in mag], axis=-1)
-            mask_data = mask.dataobj[..., idx]
-            mask_data = mask_data.astype(bool)
+            phase_data: npt.NDArray[np.float64] = rescale_phase(
+                np.stack([p.dataobj[..., idx] for p in phase], axis=-1)
+            ).astype(np.float64)
+            mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
+            mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
 
             # submit field map computation to the process pool
             futures[
@@ -251,4 +283,4 @@ def unwrap_and_compute_field_maps(
             executor.shutdown()
 
     # return the field map as a nifti image
-    return nib.Nifti1Image(field_maps, phase[0].affine, phase[0].header)
+    return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)

@@ -1,8 +1,9 @@
 import logging
 import numpy as np
+import numpy.typing as npt
 import nibabel as nib
 from transforms3d.affines import decompose44
-from typing import cast, Tuple
+from typing import Any, cast, Tuple
 from . import (
     invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
     invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
@@ -23,14 +24,14 @@ WARP_ITK_FLIPS = {
 }
 
 
-def rescale_phase(data: np.ndarray, min: int = -4096, max: int = 4096) -> np.ndarray:
+def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> npt.NDArray[Any]:
     """Rescale phase data to [-pi, pi]
 
     Rescales data to [-pi, pi] using the specified min and max inputs.
 
     Parameters
     ----------
-    data : np.ndarray
+    data : npt.NDArray[Any]
         phase data to be rescaled
     min : int, optional
         min value that should be mapped to -pi, by default -4096
@@ -39,7 +40,7 @@ def rescale_phase(data: np.ndarray, min: int = -4096, max: int = 4096) -> np.nda
 
     Returns
     -------
-    np.ndarray
+    npt.NDArray[Any]
         rescaled phase data
     """
     return (data - min) / (max - min) * 2 * np.pi - np.pi
@@ -436,7 +437,7 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
     out_warp = nib.Nifti1Image(warp_data, in_warp_ras.affine, in_warp_ras.header).as_reoriented(from_canonical)
 
     # add the vector intent code to the header
-    out_warp.header.set_intent("vector", (), "")
+    cast(nib.Nifti1Header, out_warp.header).set_intent("vector", (), "")
 
     # return the warp
     return cast(nib.Nifti1Image, out_warp)
