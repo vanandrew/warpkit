@@ -59,7 +59,7 @@ find_package(ITK REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementFi
 add_compile_options(-Wall)
 
 # compile pybind11 interface
-pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/mosaic.cpp)
+pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)
 target_include_directories(warpkit_cpp
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${ITK_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/include/itk

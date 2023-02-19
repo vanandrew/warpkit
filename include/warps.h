@@ -2,11 +2,13 @@
 #define WARPS_H
 
 #include <itkComposeImageFilter.h>
+#include <itkConstantBoundaryCondition.h>
 #include <itkExtractImageFilter.h>
 #include <itkImportImageFilter.h>
 #include <itkModifiedInvertDisplacementFieldImageFilter.h>
 #include <itkNthElementImageAdaptor.h>
 #include <itkWarpImageFilter.h>
+#include <itkWindowedSincInterpolateImageFunction.h>
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <utilities.h>
@@ -321,15 +323,12 @@ py::array_t<T, py::array::f_style> resample(
     transform_image->SetSpacing(transform_spacing_type);
     transform_image->Allocate();
     itk::ImageRegionIteratorWithIndex<TransformImageType> transform_iterator(transform_image, transform_region);
-    // ITK uses LPS orientation, but our transform is in RAS orientation
-    // So we need to flip the transform in the x and y axis
-    // We multiply the x and y components by -1 to flip them.
     for (transform_iterator.GoToBegin(); !transform_iterator.IsAtEnd(); ++transform_iterator) {
         transform_iterator.Set(
             itk::Vector<T, 3>({transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
-                                                 transform_iterator.GetIndex()[2], 0),
+                                            transform_iterator.GetIndex()[2], 0),
                                transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
-                                                 transform_iterator.GetIndex()[2], 1),
+                                            transform_iterator.GetIndex()[2], 1),
                                transform.at(transform_iterator.GetIndex()[0], transform_iterator.GetIndex()[1],
                                             transform_iterator.GetIndex()[2], 2)}));
     }
@@ -358,13 +357,24 @@ py::array_t<T, py::array::f_style> resample(
     warp_filter->SetOutputSpacing(output_spacing_type);
     warp_filter->SetDisplacementField(transform_image);
 
+    // Create a sinc interpolator
+    using BoundaryConditionType = typename itk::ConstantBoundaryCondition<InputImageType>;
+    using LanczosWindowType = typename itk::Function::LanczosWindowFunction<5, T, T>;
+    using WindowedSincInterpolatorType =
+        typename itk::WindowedSincInterpolateImageFunction<InputImageType, 5, LanczosWindowType, BoundaryConditionType,
+                                                           T>;
+
+    // Assign interpolator to warp_filter
+    typename WindowedSincInterpolatorType::Pointer sinc_interpolator = WindowedSincInterpolatorType::New();
+    warp_filter->SetInterpolator(sinc_interpolator);
+
     // Get the output
     typename OutputImageType::Pointer output_image = warp_filter->GetOutput();
     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     output_image->Update();
     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     itk::ImageRegionConstIteratorWithIndex<OutputImageType> output_iterator(output_image,
-                                                                            output_image->GetLargestPossibleRegion());    
+                                                                            output_image->GetLargestPossibleRegion());
     py::array_t<T, py::array::f_style> output_array({output_shape.at(0), output_shape.at(1), output_shape.at(2)});
     for (output_iterator.GoToBegin(); !output_iterator.IsAtEnd(); ++output_iterator) {
         output_array.mutable_at(output_iterator.GetIndex()[0], output_iterator.GetIndex()[1],
