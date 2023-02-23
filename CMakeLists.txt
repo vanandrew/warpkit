@@ -23,7 +23,12 @@ find_package(Julia REQUIRED)
 # ensure ROMEO dependency installed during compile time
 # there is an additional check in setup.py for pre-built python packages.
 execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"ROMEO\",\
- [dep.name for (uuid, dep) in Pkg.dependencies()]) ? Pkg.add(\"ROMEO\") : nothing")
+ [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
+ Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing")
+execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"MriResearchTools\",\
+ [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
+ Pkg.add(Pkg.PackageSpec(;name=\"MriResearchTools\", version=\"2.1.0\")) : nothing")
+
 
 # include FetchContent module
 include(FetchContent)

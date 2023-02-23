@@ -1,8 +1,10 @@
-from typing import List, Tuple, Union
+from typing import cast, List, Tuple, Union
 import nibabel as nib
 import numpy as np
+import numpy.typing as npt
 from warpkit.unwrap import unwrap_and_compute_field_maps
 from warpkit.utilities import field_maps_to_displacement_maps, invert_displacement_maps, displacement_maps_to_field_maps
+from warpkit.model import fit_motion_model, apply_motion_model
 
 
 def medic(
@@ -12,6 +14,8 @@ def medic(
     total_readout_time: float,
     phase_encoding_direction: str,
     frames: Union[List[int], None] = None,
+    model_stabilization: bool = False,
+    motion_params: Union[npt.NDArray, None] = None,
     n_cpus: int = 4,
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
     """This runs Multi-Echo DIstortion Correction (MEDIC) on a set of phase and magnitude images.
@@ -38,6 +42,10 @@ def medic(
         Phase encoding direction (can be i, j, k, i-, j-, k-) or (x, y, z, x-, y-, z-)
     frames : int, optional
         Only process these frame indices, by default None (which means all frames)
+    model_stabilization : bool
+        Use linear model fitting to stabilize field map estimates (requires motion params be defined) (by default False)
+    motion_params : Union[npt.NDArray, None]
+        Numpy array containing rigid-body motion parameters (by default None)
     n_cpus : int, optional
         Number of CPUs to use, by default 4
 
@@ -46,7 +54,7 @@ def medic(
     nib.Nifti1Image
         Field maps in Hz (distorted space)
     nib.Nifti1Image
-        Correction maps (distorted -> undistorted) in mm
+        Displacement maps (distorted -> undistorted) in mm
     nib.Nifti1Image
         Field maps in Hz (undistorted space)
     """
@@ -62,18 +70,33 @@ def medic(
                 raise ValueError("Affines and shapes must match")
 
     # unwrap phase and compute field maps
-    field_maps = unwrap_and_compute_field_maps(phase, mag, TEs, frames=frames, n_cpus=n_cpus)
+    field_maps_native = unwrap_and_compute_field_maps(phase, mag, TEs, frames=frames, n_cpus=n_cpus)
+
+    # check if model stabilization enabled
+    if model_stabilization:
+        # check if motion params defined
+        if motion_params is None:
+            raise ValueError("Model Stabilization requires motion params to be defined.")
+        # fit the motion model
+        motion_params = cast(npt.NDArray, motion_params)
+        weights = fit_motion_model(field_maps_native, motion_params)
+        # apply the motion model
+        field_maps_native_data = apply_motion_model(weights, motion_params)
+        # make into image
+        field_maps_native = nib.Nifti1Image(field_maps_native_data, field_maps_native.affine, field_maps_native.header)
 
     # convert to displacement maps (these are in distorted space)
-    displacement_maps = field_maps_to_displacement_maps(field_maps, total_readout_time, phase_encoding_direction)
+    inv_displacement_maps = field_maps_to_displacement_maps(
+        field_maps_native, total_readout_time, phase_encoding_direction
+    )
 
     # invert displacement maps (these are in undistorted space)
-    correction_maps = invert_displacement_maps(displacement_maps, phase_encoding_direction)
+    displacement_maps = invert_displacement_maps(inv_displacement_maps, phase_encoding_direction)
 
     # convert correction maps back to undistorted space field map
-    field_maps_undistorted = displacement_maps_to_field_maps(
-        correction_maps, total_readout_time, phase_encoding_direction, flip_sign=True
+    field_maps = displacement_maps_to_field_maps(
+        displacement_maps, total_readout_time, phase_encoding_direction, flip_sign=True
     )
 
     # return correction maps
-    return field_maps, correction_maps, field_maps_undistorted
+    return field_maps_native, displacement_maps, field_maps

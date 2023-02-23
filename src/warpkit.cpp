@@ -10,7 +10,13 @@ PYBIND11_MODULE(warpkit_cpp, m) {
         .def(py::init<>())
         .def("romeo_unwrap_individual", &JuliaContext<double>::romeo_unwrap_individual,
              "Wrapper for ROMEO unwrap_individual function", py::arg("phase"), py::arg("TEs"), py::arg("weights"),
-             py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true, py::return_value_policy::move);
+             py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true, py::arg("maxseeds") = 1,
+             py::arg("merge_regions") = false, py::arg("correct_regions") = false, py::return_value_policy::move)
+        .def("mri_mcpc3ds", &JuliaContext<double>::mri_mcpc3ds, "Wrapper for MriResearchTools mcpc3ds function",
+             py::arg("phase"), py::arg("mag"), py::arg("TEs"), py::arg("sigma"), py::return_value_policy::move)
+        .def("mri_robustmask", &JuliaContext<double>::mri_robustmask,
+             "Wrapper for MriResearchTools robustmask function", py::arg("weight"), py::arg("factor") = 1,
+             py::return_value_policy::move);
 
     m.def("invert_displacement_map", &invert_displacement_map<double>, "Invert a displacement map",
           py::arg("displacement_map"), py::arg("origin"), py::arg("direction"), py::arg("spacing"), py::arg("axis") = 1,

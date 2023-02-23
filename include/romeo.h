@@ -17,7 +17,6 @@ namespace py = pybind11;
  * @brief Class to call julia functions from python
  *
  * @tparam T
- * @tparam jl_t
  */
 template <typename T>
 class JuliaContext {
@@ -39,23 +38,36 @@ class JuliaContext {
             reinterpret_cast<jl_value_t*>(jl_long_type), reinterpret_cast<jl_value_t*>(jl_long_type),
             reinterpret_cast<jl_value_t*>(jl_long_type), reinterpret_cast<jl_value_t*>(jl_long_type)};
         jl_ntuple4 = jl_apply_tuple_type_v(ntuple4, 4);
+        jl_array3d_bool = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_bool_type), 3);
         if (std::is_same<T, double>::value)
             jl_vector = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float64_type), 1);
         else if (std::is_same<T, float>::value)
             jl_vector = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float32_type), 1);
-        jl_array3d = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_bool_type), 3);
+        if (std::is_same<T, double>::value)
+            jl_array3d = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float64_type), 3);
+        else if (std::is_same<T, float>::value)
+            jl_array3d = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float32_type), 3);
         if (std::is_same<T, double>::value)
             jl_array4d = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float64_type), 4);
         else if (std::is_same<T, float>::value)
             jl_array4d = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float32_type), 4);
 
-        // initialize module
+        // initialize modules
         jl_eval_string("using ROMEO;");
+        jl_eval_string("using MriResearchTools;");
 
         // get functions from modules
-        jl_unwrap_individual = static_cast<jl_function_t*>(jl_eval_string(
-            "unwrap_individual_positional_wrapper(phase, TEs, weights, mag, mask, correctglobal) = "
-            "unwrap_individual(phase, TEs=TEs, weights=:romeo3, mag=mag, mask=mask, correctglobal=correctglobal);"));
+        jl_unwrap_individual = static_cast<jl_function_t*>(
+            jl_eval_string("unwrap_individual_positional_wrapper(phase, TEs, weights, mag, mask, correctglobal, "
+                           "maxseeds, merge_regions, correct_regions) = unwrap_individual(phase, TEs=TEs, "
+                           "weights=weights, mag=mag, mask=mask, correctglobal=correctglobal, maxseeds=maxseeds, "
+                           "merge_regions=merge_regions, correct_regions=correct_regions);"));
+        jl_mcpc3ds = static_cast<jl_function_t*>(
+            jl_eval_string("mcpc3ds_wrapper(phase, mag, TEs, sigma) = "
+                           "replace!(mcpc3ds(phase, mag; TEs=TEs, bipolar_correction=false, "
+                           "sigma=sigma).phase, NaN=>0);"));
+        jl_robustmask = static_cast<jl_function_t*>(
+            jl_eval_string("robustmask_wrapper(weight, factor) = Float64.(robustmask(weight; factor=factor));"));
     }
 
     /**
@@ -68,6 +80,102 @@ class JuliaContext {
     }
 
     /**
+     * @brief Wrapper for MriResearchTools robustmask function
+     *
+     * @param weight
+     * @param factor
+     * @return py::array_t<T, py::array::fstyle>
+     */
+    py::array_t<T, py::array::f_style> mri_robustmask(py::array_t<T, py::array::f_style> weight, int factor = 1) {
+        if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+        // setup variables
+        jl_ntuple3_t* weight_dims = reinterpret_cast<jl_ntuple3_t*>(jl_new_struct_uninit(jl_ntuple3));
+        jl_array_t* jl_weight;
+
+        // Push to GC
+        JL_GC_PUSH2(&weight_dims, &jl_weight);
+        weight_dims->a = weight.shape(0);
+        weight_dims->b = weight.shape(1);
+        weight_dims->c = weight.shape(2);
+        auto jl_factor = jl_box_int64(factor);
+
+        // convert to julia
+        jl_weight =
+            jl_ptr_to_array(jl_array3d, const_cast<T*>(weight.data()), reinterpret_cast<jl_value_t*>(weight_dims), 0);
+
+        // call julia function
+        jl_value_t* args[2] = {reinterpret_cast<jl_value_t*>(jl_weight), reinterpret_cast<jl_value_t*>(jl_factor)};
+        jl_value_t* jl_mask = jl_call(jl_robustmask, args, 2);
+
+        // convert to python
+        auto mask_ptr = static_cast<T*>(jl_array_data(jl_mask));
+        std::vector<T> mask_vec(mask_ptr, mask_ptr + weight.size());
+
+        // Pop from GC
+        JL_GC_POP();
+
+        // return python array
+        return as_pyarray(std::move(mask_vec), {weight.shape(0), weight.shape(1), weight.shape(2)});
+    }
+
+    /**
+     * @brief Wrapper for MriResearchTools mcpc3ds function
+     *
+     * @param phase
+     * @param mag
+     * @param TEs
+     * @param sigma
+     * @return py::array_t<T, py::array::f_style>
+     */
+    py::array_t<T, py::array::f_style> mri_mcpc3ds(py::array_t<T, py::array::f_style> phase,
+                                                   py::array_t<T, py::array::f_style> mag,
+                                                   py::array_t<T, py::array::f_style> TEs,
+                                                   py::array_t<T, py::array::f_style> sigma) {
+        if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+        // setup variables
+        jl_ntuple4_t* phase_dims = reinterpret_cast<jl_ntuple4_t*>(jl_new_struct_uninit(jl_ntuple4));
+        jl_ntuple4_t* mag_dims = reinterpret_cast<jl_ntuple4_t*>(jl_new_struct_uninit(jl_ntuple4));
+        jl_array_t* jl_phase;
+        jl_array_t* jl_mag;
+        jl_array_t* jl_TEs;
+        jl_array_t* jl_sigma;
+
+        // Push to GC
+        JL_GC_PUSH6(&phase_dims, &mag_dims, &jl_phase, &jl_mag, &jl_TEs, &jl_sigma);
+        phase_dims->a = phase.shape(0);
+        phase_dims->b = phase.shape(1);
+        phase_dims->c = phase.shape(2);
+        phase_dims->d = phase.shape(3);
+        mag_dims->a = mag.shape(0);
+        mag_dims->b = mag.shape(1);
+        mag_dims->c = mag.shape(2);
+        mag_dims->d = mag.shape(3);
+        jl_phase =
+            jl_ptr_to_array(jl_array4d, const_cast<T*>(phase.data()), reinterpret_cast<jl_value_t*>(phase_dims), 0);
+        jl_mag = jl_ptr_to_array(jl_array4d, const_cast<T*>(mag.data()), reinterpret_cast<jl_value_t*>(mag_dims), 0);
+        jl_TEs = jl_ptr_to_array_1d(jl_vector, const_cast<T*>(TEs.data()), TEs.size(), 0);
+        jl_sigma = jl_ptr_to_array_1d(jl_vector, const_cast<T*>(sigma.data()), sigma.size(), 0);
+
+        // Call mcpc3ds
+        jl_value_t* args[4] = {reinterpret_cast<jl_value_t*>(jl_phase), reinterpret_cast<jl_value_t*>(jl_mag),
+                               reinterpret_cast<jl_value_t*>(jl_TEs), reinterpret_cast<jl_value_t*>(jl_sigma)};
+        jl_value_t* jl_corrected_phase = jl_call(jl_mcpc3ds, args, 4);
+        auto corrected_phase_ptr = static_cast<T*>(jl_array_data(jl_corrected_phase));
+
+        // copy julia array to c++ vector
+        std::vector<T> corrected_phase_vec(corrected_phase_ptr, corrected_phase_ptr + phase.size());
+
+        // Pop from GC
+        JL_GC_POP();
+        if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+        // return
+        return as_pyarray(std::move(corrected_phase_vec),
+                          {phase.shape(0), phase.shape(1), phase.shape(2), phase.shape(3)});
+    }
+
+    /**
      * @brief Wrapper for ROMEO unwrap_individual function
      *
      * @param phase
@@ -76,14 +184,15 @@ class JuliaContext {
      * @param mag
      * @param mask
      * @param correctglobal
+     * @param maxseeds
+     * @param merge_regions
+     * @param correct_regions
      * @return py::array_t<T, py::array::f_style>
      */
-    py::array_t<T, py::array::f_style> romeo_unwrap_individual(py::array_t<T, py::array::f_style> phase,
-                                                               py::array_t<T, py::array::f_style> TEs,
-                                                               std::string weights,
-                                                               py::array_t<T, py::array::f_style> mag,
-                                                               py::array_t<bool, py::array::f_style> mask,
-                                                               bool correctglobal = false) {
+    py::array_t<T, py::array::f_style> romeo_unwrap_individual(
+        py::array_t<T, py::array::f_style> phase, py::array_t<T, py::array::f_style> TEs, std::string weights,
+        py::array_t<T, py::array::f_style> mag, py::array_t<bool, py::array::f_style> mask, bool correctglobal = false,
+        int maxseeds = 1, bool merge_regions = false, bool correct_regions = false) {
         if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
         // Get dimensions as julia tuples
@@ -112,22 +221,29 @@ class JuliaContext {
             jl_ptr_to_array(jl_array4d, const_cast<T*>(phase.data()), reinterpret_cast<jl_value_t*>(phase_dims), 0);
         jl_TEs = jl_ptr_to_array_1d(jl_vector, const_cast<T*>(TEs.data()), TEs.size(), 0);
         jl_mag = jl_ptr_to_array(jl_array4d, const_cast<T*>(mag.data()), reinterpret_cast<jl_value_t*>(mag_dims), 0);
-        jl_mask =
-            jl_ptr_to_array(jl_array3d, const_cast<bool*>(mask.data()), reinterpret_cast<jl_value_t*>(mask_dims), 0);
+        jl_mask = jl_ptr_to_array(jl_array3d_bool, const_cast<bool*>(mask.data()),
+                                  reinterpret_cast<jl_value_t*>(mask_dims), 0);
 
         // get weights symbol
         auto jl_weights = string_to_symbol(weights);
 
-        // get boolean value
+        // get maxseeds
+        auto jl_maxseeds = jl_box_int64(maxseeds);
+
+        // get boolean values
         auto jl_correctglobal = correctglobal ? jl_true : jl_false;
+        auto jl_merge_regions = merge_regions ? jl_true : jl_false;
+        auto jl_correct_regions = correct_regions ? jl_true : jl_false;
 
         // run unwrap_individual
-        jl_value_t* args[6] = {
-            reinterpret_cast<jl_value_t*>(jl_phase),   reinterpret_cast<jl_value_t*>(jl_TEs),
-            reinterpret_cast<jl_value_t*>(jl_weights), reinterpret_cast<jl_value_t*>(jl_mag),
-            reinterpret_cast<jl_value_t*>(jl_mask),    reinterpret_cast<jl_value_t*>(jl_correctglobal)};
+        jl_value_t* args[9] = {
+            reinterpret_cast<jl_value_t*>(jl_phase),          reinterpret_cast<jl_value_t*>(jl_TEs),
+            reinterpret_cast<jl_value_t*>(jl_weights),        reinterpret_cast<jl_value_t*>(jl_mag),
+            reinterpret_cast<jl_value_t*>(jl_mask),           reinterpret_cast<jl_value_t*>(jl_correctglobal),
+            reinterpret_cast<jl_value_t*>(jl_maxseeds),       reinterpret_cast<jl_value_t*>(jl_merge_regions),
+            reinterpret_cast<jl_value_t*>(jl_correct_regions)};
         // std::cout << "Unwrapping..." << std::endl;
-        jl_value_t* jl_unwrapped = jl_call(jl_unwrap_individual, args, 6);
+        jl_value_t* jl_unwrapped = jl_call(jl_unwrap_individual, args, 9);
         // std::cout << "Unwrapping complete." << std::endl;
         auto unwrapped_ptr = static_cast<T*>(jl_array_data(jl_unwrapped));
 
@@ -144,9 +260,12 @@ class JuliaContext {
 
    private:
     jl_function_t* jl_unwrap_individual;
+    jl_function_t* jl_mcpc3ds;
+    jl_function_t* jl_robustmask;
     jl_tupletype_t* jl_ntuple3;
     jl_tupletype_t* jl_ntuple4;
     jl_value_t* jl_vector;
+    jl_value_t* jl_array3d_bool;
     jl_value_t* jl_array3d;
     jl_value_t* jl_array4d;
 

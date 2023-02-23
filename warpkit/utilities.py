@@ -24,6 +24,22 @@ WARP_ITK_FLIPS = {
 }
 
 
+def normalize(data: npt.NDArray) -> npt.NDArray:
+    """Normalize data to [0, 1]
+
+    Parameters
+    ----------
+    data : npt.NDArray
+        data to be normalized
+
+    Returns
+    -------
+    npt.NDArray
+        normalized data
+    """
+    return (data - np.min(data)) / (np.max(data) - np.min(data))
+
+
 def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> npt.NDArray[Any]:
     """Rescale phase data to [-pi, pi]
 

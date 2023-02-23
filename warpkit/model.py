@@ -1,12 +1,14 @@
 import numpy as np
+import numpy.typing as npt
 import nibabel as nib
 import logging
 from typing import cast, List, Union
 
 
 def fit_motion_model(
-    fieldmap_data: Union[List[np.ndarray], List[nib.Nifti1Image]], motion_params: List[np.ndarray]
-) -> np.ndarray:
+    fieldmap_data: Union[List[npt.NDArray], List[nib.Nifti1Image], npt.NDArray, nib.Nifti1Image],
+    motion_params: Union[List[npt.NDArray], npt.NDArray],
+) -> npt.NDArray:
     """Fits motion model to field map data.
 
     This fits a first order linear motion model to the MEDIC field map data. It is designed
@@ -15,7 +17,7 @@ def fit_motion_model(
 
     Parameters
     ----------
-    fieldmap_data : Union[List[npt.ArrayLike], List[nib.Nifti1Image]]
+    fieldmap_data : Union[List[npt.ArrayLike], List[nib.Nifti1Image], npt.NDArray, nib.Nifti1Image]
         List of field map data for each run in the session. Each item in the list
         should represent a single run of MEDIC field maps in a numpy array or nib.Nifti1Image.
     motion_params : List[npt.ArrayLike]
@@ -29,6 +31,12 @@ def fit_motion_model(
         Array of weights for each voxel in the field map data. The last dimension is the index
         of the weight (intercepts of each run, dx, dy, dz, rx, ry, rz).
     """
+    if not isinstance(fieldmap_data, list):
+        fieldmap_data = cast(Union[List[npt.NDArray], List[nib.Nifti1Image]], [fieldmap_data])
+
+    if not isinstance(motion_params, list):
+        motion_params = cast(List[npt.NDArray], [motion_params])
+
     # check type and convert appropriately
     if isinstance(fieldmap_data[0], nib.Nifti1Image):
         fieldmap_data = [cast(nib.Nifti1Image, f).get_fdata() for f in fieldmap_data]
@@ -73,9 +81,7 @@ def fit_motion_model(
     return W
 
 
-def apply_motion_model(
-    weights: np.ndarray, motion_params: np.ndarray, run_idx: int
-) -> np.ndarray:
+def apply_motion_model(weights: npt.NDArray, motion_params: npt.NDArray, run_idx: int = 0) -> npt.NDArray:
     """Generates fieldmaps from fitted motion model.
 
     This function applies a fitted motion model to a given set of motion parameters. It is
@@ -83,18 +89,18 @@ def apply_motion_model(
 
     Parameters
     ----------
-    weights : np.ndarray
+    weights : npt.NDArray
         Array of weights for each voxel in the field map data. The last dimension is the index
         of the weight (intercepts of each run, dx, dy, dz, rx, ry, rz).
-    motion_params : np.ndarray
+    motion_params : npt.NDArray
         Array of motion parameters for each frame. Each row is a timepoint
         and each column is a parameter (dx, dy, dz, rx, ry, rz).
     run_idx : int
-        Index of the run to output
+        Index of the run to output (By default first run)
 
     Returns
     -------
-    np.ndarray
+    npt.NDArray
         Array of modeled field maps.
     """
     # check if run_idx is valid
@@ -102,7 +108,7 @@ def apply_motion_model(
         raise ValueError(f"run_idx ({run_idx}) is out of range.")
 
     # get the weights for the specified run
-    weights_run = weights[..., run_idx]
+    weights_run = weights[..., run_idx][..., np.newaxis]
 
     # get the last six columns of the weights
     weights_motion = weights[..., -6:]

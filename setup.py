@@ -27,7 +27,19 @@ try:
             (
                 'using Pkg; !in("ROMEO",'
                 "[dep.name for (uuid, dep) in Pkg.dependencies()])"
-                ' ? Pkg.add("ROMEO") : nothing'
+                ' ? Pkg.add(Pkg.PackageSpec(;name="ROMEO", version="1.0.0")) : nothing'
+            ),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "julia",
+            "-e",
+            (
+                'using Pkg; !in("MriResearchTools",'
+                "[dep.name for (uuid, dep) in Pkg.dependencies()])"
+                ' ? Pkg.add(Pkg.PackageSpec(;name="MriResearchTools", version="2.1.0")) : nothing'
             ),
         ],
         check=True,
