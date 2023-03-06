@@ -4,7 +4,6 @@ import numpy as np
 import numpy.typing as npt
 from warpkit.unwrap import unwrap_and_compute_field_maps
 from warpkit.utilities import field_maps_to_displacement_maps, invert_displacement_maps, displacement_maps_to_field_maps
-from warpkit.model import fit_motion_model, apply_motion_model
 
 
 def medic(
@@ -14,7 +13,6 @@ def medic(
     total_readout_time: float,
     phase_encoding_direction: str,
     frames: Union[List[int], None] = None,
-    model_stabilization: bool = False,
     motion_params: Union[npt.NDArray, None] = None,
     n_cpus: int = 4,
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
@@ -42,8 +40,6 @@ def medic(
         Phase encoding direction (can be i, j, k, i-, j-, k-) or (x, y, z, x-, y-, z-)
     frames : int, optional
         Only process these frame indices, by default None (which means all frames)
-    model_stabilization : bool
-        Use linear model fitting to stabilize field map estimates (requires motion params be defined) (by default False)
     motion_params : Union[npt.NDArray, None]
         Numpy array containing rigid-body motion parameters (by default None)
     n_cpus : int, optional
@@ -71,19 +67,6 @@ def medic(
 
     # unwrap phase and compute field maps
     field_maps_native = unwrap_and_compute_field_maps(phase, mag, TEs, frames=frames, n_cpus=n_cpus)
-
-    # check if model stabilization enabled
-    if model_stabilization:
-        # check if motion params defined
-        if motion_params is None:
-            raise ValueError("Model Stabilization requires motion params to be defined.")
-        # fit the motion model
-        motion_params = cast(npt.NDArray, motion_params)
-        weights = fit_motion_model(field_maps_native, motion_params)
-        # apply the motion model
-        field_maps_native_data = apply_motion_model(weights, motion_params)
-        # make into image
-        field_maps_native = nib.Nifti1Image(field_maps_native_data, field_maps_native.affine, field_maps_native.header)
 
     # convert to displacement maps (these are in distorted space)
     inv_displacement_maps = field_maps_to_displacement_maps(
