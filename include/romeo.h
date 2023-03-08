@@ -57,6 +57,11 @@ class JuliaContext {
         jl_eval_string("using MriResearchTools;");
 
         // get functions from modules
+        jl_unwrap = static_cast<jl_function_t*>(
+            jl_eval_string("unwrap_positional_wrapper(phase, weights, mag, mask, correctglobal, "
+                           "maxseeds, merge_regions, correct_regions) = unwrap(phase, "
+                           "weights=weights, mag=mag, mask=mask, correctglobal=correctglobal, maxseeds=maxseeds, "
+                           "merge_regions=merge_regions, correct_regions=correct_regions);"));
         jl_unwrap_individual = static_cast<jl_function_t*>(
             jl_eval_string("unwrap_individual_positional_wrapper(phase, TEs, weights, mag, mask, correctglobal, "
                            "maxseeds, merge_regions, correct_regions) = unwrap_individual(phase, TEs=TEs, "
@@ -176,6 +181,83 @@ class JuliaContext {
     }
 
     /**
+     * @brief Wrapper for ROMEO unwrap function (3D)
+     *
+     * @param phase
+     * @param weights
+     * @param mag
+     * @param mask
+     * @param correctglobal
+     * @param maxseeds
+     * @param merge_regions
+     * @param correct_regions
+     * @return py::array_t<T, py::array::f_style>
+     */
+    py::array_t<T, py::array::f_style> romeo_unwrap(
+        py::array_t<T, py::array::f_style> phase, std::string weights, py::array_t<T, py::array::f_style> mag,
+        py::array_t<bool, py::array::f_style> mask, bool correctglobal = false, int maxseeds = 1,
+        bool merge_regions = false, bool correct_regions = false) {
+        if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+        // Get dimensions as julia tuples
+        jl_ntuple3_t* phase_dims = reinterpret_cast<jl_ntuple3_t*>(jl_new_struct_uninit(jl_ntuple3));
+        jl_ntuple3_t* mag_dims = reinterpret_cast<jl_ntuple3_t*>(jl_new_struct_uninit(jl_ntuple3));
+        jl_ntuple3_t* mask_dims = reinterpret_cast<jl_ntuple3_t*>(jl_new_struct_uninit(jl_ntuple3));
+        jl_array_t* jl_phase;
+        jl_array_t* jl_mag;
+        jl_array_t* jl_mask;
+        JL_GC_PUSH6(&phase_dims, &mag_dims, &mask_dims, &jl_phase, &jl_mag, &jl_mask);
+        phase_dims->a = phase.shape(0);
+        phase_dims->b = phase.shape(1);
+        phase_dims->c = phase.shape(2);
+        mag_dims->a = mag.shape(0);
+        mag_dims->b = mag.shape(1);
+        mag_dims->c = mag.shape(2);
+        mask_dims->a = mask.shape(0);
+        mask_dims->b = mask.shape(1);
+        mask_dims->c = mask.shape(2);
+
+        // Get data as julia arrays
+        jl_phase =
+            jl_ptr_to_array(jl_array3d, const_cast<T*>(phase.data()), reinterpret_cast<jl_value_t*>(phase_dims), 0);
+        jl_mag = jl_ptr_to_array(jl_array3d, const_cast<T*>(mag.data()), reinterpret_cast<jl_value_t*>(mag_dims), 0);
+        jl_mask = jl_ptr_to_array(jl_array3d_bool, const_cast<bool*>(mask.data()),
+                                  reinterpret_cast<jl_value_t*>(mask_dims), 0);
+
+        // get weights symbol
+        auto jl_weights = string_to_symbol(weights);
+
+        // get maxseeds
+        auto jl_maxseeds = jl_box_int64(maxseeds);
+
+        // get boolean values
+        auto jl_correctglobal = correctglobal ? jl_true : jl_false;
+        auto jl_merge_regions = merge_regions ? jl_true : jl_false;
+        auto jl_correct_regions = correct_regions ? jl_true : jl_false;
+
+        // run unwrap_individual
+        jl_value_t* args[8] = {
+            reinterpret_cast<jl_value_t*>(jl_phase),         reinterpret_cast<jl_value_t*>(jl_weights),
+            reinterpret_cast<jl_value_t*>(jl_mag),           reinterpret_cast<jl_value_t*>(jl_mask),
+            reinterpret_cast<jl_value_t*>(jl_correctglobal), reinterpret_cast<jl_value_t*>(jl_maxseeds),
+            reinterpret_cast<jl_value_t*>(jl_merge_regions), reinterpret_cast<jl_value_t*>(jl_correct_regions)};
+        // std::cout << "Unwrapping..." << std::endl;
+        jl_value_t* jl_unwrapped = jl_call(jl_unwrap, args, 8);
+        // std::cout << "Unwrapping complete." << std::endl;
+        auto unwrapped_ptr = static_cast<T*>(jl_array_data(jl_unwrapped));
+
+        // copy julia array to c++ vector
+        std::vector<T> unwrapped_vec(unwrapped_ptr, unwrapped_ptr + phase.size());
+
+        // pop arrays from root set
+        JL_GC_POP();
+
+        if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+        // return unwrapped phase
+        return as_pyarray(std::move(unwrapped_vec), {phase.shape(0), phase.shape(1), phase.shape(2)});
+    }
+
+    /**
      * @brief Wrapper for ROMEO unwrap_individual function
      *
      * @param phase
@@ -259,6 +341,7 @@ class JuliaContext {
     }
 
    private:
+    jl_function_t* jl_unwrap;
     jl_function_t* jl_unwrap_individual;
     jl_function_t* jl_mcpc3ds;
     jl_function_t* jl_robustmask;

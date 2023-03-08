@@ -19,6 +19,7 @@ from scipy.ndimage import (
     convolve,
 )
 from scipy.stats import mode
+from warpkit.model import weighted_regression
 from .utilities import rescale_phase, normalize
 from . import JuliaContext as _JuliaContext  # type: ignore
 
@@ -171,7 +172,7 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float64]) -> npt.NDArray[np.b
 
 def smooth_discontinuities(
     unwrapped: npt.NDArray[np.float64],
-    mask: npt.NDArray[np.bool8],
+    mag_data: npt.NDArray[np.float64],
     threshold: float = 5,
     echos: Union[List[int], None] = None,
     filter_size: int = 9,
@@ -184,12 +185,11 @@ def smooth_discontinuities(
 
     # create structuring element for dilation
     strel = ball(filter_size // 2)
-
-    # create the average filter (iterate the strel)
-    avg_filter = strel
+    strel[:, :, (-filter_size // 2) + 1 :] = 0
+    strel[:, :, : (filter_size // 2)] = 0
 
     # generate finite difference filters
-    filters = np.zeros((3, 3, 3, 6))
+    filters = np.zeros((3, 3, 3, 4))
     filters[1, 1, 1] = 1
     n = 0
     for i in [-1, 1]:
@@ -198,44 +198,50 @@ def smooth_discontinuities(
     for j in [-1, 1]:
         filters[1, 1 + j, 1, n] = -1
         n += 1
-    for k in [-1, 1]:
-        filters[1, 1, 1 + k, n] = -1
-        n += 1
+    # for k in [-1, 1]:
+    #     filters[1, 1, 1 + k, n] = -1
+    #     n += 1
 
-    # get valid gradient mask by using the finite difference filters
-    valid_grad = np.zeros((*unwrapped.shape[:3], filters.shape[-1]))
-    for f in range(filters.shape[-1]):
-        # find valid gradients using this finite difference filter
-        # the convolution will return 0 for voxels that are valid
-        # so we need to take the complement
-        valid_grad[..., f] = ~convolve(mask, filters[..., f], mode="nearest") & mask
-
-    # convolve filters on phase data for each echo
+    # allocate data for bad voxels and norm constant
     bad_voxel_mask = np.zeros((*unwrapped.shape[:3], len(echos)), dtype=bool)
+    norm_constant = np.zeros((*unwrapped.shape[:3], len(echos)))
+
+    # for each echo
     for e in echos:
+        # create brain mask
+        mask = create_brain_mask(mag_data[..., e])
+
+        # get valid gradient mask by using the finite difference filters
+        valid_grad = np.zeros((*unwrapped.shape[:3], filters.shape[-1]))
+        for f in range(filters.shape[-1]):
+            # find valid gradients using this finite difference filter
+            # the convolution will return 0 for voxels that are valid
+            # so we need to take the complement
+            valid_grad[..., f] = ~convolve(mask, filters[..., f], mode="nearest") & mask
+
+        # convolve filters on phase data for each echo
         for f in range(filters.shape[-1]):
             # get the directional gradient for this filter
             fd_grad = convolve(unwrapped[..., e], filters[..., f], mode="nearest") * valid_grad[..., f]
             # if the gradient is greater than the threshold, mark the voxel as bad
             bad_voxel_mask[..., e] |= np.abs(fd_grad) > threshold
-        # for each echo, dilate the bad voxel mask
-        bad_voxel_mask[..., e] = binary_dilation(
-            bad_voxel_mask[..., e], structure=strel, mask=mask
-        )
 
-    # get the convolution over the mask, this will be used to normalize the convolution
-    norm_constant = convolve(mask.astype("f8"), avg_filter, mode="nearest")
+        # dilate the bad voxel mask
+        bad_voxel_mask[..., e] = binary_dilation(bad_voxel_mask[..., e], structure=strel, mask=mask)
+
+        # get the convolution over the mask, this will be used to normalize the convolution
+        norm_constant[..., e] = convolve(mask.astype("f8"), strel.astype("f8"), mode="nearest")
 
     # compute convolution of phase data with average filter with mask
     unwrapped_smooth = np.zeros((*unwrapped.shape[:3], len(echos)))
     for e in echos:
-        unwrapped_smooth[..., e] = convolve(unwrapped[..., e] * mask, avg_filter, mode="nearest")
-    np.divide(
-        unwrapped_smooth,
-        norm_constant[..., np.newaxis],
-        out=unwrapped_smooth,
-        where=norm_constant[..., np.newaxis] != 0,
-    )
+        unwrapped_smooth[..., e] = convolve(unwrapped[..., e] * mask, strel.astype("f8"), mode="nearest")
+        np.divide(
+            unwrapped_smooth[..., e],
+            norm_constant[..., e],
+            out=unwrapped_smooth[..., e],
+            where=norm_constant[..., e] != 0,
+        )
     # where the bad voxel mask is true, replace the voxel with the smoothed phase
     for e in echos:
         unwrapped[..., : len(echos)][bad_voxel_mask] = unwrapped_smooth[bad_voxel_mask]
@@ -293,8 +299,23 @@ def compute_fieldmap(
         mag_shortest = mag_data[..., echo_idx]
 
         # create the mask
-        mask_data = JULIA.mri_robustmask(mag_shortest)
-        mask_data = mask_data.astype(np.bool8)
+        mask_data = JULIA.mri_robustmask(mag_shortest).astype(np.bool8)
+
+    # Do MCPC-3D-S algo to compute phase offset
+    signal_diff = mag_data[..., 0] * mag_data[..., 1] * np.exp(1j * (phase_data[..., 1] - phase_data[..., 0]))
+    mag_diff = np.abs(signal_diff)
+    phase_diff = np.angle(signal_diff)
+    # mask_diff = JULIA.mri_robustmask(mag_diff).astype(np.bool8)
+    unwrapped_diff = JULIA.romeo_unwrap(
+        phase=phase_diff,
+        weights="romeo3",
+        mag=mag_diff,
+        mask=mask_data,
+    )
+    # compute the phase offset
+    phase_offset = np.angle(np.exp(1j * (phase_data[..., 0] - ((TEs[0] * unwrapped_diff) / (TEs[1] - TEs[0])))))
+    # remove phase offset from data
+    phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
     unwrapped = JULIA.romeo_unwrap_individual(
@@ -316,7 +337,7 @@ def compute_fieldmap(
     unwrapped = fix_slice_wrapping_errors(unwrapped, brain_mask)
 
     # smooth voxels with large discontinuities
-    # unwrapped = smooth_discontinuities(unwrapped, brain_mask)
+    # unwrapped = smooth_discontinuities(unwrapped, mag_data)
 
     # global mode correction
     # this will add an offset equal to the most common mode multiple
@@ -335,10 +356,8 @@ def compute_fieldmap(
             # get design matrix
             design_mat = TEs[:, np.newaxis]
 
-            # Doesn't work atm
             # get magnitude weight matrix
-            # mag_mat = mag_data[brain_mask, :].T
-            mag_mat = np.ones_like(mag_data[brain_mask, :].T)
+            mag_mat = mag_data[brain_mask, :].T
 
             # loop over each index past 2nd echo
             for i in range(2, TEs.shape[0]):
@@ -355,26 +374,32 @@ def compute_fieldmap(
                     # where x^-1 is not the inverse of the matrix, but of each column. The sum is over the echoes dim.
 
                     # get the ordinate matrix for these echoes
-                    ordinate_mat = unwrapped_mat.copy()[: i + 1, :] * mag_mat[: i + 1]
+                    ordinate_mat = unwrapped_mat.copy()[: i + 1, :]
 
-                    # now add offset
+                    # add offset
                     ordinate_mat[i, :] += 2 * np.pi * multiple
 
-                    # compute weighted design matrix
-                    weighted_design_mat = design_mat[: i + 1] * mag_mat[: i + 1]
+                    # # compute weighted ordinate matrix
+                    # weighted_ordinate_mat = ordinate_mat[: i + 1] * mag_mat[: i + 1]
 
-                    # compute weighted squared magnitude of design mat
-                    sq_mag = np.sum((weighted_design_mat[: i + 1] ** 2), axis=0, keepdims=True)
+                    # # compute weighted design matrix
+                    # weighted_design_mat = design_mat[: i + 1] * mag_mat[: i + 1]
 
-                    # get the inverse design matrix for these echoes
-                    inv_design_mat = np.zeros_like(ordinate_mat)
-                    np.divide(weighted_design_mat[: i + 1], sq_mag, out=inv_design_mat, where=(sq_mag != 0))
+                    # # compute weighted squared magnitude of design mat
+                    # sq_mag = np.sum((weighted_design_mat[: i + 1] ** 2), axis=0, keepdims=True)
 
-                    # now compute the weights
-                    weights = (inv_design_mat * ordinate_mat).sum(axis=0)
+                    # # get the inverse design matrix for these echoes
+                    # inv_design_mat = np.zeros_like(ordinate_mat)
+                    # np.divide(weighted_design_mat[: i + 1], sq_mag, out=inv_design_mat, where=(sq_mag != 0))
 
-                    # compute residuals
-                    residuals = np.sum((ordinate_mat - weights * design_mat[: i + 1]) ** 2, axis=0)
+                    # # now compute the weights
+                    # weights = (inv_design_mat * weighted_ordinate_mat).sum(axis=0)
+
+                    # # compute residuals (on unweighted data)
+                    # residuals = np.sum((ordinate_mat - weights * design_mat[: i + 1]) ** 2, axis=0)
+
+                    # fit model and compute residuals
+                    _, residuals = weighted_regression(design_mat[: i + 1], ordinate_mat, mag_mat[: i + 1])
 
                     # get summary stat of residuals
                     summary_residual = residuals.mean()
@@ -591,33 +616,33 @@ def unwrap_and_compute_field_maps(
             mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
             mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
 
-            # # FOR DEBUGGING
-            # initialize_julia_context()
-            # field_maps[..., idx] = compute_fieldmap(
-            #     phase_data, mag_data, TEs, mask_data, sigma, automask, correct_global, idx
-            # )
+            # FOR DEBUGGING
+            initialize_julia_context()
+            field_maps[..., idx] = compute_fieldmap(
+                phase_data, mag_data, TEs, mask_data, sigma, automask, correct_global, idx
+            )
 
-            # submit field map computation to the process pool
-            futures[
-                executor.submit(
-                    compute_fieldmap,
-                    phase_data,
-                    mag_data,
-                    TEs,
-                    mask_data,
-                    sigma,
-                    automask,
-                    correct_global,
-                    idx,
-                )
-            ] = idx
+        #     # submit field map computation to the process pool
+        #     futures[
+        #         executor.submit(
+        #             compute_fieldmap,
+        #             phase_data,
+        #             mag_data,
+        #             TEs,
+        #             mask_data,
+        #             sigma,
+        #             automask,
+        #             correct_global,
+        #             idx,
+        #         )
+        #     ] = idx
 
-        # loop over the futures
-        for future in as_completed(futures):
-            # get the frame index
-            idx = futures[future]
-            # get the field map
-            field_maps[..., idx] = future.result()
+        # # loop over the futures
+        # for future in as_completed(futures):
+        #     # get the frame index
+        #     idx = futures[future]
+        #     # get the field map
+        #     field_maps[..., idx] = future.result()
     except KeyboardInterrupt:
         # on keyboard interrupt, just kill all processes in the executor pool
         for proc in executor._processes.values():
