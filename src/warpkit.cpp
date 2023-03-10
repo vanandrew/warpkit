@@ -8,11 +8,11 @@ namespace py = pybind11;
 PYBIND11_MODULE(warpkit_cpp, m) {
     py::class_<JuliaContext<double>>(m, "JuliaContext")
         .def(py::init<>())
-        .def("romeo_unwrap", &JuliaContext<double>::romeo_unwrap,
+        .def("romeo_unwrap3D", &JuliaContext<double>::romeo_unwrap3D,
              "Wrapper for ROMEO unwrap_individual function", py::arg("phase"), py::arg("weights"), py::arg("mag"),
              py::arg("mask"), py::arg("correct_global") = true, py::arg("maxseeds") = 1,
              py::arg("merge_regions") = false, py::arg("correct_regions") = false, py::return_value_policy::move)
-        .def("romeo_unwrap_individual", &JuliaContext<double>::romeo_unwrap_individual,
+        .def("romeo_unwrap4D", &JuliaContext<double>::romeo_unwrap4D,
              "Wrapper for ROMEO unwrap_individual function", py::arg("phase"), py::arg("TEs"), py::arg("weights"),
              py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true, py::arg("maxseeds") = 1,
              py::arg("merge_regions") = false, py::arg("correct_regions") = false, py::return_value_policy::move)

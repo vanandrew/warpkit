@@ -299,16 +299,16 @@ def compute_fieldmap(
         mag_shortest = mag_data[..., echo_idx]
 
         # create the mask
-        mask_data = JULIA.mri_robustmask(mag_shortest).astype(np.bool8)
+        # mask_data = JULIA.mri_robustmask(mag_shortest).astype(np.bool8)
+        mask_data = create_brain_mask(mag_shortest)
 
     # Do MCPC-3D-S algo to compute phase offset
     signal_diff = mag_data[..., 0] * mag_data[..., 1] * np.exp(1j * (phase_data[..., 1] - phase_data[..., 0]))
     mag_diff = np.abs(signal_diff)
     phase_diff = np.angle(signal_diff)
-    # mask_diff = JULIA.mri_robustmask(mag_diff).astype(np.bool8)
-    unwrapped_diff = JULIA.romeo_unwrap(
+    unwrapped_diff = JULIA.romeo_unwrap3D(
         phase=phase_diff,
-        weights="romeo3",
+        weights="romeo",
         mag=mag_diff,
         mask=mask_data,
     )
@@ -318,10 +318,10 @@ def compute_fieldmap(
     phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
-    unwrapped = JULIA.romeo_unwrap_individual(
+    unwrapped = JULIA.romeo_unwrap4D(
         phase=phase_data,
         TEs=TEs,
-        weights="romeo3",
+        weights="romeo",
         mag=mag_data,
         mask=mask_data,
         correct_global=False,
@@ -330,101 +330,72 @@ def compute_fieldmap(
         correct_regions=False,
     )
 
-    # create brain mask from the signal with the shortest echo time
-    brain_mask = create_brain_mask(mag_data[..., 0])
-
+    # TODO: Remove? Not sure we need this anymore...
     # fix slice wrapping errors in bottom slices
-    unwrapped = fix_slice_wrapping_errors(unwrapped, brain_mask)
-
-    # smooth voxels with large discontinuities
-    # unwrapped = smooth_discontinuities(unwrapped, mag_data)
+    unwrapped = fix_slice_wrapping_errors(unwrapped, mask_data)
 
     # global mode correction
-    # this will add an offset equal to the most common mode multiple
-    # for later echoes, this isn't quite perfect, as the most common multiple is occasionally not 0, (but some other
-    # offset) so we use the earlier echoes to correct them
-    # for each echo past the 2nd echo, try to fit a linear model with offsets that minimizes the
-    # mean residuals of that model
+    # this computes the global mode offset for the first echo then tries to find the offset
+    # that minimizes the residuals for each subsequent echo
+    # this seems to be more robust than romeo's global offset correction
     if correct_global:
         unwrapped -= (
-            mode(np.round(unwrapped[brain_mask, :] / (2 * np.pi)).astype(int), axis=0, keepdims=False).mode * 2 * np.pi
+            mode(np.round(unwrapped[mask_data, 0] / (2 * np.pi)).astype(int), axis=0, keepdims=False).mode * 2 * np.pi
         )
-        # only do this check if we are greater than 2 echoes
-        if TEs.shape[0] > 2:
-            # for each of these matrices TEs are on rows, voxels are columns
+        # for each of these matrices TEs are on rows, voxels are columns
 
-            # get design matrix
-            design_mat = TEs[:, np.newaxis]
+        # get design matrix
+        X = TEs[:, np.newaxis]
 
-            # get magnitude weight matrix
-            mag_mat = mag_data[brain_mask, :].T
+        # get magnitude weight matrix
+        W = mag_data[mask_data, :].T
 
-            # loop over each index past 2nd echo
-            for i in range(2, TEs.shape[0]):
-                # get matrix with the masked unwrapped data (weighted by magnitude)
-                unwrapped_mat = unwrapped[brain_mask, :].T
-                # make array with multiple offsets to test
-                offsets = [-3, -2, -1, 0, 1, 2, 3]
-                best_residual = None
-                best_offset = None
-                for multiple in offsets:
-                    # we do a linear regression without invoking lstsq, since our design matrix is a vector (and only
-                    # 1 weight per voxel)
-                    # Weights = sum(x^-1 .* y)
-                    # where x^-1 is not the inverse of the matrix, but of each column. The sum is over the echoes dim.
+        # loop over each index past 2nd echo
+        for i in range(1, TEs.shape[0]):
+            # get matrix with the masked unwrapped data (weighted by magnitude)
+            Y = unwrapped[mask_data, :].T
+            # make array with multiple offsets to test
+            offsets = list(range(-10, 11))
+            # create variables to store best residual and best offset
+            best_residual = None
+            best_offset = None
+            for multiple in offsets:
+                # get the ordinate matrix for these echoes
+                Y_copy = Y.copy()[: i + 1, :]
 
-                    # get the ordinate matrix for these echoes
-                    ordinate_mat = unwrapped_mat.copy()[: i + 1, :]
+                # add offset
+                Y_copy[i, :] += 2 * np.pi * multiple
 
-                    # add offset
-                    ordinate_mat[i, :] += 2 * np.pi * multiple
+                # fit model and compute residuals
+                _, residuals = weighted_regression(X[: i + 1], Y_copy, W[: i + 1])
 
-                    # # compute weighted ordinate matrix
-                    # weighted_ordinate_mat = ordinate_mat[: i + 1] * mag_mat[: i + 1]
+                # get summary stat of residuals
+                summary_residual = residuals.mean()
 
-                    # # compute weighted design matrix
-                    # weighted_design_mat = design_mat[: i + 1] * mag_mat[: i + 1]
-
-                    # # compute weighted squared magnitude of design mat
-                    # sq_mag = np.sum((weighted_design_mat[: i + 1] ** 2), axis=0, keepdims=True)
-
-                    # # get the inverse design matrix for these echoes
-                    # inv_design_mat = np.zeros_like(ordinate_mat)
-                    # np.divide(weighted_design_mat[: i + 1], sq_mag, out=inv_design_mat, where=(sq_mag != 0))
-
-                    # # now compute the weights
-                    # weights = (inv_design_mat * weighted_ordinate_mat).sum(axis=0)
-
-                    # # compute residuals (on unweighted data)
-                    # residuals = np.sum((ordinate_mat - weights * design_mat[: i + 1]) ** 2, axis=0)
-
-                    # fit model and compute residuals
-                    _, residuals = weighted_regression(design_mat[: i + 1], ordinate_mat, mag_mat[: i + 1])
-
-                    # get summary stat of residuals
-                    summary_residual = residuals.mean()
-
-                    # if no best residual, then just initialize it here
-                    if best_residual is None:
+                # if no best residual, then just initialize it here
+                if best_residual is None:
+                    best_residual = summary_residual
+                    best_offset = multiple
+                else:  # else we store the residual + offset if it is better
+                    if summary_residual < best_residual:
                         best_residual = summary_residual
                         best_offset = multiple
-                    else:  # else we store the residual + offset if it is better
-                        if summary_residual < best_residual:
-                            best_residual = summary_residual
-                            best_offset = multiple
 
-                # update the unwrapped matrix/unwrapped for this echo
-                unwrapped[..., i] += 2 * np.pi * best_offset
+            # update the unwrapped matrix/unwrapped for this echo
+            unwrapped[mask_data, i] += 2 * np.pi * best_offset
     nib.Nifti1Image(unwrapped, np.eye(4)).to_filename(f"unwrapped{idx:03d}.nii")
 
     # broadcast TEs to match shape of data
-    TEs_data = np.array(TEs)[np.newaxis, np.newaxis, np.newaxis, :]
+    TEs_data = TEs[:, np.newaxis]
 
-    # compute the B0 field from all the phase data
-    B0 = np.zeros(unwrapped.shape[:3])
-    numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
-    denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
-    np.divide(numer, denom, out=B0, where=(denom != 0))
+    # # compute the B0 field from all the phase data
+    # B0 = np.zeros(unwrapped.shape[:3])
+    # numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
+    # denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
+    # np.divide(numer, denom, out=B0, where=(denom != 0))
+    unwrapped_mat = unwrapped.reshape(-1, TEs.shape[0]).T
+    weights = mag_data.reshape(-1, TEs.shape[0]).T
+    B0 = weighted_regression(TEs_data, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
     B0 *= 1000 / (2 * np.pi)
 
     # save the field map
@@ -616,33 +587,33 @@ def unwrap_and_compute_field_maps(
             mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
             mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
 
-            # FOR DEBUGGING
-            initialize_julia_context()
-            field_maps[..., idx] = compute_fieldmap(
-                phase_data, mag_data, TEs, mask_data, sigma, automask, correct_global, idx
-            )
+            # # FOR DEBUGGING
+            # initialize_julia_context()
+            # field_maps[..., idx] = compute_fieldmap(
+            #     phase_data, mag_data, TEs, mask_data, sigma, automask, correct_global, idx
+            # )
 
-        #     # submit field map computation to the process pool
-        #     futures[
-        #         executor.submit(
-        #             compute_fieldmap,
-        #             phase_data,
-        #             mag_data,
-        #             TEs,
-        #             mask_data,
-        #             sigma,
-        #             automask,
-        #             correct_global,
-        #             idx,
-        #         )
-        #     ] = idx
+            # submit field map computation to the process pool
+            futures[
+                executor.submit(
+                    compute_fieldmap,
+                    phase_data,
+                    mag_data,
+                    TEs,
+                    mask_data,
+                    sigma,
+                    automask,
+                    correct_global,
+                    idx,
+                )
+            ] = idx
 
-        # # loop over the futures
-        # for future in as_completed(futures):
-        #     # get the frame index
-        #     idx = futures[future]
-        #     # get the field map
-        #     field_maps[..., idx] = future.result()
+        # loop over the futures
+        for future in as_completed(futures):
+            # get the frame index
+            idx = futures[future]
+            # get the field map
+            field_maps[..., idx] = future.result()
     except KeyboardInterrupt:
         # on keyboard interrupt, just kill all processes in the executor pool
         for proc in executor._processes.values():
@@ -651,7 +622,6 @@ def unwrap_and_compute_field_maps(
         PROCESS_POOL_ERROR = True
     except Exception:
         import traceback
-
         traceback.print_exc()
         # set global error flag
         PROCESS_POOL_ERROR = True

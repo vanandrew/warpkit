@@ -57,14 +57,15 @@ class JuliaContext {
         jl_eval_string("using MriResearchTools;");
 
         // get functions from modules
-        jl_unwrap = static_cast<jl_function_t*>(
-            jl_eval_string("unwrap_positional_wrapper(phase, weights, mag, mask, correctglobal, "
+        // wrap them in lambdas so we can call arguments positionally
+        jl_unwrap3D = static_cast<jl_function_t*>(
+            jl_eval_string("unwrap3D_positional_wrapper(phase, weights, mag, mask, correctglobal, "
                            "maxseeds, merge_regions, correct_regions) = unwrap(phase, "
                            "weights=weights, mag=mag, mask=mask, correctglobal=correctglobal, maxseeds=maxseeds, "
                            "merge_regions=merge_regions, correct_regions=correct_regions);"));
-        jl_unwrap_individual = static_cast<jl_function_t*>(
-            jl_eval_string("unwrap_individual_positional_wrapper(phase, TEs, weights, mag, mask, correctglobal, "
-                           "maxseeds, merge_regions, correct_regions) = unwrap_individual(phase, TEs=TEs, "
+        jl_unwrap4D = static_cast<jl_function_t*>(
+            jl_eval_string("unwrap4D_positional_wrapper(phase, TEs, weights, mag, mask, correctglobal, "
+                           "maxseeds, merge_regions, correct_regions) = unwrap(phase, TEs=TEs, "
                            "weights=weights, mag=mag, mask=mask, correctglobal=correctglobal, maxseeds=maxseeds, "
                            "merge_regions=merge_regions, correct_regions=correct_regions);"));
         jl_mcpc3ds = static_cast<jl_function_t*>(
@@ -193,7 +194,7 @@ class JuliaContext {
      * @param correct_regions
      * @return py::array_t<T, py::array::f_style>
      */
-    py::array_t<T, py::array::f_style> romeo_unwrap(
+    py::array_t<T, py::array::f_style> romeo_unwrap3D(
         py::array_t<T, py::array::f_style> phase, std::string weights, py::array_t<T, py::array::f_style> mag,
         py::array_t<bool, py::array::f_style> mask, bool correctglobal = false, int maxseeds = 1,
         bool merge_regions = false, bool correct_regions = false) {
@@ -242,7 +243,7 @@ class JuliaContext {
             reinterpret_cast<jl_value_t*>(jl_correctglobal), reinterpret_cast<jl_value_t*>(jl_maxseeds),
             reinterpret_cast<jl_value_t*>(jl_merge_regions), reinterpret_cast<jl_value_t*>(jl_correct_regions)};
         // std::cout << "Unwrapping..." << std::endl;
-        jl_value_t* jl_unwrapped = jl_call(jl_unwrap, args, 8);
+        jl_value_t* jl_unwrapped = jl_call(jl_unwrap3D, args, 8);
         // std::cout << "Unwrapping complete." << std::endl;
         auto unwrapped_ptr = static_cast<T*>(jl_array_data(jl_unwrapped));
 
@@ -258,7 +259,7 @@ class JuliaContext {
     }
 
     /**
-     * @brief Wrapper for ROMEO unwrap_individual function
+     * @brief Wrapper for ROMEO unwrap function (4D)
      *
      * @param phase
      * @param TEs
@@ -271,7 +272,7 @@ class JuliaContext {
      * @param correct_regions
      * @return py::array_t<T, py::array::f_style>
      */
-    py::array_t<T, py::array::f_style> romeo_unwrap_individual(
+    py::array_t<T, py::array::f_style> romeo_unwrap4D(
         py::array_t<T, py::array::f_style> phase, py::array_t<T, py::array::f_style> TEs, std::string weights,
         py::array_t<T, py::array::f_style> mag, py::array_t<bool, py::array::f_style> mask, bool correctglobal = false,
         int maxseeds = 1, bool merge_regions = false, bool correct_regions = false) {
@@ -325,7 +326,7 @@ class JuliaContext {
             reinterpret_cast<jl_value_t*>(jl_maxseeds),       reinterpret_cast<jl_value_t*>(jl_merge_regions),
             reinterpret_cast<jl_value_t*>(jl_correct_regions)};
         // std::cout << "Unwrapping..." << std::endl;
-        jl_value_t* jl_unwrapped = jl_call(jl_unwrap_individual, args, 9);
+        jl_value_t* jl_unwrapped = jl_call(jl_unwrap4D, args, 9);
         // std::cout << "Unwrapping complete." << std::endl;
         auto unwrapped_ptr = static_cast<T*>(jl_array_data(jl_unwrapped));
 
@@ -341,8 +342,8 @@ class JuliaContext {
     }
 
    private:
-    jl_function_t* jl_unwrap;
-    jl_function_t* jl_unwrap_individual;
+    jl_function_t* jl_unwrap3D;
+    jl_function_t* jl_unwrap4D;
     jl_function_t* jl_mcpc3ds;
     jl_function_t* jl_robustmask;
     jl_tupletype_t* jl_ntuple3;
