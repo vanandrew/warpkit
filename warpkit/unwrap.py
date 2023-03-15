@@ -1,6 +1,7 @@
 import sys
 import signal
 import logging
+import traceback
 from types import SimpleNamespace
 from typing import cast, List, Tuple, Union
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -9,18 +10,15 @@ import numpy as np
 import numpy.typing as npt
 from skimage.filters import threshold_otsu
 from skimage.measure import label, regionprops
-from skimage.morphology import ball
 from scipy.ndimage import (
     generate_binary_structure,
     binary_erosion,
     binary_dilation,
-    binary_closing,
     binary_fill_holes,
-    convolve,
 )
 from scipy.stats import mode
 from warpkit.model import weighted_regression
-from .utilities import rescale_phase, normalize
+from .utilities import rescale_phase
 from . import JuliaContext as _JuliaContext  # type: ignore
 
 
@@ -35,13 +33,15 @@ def initialize_julia_context():
     signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT])
 
 
-def create_brain_mask(mag_shortest: npt.NDArray[np.float64]) -> npt.NDArray[np.bool8]:
+def create_brain_mask(mag_shortest: npt.NDArray[np.float64], extra_dilation: int = 6) -> npt.NDArray[np.bool8]:
     """Create a quick brain mask for a single frame.
 
     Parameters
     ----------
     mag_shortest : npt.NDArray[np.float64]
         Magnitude data with the shortest echo time
+    extra_dilation : int
+        Number of extra dilations to perform
 
     Returns
     -------
@@ -68,6 +68,9 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float64]) -> npt.NDArray[np.b
     # dilate the mask
     mask_data = binary_dilation(mask_data, structure=strel, iterations=2)
 
+    # extra dilation to get areas on the edge of the brain
+    mask_data = binary_dilation(mask_data, structure=strel, iterations=extra_dilation)
+
     # since we can't have a completely empty mask, set all zeros to ones
     # if the mask is all empty
     if np.all(np.isclose(mask_data, 0)):
@@ -77,190 +80,16 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float64]) -> npt.NDArray[np.b
     return mask_data.astype(np.bool8)
 
 
-# def fix_unwrapping_errors(
-#     unwrapped: npt.NDArray[np.float64], mask: npt.NDArray[np.bool8], echos: Union[List[int], None] = None
-# ) -> npt.NDArray:
-#     # get echoes to try and fix
-#     if echos is None:
-#         echos = [0, 1]
-#     echos = cast(List[int], echos)
-
-#     # generate finite difference filters
-#     filters = np.zeros((3, 3, 3, 6))
-#     filters[1, 1, 1] = 1
-#     n = 0
-#     for i in [-1, 1]:
-#         filters[1 + i, 1, 1, n] = -1
-#         n += 1
-#     for j in [-1, 1]:
-#         filters[1, 1 + j, 1, n] = -1
-#         n += 1
-#     for k in [-1, 1]:
-#         filters[1, 1, 1 + k, n] = -1
-#         n += 1
-
-#     # compute structuring element for dilation
-#     strel = generate_binary_structure(3, 1)
-#     import simplebrainviewer as sbv
-
-#     # loop over echos
-#     for idx in echos:
-#         phase3 = unwrapped[..., idx].copy()
-#         # get the phase
-#         phase = unwrapped[..., idx]
-
-#         # get the integer map
-#         int_map = np.round(phase / (2 * np.pi)).astype(int)
-
-#         # now get the area where integer map is 0
-#         # we will use this region as the seed for the growing region
-#         # and mask with the brain mask
-#         visited_region = (int_map == 0) & mask
-
-#         # loop until we visited all voxels in mask
-#         while not np.all(visited_region == mask):
-#             # dilate the visited region
-#             expanded_region = binary_dilation(visited_region, structure=strel, mask=mask)
-
-#             # xor the original region to get next set of voxels
-#             next_edge_set = expanded_region ^ visited_region
-
-#             # integer offsets to test
-#             offsets = [-1, 0, 1]
-
-#             # get valid voxel masks by using the finite difference filters
-#             # and masking out any voxels not in the visited region
-#             valid = np.zeros((*phase.shape, filters.shape[-1]))
-#             for f in range(filters.shape[-1]):
-#                 # find valid voxels using this finite difference filter
-#                 # the convolution will return 0 for voxels that are valid
-#                 # so we need to take the complement and mask with the edge set
-#                 valid[..., f] = ~convolve(expanded_region, filters[..., f], mode="nearest") & next_edge_set
-
-#             # create array to store sum squared errors
-#             # last axis is for the integer offsets we are testing
-#             errors = np.zeros((*phase.shape, len(offsets)))
-
-#             # for each offset add 2pi * offset to the phase to test
-#             # if it is a better solution
-#             for i, offset in enumerate(offsets):
-#                 # make a copy of the phase
-#                 phase_wc = phase.copy()
-
-#                 # add the 2pi offset to working copy (only for edge voxels)
-#                 phase_wc[next_edge_set] += 2 * np.pi * offset
-
-#                 # for each filter, compute the squared finite difference and mask with valid
-#                 # store in errors for this offset
-#                 for f in range(filters.shape[-1]):
-#                     errors[..., i] += (convolve(phase_wc, filters[..., f], mode="nearest") ** 2) * valid[..., f]
-
-#             # get the best solution for the set
-#             # add the first offset to go from idx to offset value
-#             best_solution = np.argmin(errors, axis=-1) + offsets[0]
-#             if np.all(best_solution == 0):
-#                 break
-
-#             # now add the best solution to the phase
-#             phase[next_edge_set] += 2 * np.pi * best_solution[next_edge_set]
-
-#             # update visited region
-#             visited_region = expanded_region
-#         test = np.stack((phase, phase3), axis=3)
-#         breakpoint()
-
-
-def smooth_discontinuities(
-    unwrapped: npt.NDArray[np.float64],
-    mag_data: npt.NDArray[np.float64],
-    threshold: float = 5,
-    echos: Union[List[int], None] = None,
-    filter_size: int = 9,
-) -> npt.NDArray[np.float64]:
-    """Smooth discontinuities in the phase"""
-    # get echos to fix
-    if echos is None:
-        echos = [0, 1]
-    echos = cast(List[int], echos)
-
-    # create structuring element for dilation
-    strel = ball(filter_size // 2)
-    strel[:, :, (-filter_size // 2) + 1 :] = 0
-    strel[:, :, : (filter_size // 2)] = 0
-
-    # generate finite difference filters
-    filters = np.zeros((3, 3, 3, 4))
-    filters[1, 1, 1] = 1
-    n = 0
-    for i in [-1, 1]:
-        filters[1 + i, 1, 1, n] = -1
-        n += 1
-    for j in [-1, 1]:
-        filters[1, 1 + j, 1, n] = -1
-        n += 1
-    # for k in [-1, 1]:
-    #     filters[1, 1, 1 + k, n] = -1
-    #     n += 1
-
-    # allocate data for bad voxels and norm constant
-    bad_voxel_mask = np.zeros((*unwrapped.shape[:3], len(echos)), dtype=bool)
-    norm_constant = np.zeros((*unwrapped.shape[:3], len(echos)))
-
-    # for each echo
-    for e in echos:
-        # create brain mask
-        mask = create_brain_mask(mag_data[..., e])
-
-        # get valid gradient mask by using the finite difference filters
-        valid_grad = np.zeros((*unwrapped.shape[:3], filters.shape[-1]))
-        for f in range(filters.shape[-1]):
-            # find valid gradients using this finite difference filter
-            # the convolution will return 0 for voxels that are valid
-            # so we need to take the complement
-            valid_grad[..., f] = ~convolve(mask, filters[..., f], mode="nearest") & mask
-
-        # convolve filters on phase data for each echo
-        for f in range(filters.shape[-1]):
-            # get the directional gradient for this filter
-            fd_grad = convolve(unwrapped[..., e], filters[..., f], mode="nearest") * valid_grad[..., f]
-            # if the gradient is greater than the threshold, mark the voxel as bad
-            bad_voxel_mask[..., e] |= np.abs(fd_grad) > threshold
-
-        # dilate the bad voxel mask
-        bad_voxel_mask[..., e] = binary_dilation(bad_voxel_mask[..., e], structure=strel, mask=mask)
-
-        # get the convolution over the mask, this will be used to normalize the convolution
-        norm_constant[..., e] = convolve(mask.astype("f8"), strel.astype("f8"), mode="nearest")
-
-    # compute convolution of phase data with average filter with mask
-    unwrapped_smooth = np.zeros((*unwrapped.shape[:3], len(echos)))
-    for e in echos:
-        unwrapped_smooth[..., e] = convolve(unwrapped[..., e] * mask, strel.astype("f8"), mode="nearest")
-        np.divide(
-            unwrapped_smooth[..., e],
-            norm_constant[..., e],
-            out=unwrapped_smooth[..., e],
-            where=norm_constant[..., e] != 0,
-        )
-    # where the bad voxel mask is true, replace the voxel with the smoothed phase
-    for e in echos:
-        unwrapped[..., : len(echos)][bad_voxel_mask] = unwrapped_smooth[bad_voxel_mask]
-
-    # return the phase data with discontinuities smoothed
-    return unwrapped
-
-
-def compute_fieldmap(
+def unwrap_phase(
     phase_data: npt.NDArray[np.float64],
     mag_data: npt.NDArray[np.float64],
     TEs: npt.NDArray[np.float64],
     mask_data: npt.NDArray[np.bool8],
-    sigma: npt.NDArray[np.float64],
     automask: bool = True,
     correct_global: bool = True,
     idx: Union[int, None] = None,
 ) -> npt.NDArray[np.float64]:
-    """Computes the field map for a single ME frame.
+    """Unwraps the phase for a single frame of ME-EPI
 
     Parameters
     ----------
@@ -270,8 +99,6 @@ def compute_fieldmap(
         Single frame of magnitude data with shape (x, y, z, echo)
     TEs : npt.NDArray[np.float64]
         Echo times associated with each phase
-    sigma : npt.NDArray[np.float64]
-        Sigma for mcpc3ds
     mask_data : npt.NDArray[np.bool8]
         Mask of voxels to use for unwrapping
     automask : bool, optional
@@ -284,13 +111,13 @@ def compute_fieldmap(
     Returns
     -------
     npt.NDArray[np.float64]
-        field map in Hz
+        unwrapped phase in radians
     """
     # use global Julia Context
     global JULIA
 
     if idx is not None:
-        logging.info(f"Processing frame {idx}")
+        logging.info(f"Processing frame: {idx}")
 
     # if automask is True, generate a mask for the frame, instead of using mask_data
     if automask:
@@ -299,7 +126,6 @@ def compute_fieldmap(
         mag_shortest = mag_data[..., echo_idx]
 
         # create the mask
-        # mask_data = JULIA.mri_robustmask(mag_shortest).astype(np.bool8)
         mask_data = create_brain_mask(mag_shortest)
 
     # Do MCPC-3D-S algo to compute phase offset
@@ -330,10 +156,6 @@ def compute_fieldmap(
         correct_regions=False,
     )
 
-    # TODO: Remove? Not sure we need this anymore...
-    # fix slice wrapping errors in bottom slices
-    unwrapped = fix_slice_wrapping_errors(unwrapped, mask_data)
-
     # global mode correction
     # this computes the global mode offset for the first echo then tries to find the offset
     # that minimizes the residuals for each subsequent echo
@@ -354,6 +176,26 @@ def compute_fieldmap(
         for i in range(1, TEs.shape[0]):
             # get matrix with the masked unwrapped data (weighted by magnitude)
             Y = unwrapped[mask_data, :].T
+
+            # TODO: can do this without for loop by computing the 2pi multiple on the difference of the
+            # estimated linear phase at a TE and the computed unwrapped phase at a TE
+            # TODO: test below code to make sure it works
+
+            # # fit the model to the up to previous echo
+            # coefficients, _ = weighted_regression(X[: i], Y[: i], W[: i])
+
+            # # compute the predicted phase for the current echo
+            # Y_pred = X[i] * coefficients
+
+            # # compute the difference between the predicted phase and the unwrapped phase
+            # Y_diff = Y[i] - Y_pred
+
+            # # compute closest multiple of 2pi to the difference
+            # int_map = np.round(Y_diff / (2 * np.pi)).astype(int)
+
+            # # compute the most often occuring multiple
+            # best_offset = mode(int_map, axis=0, keepdims=False).mode
+
             # make array with multiple offsets to test
             offsets = list(range(-10, 11))
             # create variables to store best residual and best offset
@@ -382,28 +224,26 @@ def compute_fieldmap(
                         best_offset = multiple
 
             # update the unwrapped matrix/unwrapped for this echo
+            best_offset = cast(int, best_offset)
             unwrapped[mask_data, i] += 2 * np.pi * best_offset
-    nib.Nifti1Image(unwrapped, np.eye(4)).to_filename(f"unwrapped{idx:03d}.nii")
 
-    # broadcast TEs to match shape of data
-    TEs_data = TEs[:, np.newaxis]
-
-    # # compute the B0 field from all the phase data
-    # B0 = np.zeros(unwrapped.shape[:3])
-    # numer = np.sum(unwrapped * (mag_data**2) * TEs_data, axis=-1)
-    # denom = np.sum((mag_data**2) * (TEs_data**2), axis=-1)
-    # np.divide(numer, denom, out=B0, where=(denom != 0))
-    unwrapped_mat = unwrapped.reshape(-1, TEs.shape[0]).T
-    weights = mag_data.reshape(-1, TEs.shape[0]).T
-    B0 = weighted_regression(TEs_data, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
-    B0 *= 1000 / (2 * np.pi)
-
-    # save the field map
-    return B0
+    # return the unwrapped data
+    return unwrapped
 
 
-def apply_temporal_consistency(
-    unwrapped_data: npt.NDArray, motion_params: npt.NDArray, rd_threshold: float = 0.2
+def consecutive(data, idx):
+    # get consecutive groups
+    groups = np.split(data, np.where(np.diff(data) != 1)[0] + 1)
+    # only return group with idx
+    return [g for g in groups if idx in g][0]
+
+
+def check_temporal_consistency(
+    unwrapped_data: npt.NDArray,
+    motion_params: npt.NDArray,
+    weights: List[nib.Nifti1Image],
+    TEs,
+    rd_threshold: float = 0.5,
 ) -> npt.NDArray:
     """Ensures phase unwrapping solutions are temporally consistent
 
@@ -414,21 +254,25 @@ def apply_temporal_consistency(
     motion_params : npt.NDArray
         motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
         to mm
+    weights : List[nib.Nifti1Image]
+        weights for regression model
+    TEs : npt.NDArray
+        echo times
     rd_threshold : float
-        relative displacement threshold. An exponential decay is used to weight each frame, at this threshold
-        the weight magnitude is set to 0.05.
+        relative displacement threshold. By default 0.5
 
     Returns
     -------
     npt.NDArray
         fixed unwrapped phase data
     """
-    # make a copy of the unwrapped_data
-    fixed_unwrapped_data = unwrapped_data.copy()
+    # look at the first echo
+    unwrapped_echo_1 = unwrapped_data[..., 0, :].copy()
 
     # loop over each frame of the data
-    for t in range(unwrapped_data.shape[-1]):
-        # now we need to compute the relative displacements to the current frame
+    for t in range(unwrapped_echo_1.shape[-1]):
+        logging.info("Computing temporal consistency check for frame: %d" % t)
+        # compute the relative displacements to the current frame
         # first get the motion parameters for the current frame
         current_frame_motion_params = motion_params[t][np.newaxis, :]
 
@@ -438,36 +282,55 @@ def apply_temporal_consistency(
         # now compute the relative displacement by sum of the absolute values
         RD = np.sum(np.abs(motion_params_diff), axis=1)
 
-        # # with the relative displacements computed, figure out the weighting
-        # weight_decay_constant = -rd_threshold / np.log(0.05)
-        # weights = np.exp(-RD / weight_decay_constant)
-
         # threhold the RD
         tmask = RD < rd_threshold
 
-        # get the set of frames within the tmask
-        frames = fixed_unwrapped_data[..., tmask]
+        # get indices of mask
+        indices = np.where(tmask)[0]
 
-        # for all of the data, compute the 2pi range the data is on via integer multiple
-        int_map = np.round(frames / (2 * np.pi)).astype(int)
+        # get the consecutive group
+        c_indices = consecutive(indices, t)
+        # for each frame compute the mean value along the time axis in the contiguous group
+        mean_voxels = np.mean(unwrapped_echo_1[..., c_indices], axis=-1)
 
-        # # get the unique set across time
-        # unique_set = np.unique(int_map, axis=-1)
+        # for this frame figure out the integer multiple that minimizes the value to the mean voxel
+        int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
 
-        # # compute the weighted mean
-        # weighted_mean = np.average(int_map, weights=weights, axis=-1)[..., np.newaxis]
+        # correct the data using the integer map
+        unwrapped_data[..., 0, t] += 2 * np.pi * int_map
 
-        # # for each voxel find the offset closest to the weighted mean
-        # offsets = unique_set[np.argmin(np.abs(unique_set - weighted_mean), axis=-1)]
+        # TODO: this is dangerous, align use of frames vs natural index
+        # format weight matrix
+        weights_mat = (
+            np.stack([m.dataobj[..., t] for m in weights], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
+        )
 
-        # for each voxel find the offset that occurs most frequently
-        offsets = mode(int_map, axis=-1).mode
+        # fit subsequenct echos to the recursive weighted linear regression from the first echo
+        for echo in range(1, unwrapped_data.shape[-2]):
+            # form design matrix
+            X = TEs[:echo, np.newaxis]
 
-        # for the current frame use the computed offsets
-        fixed_unwrapped_data[..., t] += 2 * np.pi * (offsets - int_map)
+            # form response matrix
+            Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
 
-    # return temporally consistent data
-    return fixed_unwrapped_data
+            # fit model to data
+            coefficients, _ = weighted_regression(X, Y, weights_mat[:echo])
+
+            # get the predicted values for this echo
+            Y_pred = coefficients * TEs[echo]
+
+            # compute the difference and get the integer multiple map
+            int_map = (
+                np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
+                .astype(int)
+                .T.reshape(*unwrapped_data.shape[:3])
+            )
+
+            # correct the data using the integer map
+            unwrapped_data[..., echo, t] += 2 * np.pi * int_map
+
+    # return the fixed data
+    return unwrapped_data
 
 
 def unwrap_and_compute_field_maps(
@@ -478,6 +341,7 @@ def unwrap_and_compute_field_maps(
     automask: bool = True,
     correct_global: bool = True,
     frames: Union[List[int], None] = None,
+    motion_params: Union[npt.NDArray, None] = None,
     n_cpus: int = 4,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute field maps. This makes a call
@@ -543,11 +407,11 @@ def unwrap_and_compute_field_maps(
         phase = [nib.Nifti1Image(p.get_fdata()[..., np.newaxis], p.affine, p.header) for p in phase]
         mag = [nib.Nifti1Image(m.get_fdata()[..., np.newaxis], m.affine, m.header) for m in mag]
     elif len(phase[0].shape) == 4:
-        # get the total number of frames
-        n_frames = phase[0].shape[3]
         # if frames is None, set it to all frames
         if frames is None:
-            frames = np.arange(n_frames)
+            frames = list(range(phase[0].shape[-1]))
+        # get the total number of frames
+        n_frames = len(frames)
     else:
         raise ValueError("Data must be 3D or 4D.")
     # frames should be a list at this point
@@ -557,17 +421,14 @@ def unwrap_and_compute_field_maps(
     if len(TEs) != len(phase) or len(TEs) != len(mag):
         raise ValueError("Number of echo times must equal number of mag and phase images.")
 
-    # allocate space for field maps
+    # # allocate space for field maps and unwrapped
     field_maps = np.zeros((*phase[0].shape[:3], n_frames))
+    unwrapped = np.zeros((*phase[0].shape[:3], len(TEs), n_frames))
 
     # allocate mask if needed
     if not mask:
         mask = SimpleNamespace()
         mask.dataobj = np.ones((*phase[0].shape[:3], n_frames))
-
-    # get voxel size
-    voxel_size = np.array(phase[0].header.get_zooms()[:3])
-    sigma = np.array([7, 7, 7]) / voxel_size
 
     # use a process pool to speed up the computation
     executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
@@ -596,12 +457,11 @@ def unwrap_and_compute_field_maps(
             # submit field map computation to the process pool
             futures[
                 executor.submit(
-                    compute_fieldmap,
+                    unwrap_phase,
                     phase_data,
                     mag_data,
                     TEs,
                     mask_data,
-                    sigma,
                     automask,
                     correct_global,
                     idx,
@@ -612,8 +472,9 @@ def unwrap_and_compute_field_maps(
         for future in as_completed(futures):
             # get the frame index
             idx = futures[future]
-            # get the field map
-            field_maps[..., idx] = future.result()
+            # get the unwrapped image
+            logging.info(f"Collecting frame: {idx}")
+            unwrapped[..., idx] = future.result()
     except KeyboardInterrupt:
         # on keyboard interrupt, just kill all processes in the executor pool
         for proc in executor._processes.values():
@@ -621,7 +482,6 @@ def unwrap_and_compute_field_maps(
         # set global error flag
         PROCESS_POOL_ERROR = True
     except Exception:
-        import traceback
         traceback.print_exc()
         # set global error flag
         PROCESS_POOL_ERROR = True
@@ -631,189 +491,40 @@ def unwrap_and_compute_field_maps(
         # close the executor
         else:
             executor.shutdown()
-    unwrapped_phases = []
-    for i in range(len(frames)):
-        unwrapped = nib.load(f"unwrapped{i:03d}.nii")
-        nib.Nifti1Image(unwrapped.get_fdata(), phase[0].affine).to_filename(f"unwrapped{i:03d}_af.nii")
-        unwrapped_phases.append(nib.load(f"unwrapped{i:03d}.nii"))
-    for k in range(5):
-        data = np.stack([img.dataobj[..., k] for img in unwrapped_phases], axis=3)
-        nib.Nifti1Image(data, phase[0].affine).to_filename(f"unwrapped_phase_echo{k+1}.nii")
-    # from memori.pathman import PathManager as PathMan
-    # for i in range(len(frames)):
-    #     PathMan(f"unwrapped{i:03d}.nii").unlink(missing_ok=True)
+
+    # check temporal consistency to unwrapped phase
+    # if motion parameters passed in
+    if motion_params is not None:
+        unwrapped = check_temporal_consistency(
+            unwrapped,
+            motion_params[frames],
+            mag,
+            TEs,
+            0.5,
+        )
+
+    # # FOR DEBUGGING
+    # # save out unwrapped phase
+    # logging.info("Saving unwrapped phase images...")
+    # for i in range(unwrapped.shape[-2]):
+    #     nib.Nifti1Image(
+    #       unwrapped[:, :, :, i, :], phase[0].affine, phase[0].header).to_filename(f"unwrapped_{i}.nii.gz")
+    # for i in range(unwrapped.shape[-2]):
+    #     nib.Nifti1Image(mean_unwrapped[:, :, :, i, :], phase[0].affine, phase[0].header).to_filename(
+    #         f"mean_unwrapped_{i}.nii.gz"
+    #     )
+
+    # compute field maps on temporally consistent unwrapped phase
+    TEs_mat = TEs[:, np.newaxis]
+    for i in range(unwrapped.shape[-1]):
+        logging.info(f"Computing field map for frame: {i}")
+        unwrapped_mat = unwrapped[..., i].reshape(-1, TEs.shape[0]).T
+        mag_data = np.stack([m.dataobj[..., i] for m in mag], axis=-1).astype(np.float64)
+        weights = mag_data.reshape(-1, TEs.shape[0]).T
+        # weights = np.ones_like(mag_data).reshape(-1, TEs.shape[0]).T
+        B0 = weighted_regression(TEs_mat, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
+        B0 *= 1000 / (2 * np.pi)
+        field_maps[..., i] = B0
+
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)
-
-
-def compute_wrap_error_mask(
-    data: npt.NDArray[np.float64],
-    brain_mask: npt.NDArray[np.bool8],
-    threshold: float = 2 * np.pi,
-    area_threshold: int = 100,
-):
-    """Compute the wrap error mask.
-
-    Tries to find large regions of wrapping errors in the data. This is done by computing a difference across the
-    slices, marking any voxels larger than the threshold. The filtering regions not itersecting with the brain mask
-    and smaller than the area threshold.
-
-    Parameters
-    ----------
-    data : npt.NDArray[np.float64]
-        The data to compute the wrap error mask for.
-    unwrapping_mask : npt.NDArray[np.bool8]
-        The mask to use for unwrapping.
-    brain_mask : npt.NDArray[np.bool8]
-        The brain mask to use for filtering.
-    threshold : float
-        The threshold to use for the difference.
-    area_threshold : int, optional
-        The area threshold to use for filtering, by default 100
-
-    Returns
-    -------
-    npt.NDArray[np.bool8]
-        The wrap error mask.
-    """
-
-    # compute the slice-to-slice differences
-    wrap_errors = (np.abs(np.diff(data, axis=2, append=0)) > threshold) & brain_mask
-
-    # eliminate anything in upper 4/5 of FOV
-    wrap_errors[..., data.shape[2] // 5 :] = False
-
-    # now loop through each slice
-    for slice_idx in range(data.shape[2]):
-        # label the errors of slice
-        labelled_slice = label(wrap_errors[..., slice_idx])
-        props = regionprops(labelled_slice)
-        # for the current slice, region must intersect with brain_mask and have area > area_threshold
-        for prop in props:
-            # check if current region has area > area_threshold
-            if prop.area < area_threshold:
-                # delete the region if it does not have area > area_threshold
-                wrap_errors[..., slice_idx][prop.label == labelled_slice] = False
-
-    # return the wrap error mask
-    return wrap_errors
-
-
-def estimate_good_slices(wrap_errors: npt.NDArray[np.bool8]) -> Tuple[int, int]:
-    """Try to find indices of good slices to correct to.
-
-    A good set of slices is a contiguous set of slices that have no wrapping errors.
-
-    We search from top to bottom for a contiguous set of slices that have no wrapping errors.
-
-    Parameters
-    ----------
-    wrap_errors : npt.NDArray[np.bool8]
-        Mask of wrapping errors
-
-    Returns
-    -------
-    Tuple[int, int]
-        The start and end slice indices of the good slices.
-    """
-    # get slice indices of longest subvolume where there are no wrapping errors
-    good_slices = np.where(~np.any(wrap_errors, axis=(0, 1)))[0]
-    if good_slices.size == 0:
-        # s^&%t's broken, tell the user their data is bad and just return the middle slice
-        print("No good slices found, using middle slice, but slice wrap error correction may fail...")
-        return wrap_errors.shape[2] // 2, wrap_errors.shape[2] // 2
-    best_slice_set = sorted(np.split(good_slices, np.where(np.diff(good_slices) != 1)[0] + 1), key=lambda x: -len(x))[0]
-    return best_slice_set[0], best_slice_set[-1]
-
-
-def fix_slice_wrapping_errors(
-    unwrapped: npt.NDArray[np.float64],
-    brain_mask: npt.NDArray[np.bool8],
-    thresholds: List[float] = [5, 5, 5, 5, 5],
-    num_echoes: int = 5,
-    area_threshold: int = 50,
-) -> npt.NDArray[np.float64]:
-    """Fix slice wrapping errors left over in unwrapped image.
-
-    Attempts to fix wrapping errors left over in unwrapped image in slice. This only tries to fix issues
-    in the bottom of the brain.
-
-    Parameters
-    ----------
-    unwrapped : npt.NDArray[np.float64]
-        Unwrapped phase images after unwrapping algorithm
-    brain_mask : npt.NDArray[np.bool8]
-        Brain mask
-    threshold : List[float], optional
-        Threshold for wrap error correction, by default [5, 5, 5, 5, 5]
-    num_echoes : int, optional
-        Number of echoes to try to correct. Later echoes are heavily wrapped and so maybe difficult to correct,
-        by default 5
-    area_threshold : int, optional
-        Minimum size of region to try and correct (this only is relevant for the first initial slice), by default 50
-
-    Returns
-    -------
-    npt.NDArray[np.float64]
-        Fixed Unwrapped phase images
-    """
-    corrected_echo_data = unwrapped.copy()
-    # for each echo
-    for echo_idx in range(num_echoes):
-        echo_data = unwrapped[..., echo_idx]
-        # compute the initial wrap_errors mask
-        wrap_errors = compute_wrap_error_mask(echo_data, brain_mask, thresholds[echo_idx], area_threshold)
-
-        # get best contiguous set of good slices
-        slice_bottom, _ = estimate_good_slices(wrap_errors)
-
-        # make a working copy of the echo_data
-        working_echo_data = echo_data.copy()
-
-        # make a copy of the wrap_errors mask
-        working_wrap_errors = (wrap_errors).copy()
-
-        # start from best bottom slice and work down
-        for slice_idx in range(slice_bottom, -1, -1):
-            while np.any(working_wrap_errors[..., slice_idx]):
-                # get wrap errors for current slice
-                current_slice_wrap_errors = working_wrap_errors[..., slice_idx]
-
-                # get the current slice and the slice above
-                current_slice = working_echo_data[..., slice_idx]
-                slice_above = working_echo_data[..., slice_idx + 1]
-
-                # compute the difference between the current slice and the slice above
-                diff = slice_above - current_slice
-                # find the nearest pi multiple for the difference
-                wrap_multiples = np.round(diff / (2 * np.pi))
-
-                # label each error region and loop through each region
-                labelled_errors = label(current_slice_wrap_errors)
-                props = regionprops(labelled_errors)
-                for prop in props:
-                    # get the region
-                    region = prop.label == labelled_errors
-
-                    # intersect with the brain mask
-                    region_with_mask = region & brain_mask[..., slice_idx]
-
-                    # get the set of wrap_multiple values for the region
-                    region_wrap_multiples = wrap_multiples[region_with_mask]
-
-                    # compute the mode of the regions wrap multiple values
-                    correction_multiple = mode(region_wrap_multiples, keepdims=False).mode
-
-                    # apply the correction to the current slice
-                    working_echo_data[region, slice_idx] += correction_multiple * 2 * np.pi
-
-                    # now compute new wrap errors
-                    working_wrap_errors = compute_wrap_error_mask(
-                        working_echo_data, brain_mask, thresholds[echo_idx], area_threshold=0
-                    )
-
-        # save the corrected echo data
-        corrected_echo_data[..., echo_idx] = working_echo_data
-
-    # return the corrected echo data
-    return corrected_echo_data

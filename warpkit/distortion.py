@@ -66,7 +66,9 @@ def medic(
                 raise ValueError("Affines and shapes must match")
 
     # unwrap phase and compute field maps
-    field_maps_native = unwrap_and_compute_field_maps(phase, mag, TEs, frames=frames, n_cpus=n_cpus)
+    field_maps_native = unwrap_and_compute_field_maps(
+        phase, mag, TEs, frames=frames, motion_params=motion_params, n_cpus=n_cpus
+    )
 
     # convert to displacement maps (these are in distorted space)
     inv_displacement_maps = field_maps_to_displacement_maps(

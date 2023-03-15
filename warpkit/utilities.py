@@ -200,12 +200,11 @@ def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarr
 
     RAS orientation ensures no zooms are negative, which is necessary for
     passing orientation information into ITK. Since ITK internally uses
-    LPS orientation, transforms passed into ITK must be flipped in x/y and
-    vice-versa to be usable. To prevent user confusion, this should all
-    be handled internally on the C++ end, meaning that the end user should
-    only need to pass in data in RAS orientation. But any code on the C++
-    side of things should take care to do the necessary conversions from
-    RAS to LPS and back.
+    LPS orientation, transforms passed into ITK may need to be flipped in x/y
+    based on the software package. To prevent user confusion, this handled via
+    the WARP_ITK_FLIPS global variable. Users should not need to worry about
+    the conversions as long as the `convert_warp` function is used to convert
+    the transform to the itk form.
 
     Parameters
     ----------
@@ -264,9 +263,11 @@ def invert_displacement_maps(
     logging.info("Inverting displacement maps...")
     for i in range(data.shape[-1]):
         logging.info(f"Processing frame: {i}")
+        # pad array with edge values so edge effects of inverse are avoided
+        mod_data = np.pad(data[..., i], pad_width=1)
         new_data[..., i] = invert_displacement_map_cpp(
-            data[..., i], translations, rotations, zooms, axis=axis_code, verbose=verbose
-        )
+            mod_data, translations, rotations, zooms, axis=axis_code, verbose=verbose
+        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(
@@ -292,9 +293,6 @@ def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool
     nib.Nifti1Image
         Inverted displacement field in mm
     """
-    # get data
-    data = displacement_field.get_fdata()
-
     # we convert the data to RAS, for passing into ITK
     # but then return to original coordinate system after
     to_canonical, from_canonical = get_ras_orient_transform(displacement_field)
@@ -302,11 +300,19 @@ def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool
     # get to RAS orientation
     displacement_field_ras = displacement_field.as_reoriented(to_canonical)
 
+    # get data
+    data = displacement_field_ras.get_fdata()
+
     # split affine into components
     translations, rotations, zooms, _ = decompose44(displacement_field_ras.affine)
 
+    # pad array with edge values so edge effects of inverse are avoided
+    mod_data = np.pad(data, pad_width=1)
+
     # invert displacement field
-    new_data = invert_displacement_field_cpp(data, translations, rotations, zooms, verbose=verbose)
+    new_data = invert_displacement_field_cpp(mod_data, translations, rotations, zooms, verbose=verbose)[
+        1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1
+    ]
 
     # make new image
     inv_displacement_field = nib.Nifti1Image(

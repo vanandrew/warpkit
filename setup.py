@@ -32,18 +32,18 @@ try:
         ],
         check=True,
     )
-    subprocess.run(
-        [
-            "julia",
-            "-e",
-            (
-                'using Pkg; !in("MriResearchTools",'
-                "[dep.name for (uuid, dep) in Pkg.dependencies()])"
-                ' ? Pkg.add(Pkg.PackageSpec(;name="MriResearchTools", version="2.1.0")) : nothing'
-            ),
-        ],
-        check=True,
-    )
+    # subprocess.run(
+    #     [
+    #         "julia",
+    #         "-e",
+    #         (
+    #             'using Pkg; !in("MriResearchTools",'
+    #             "[dep.name for (uuid, dep) in Pkg.dependencies()])"
+    #             ' ? Pkg.add(Pkg.PackageSpec(;name="MriResearchTools", version="2.1.0")) : nothing'
+    #         ),
+    #     ],
+    #     check=True,
+    # )
 except subprocess.CalledProcessError:
     raise OSError("ROMEO failed to install. Check your Julia installation.")
 

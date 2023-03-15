@@ -3,6 +3,7 @@
 
 #include <itkComposeImageFilter.h>
 #include <itkConstantBoundaryCondition.h>
+#include <itkDisplacementFieldJacobianDeterminantFilter.h>
 #include <itkExtractImageFilter.h>
 #include <itkImportImageFilter.h>
 #include <itkModifiedInvertDisplacementFieldImageFilter.h>
@@ -173,7 +174,7 @@ py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::
     // Get the displacement field shape
     const ssize_t* shape = displacement_field.shape();
 
-    // Get the displacement map via ImportImageFilter
+    // Get the displacement field type
     using DisplacementFieldType = typename itk::Image<itk::Vector<T, 3>, 3>;
 
     // Setup the displacement field region
@@ -239,7 +240,96 @@ py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::
         inverted_displacement_field.mutable_at(inv_field_it.GetIndex()[0], inv_field_it.GetIndex()[1],
                                                inv_field_it.GetIndex()[2], 2) = inv_field_it.Get()[2];
     }
+
+    // Return the inverted displacement field
     return inverted_displacement_field;
+}
+
+/**
+ * @brief Compute the Jacobian determinant of a displacement field
+ *
+ * @tparam T
+ * @param displacement_field
+ * @param origin
+ * @param direction
+ * @param spacing
+ * @return py::array_t<T, py::array::f_style>
+ */
+template <typename T>
+py::array_t<T, py::array::f_style> compute_jacobian_determinant(py::array_t<T, py::array::f_style> displacement_field,
+                                                                py::array_t<T, py::array::f_style> origin,
+                                                                py::array_t<T, py::array::f_style> direction,
+                                                                py::array_t<T, py::array::f_style> spacing) {
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+    // Get the displacement field shape
+    const ssize_t* shape = displacement_field.shape();
+
+    // Get the displacement field type
+    using DisplacementFieldType = typename itk::Image<itk::Vector<T, 3>, 3>;
+
+    // Setup the displacement field region
+    typename DisplacementFieldType::IndexType field_index({0, 0, 0});
+    using size_value_type = typename DisplacementFieldType::SizeValueType;
+    typename DisplacementFieldType::SizeType field_size({static_cast<size_value_type>(shape[0]),
+                                                         static_cast<size_value_type>(shape[1]),
+                                                         static_cast<size_value_type>(shape[2])});
+    typename DisplacementFieldType::RegionType field_region(field_index, field_size);
+
+    // Setup the coordinate system
+    typename DisplacementFieldType::PointType field_origin({origin.at(0), origin.at(1), origin.at(2)});
+    typename DisplacementFieldType::DirectionType field_direction;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            field_direction[i][j] = direction.at(i, j);
+        }
+    }
+    typename DisplacementFieldType::SpacingType field_spacing({spacing.at(0), spacing.at(1), spacing.at(2)});
+
+    // Create the displacement field and fill it with data
+    typename DisplacementFieldType::Pointer field = DisplacementFieldType::New();
+    field->SetRegions(field_region);
+    field->SetOrigin(field_origin);
+    field->SetDirection(field_direction);
+    field->SetSpacing(field_spacing);
+    field->Allocate();
+    itk::ImageRegionIteratorWithIndex<DisplacementFieldType> field_it(field, field->GetLargestPossibleRegion());
+    for (field_it.GoToBegin(); !field_it.IsAtEnd(); ++field_it) {
+        field_it.Set(itk::Vector<T, 3>(
+            {displacement_field.at(field_it.GetIndex()[0], field_it.GetIndex()[1], field_it.GetIndex()[2], 0),
+             displacement_field.at(field_it.GetIndex()[0], field_it.GetIndex()[1], field_it.GetIndex()[2], 1),
+             displacement_field.at(field_it.GetIndex()[0], field_it.GetIndex()[1], field_it.GetIndex()[2], 2)}));
+    }
+
+    // Create filter for computing jacobian determinant
+    using DisplacementFieldJacobianDeterminantFilterType =
+        typename itk::DisplacementFieldJacobianDeterminantFilter<DisplacementFieldType, T>;
+    typename DisplacementFieldJacobianDeterminantFilterType::Pointer jacobian_filter =
+        DisplacementFieldJacobianDeterminantFilterType::New();
+
+    // Pass displacment fields into jacobian filters
+    jacobian_filter->SetInput(field);
+    jacobian_filter->SetUseImageSpacingOff();
+
+    // Get the jacobian determinant fields
+    typename DisplacementFieldJacobianDeterminantFilterType::OutputImagePointer jacobian_determinant =
+        jacobian_filter->GetOutput();
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+    jacobian_determinant->Update();
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+    // Convert to numpy array
+    py::array_t<T, py::array::f_style> jacobian_determinant_array({shape[0], shape[1], shape[2]});
+    itk::ImageRegionConstIteratorWithIndex<typename DisplacementFieldJacobianDeterminantFilterType::OutputImageType>
+        jacobian_determinant_it(jacobian_determinant, jacobian_determinant->GetLargestPossibleRegion());
+    for (jacobian_determinant_it.GoToBegin(); !jacobian_determinant_it.IsAtEnd(); ++jacobian_determinant_it) {
+        jacobian_determinant_array.mutable_at(jacobian_determinant_it.GetIndex()[0],
+                                              jacobian_determinant_it.GetIndex()[1],
+                                              jacobian_determinant_it.GetIndex()[2]) = jacobian_determinant_it.Get();
+    }
+
+    // return jacobian determinant
+    return jacobian_determinant_array;
 }
 
 /**
