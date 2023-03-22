@@ -4,7 +4,8 @@ import logging
 import traceback
 from types import SimpleNamespace
 from typing import cast, List, Tuple, Union
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from threading import Lock
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
@@ -155,7 +156,6 @@ def unwrap_phase(
         merge_regions=False,
         correct_regions=False,
     )
-
     # global mode correction
     # this computes the global mode offset for the first echo then tries to find the offset
     # that minimizes the residuals for each subsequent echo
@@ -164,67 +164,23 @@ def unwrap_phase(
         unwrapped -= (
             mode(np.round(unwrapped[mask_data, 0] / (2 * np.pi)).astype(int), axis=0, keepdims=False).mode * 2 * np.pi
         )
-        # for each of these matrices TEs are on rows, voxels are columns
 
+        # for each of these matrices TEs are on rows, voxels are columns
         # get design matrix
         X = TEs[:, np.newaxis]
 
         # get magnitude weight matrix
         W = mag_data[mask_data, :].T
-
         # loop over each index past 2nd echo
+
+        # best_offset = compute_offset(i, W, X, Y)
+
         for i in range(1, TEs.shape[0]):
             # get matrix with the masked unwrapped data (weighted by magnitude)
             Y = unwrapped[mask_data, :].T
 
-            # TODO: can do this without for loop by computing the 2pi multiple on the difference of the
-            # estimated linear phase at a TE and the computed unwrapped phase at a TE
-            # TODO: test below code to make sure it works
-
-            # # fit the model to the up to previous echo
-            # coefficients, _ = weighted_regression(X[: i], Y[: i], W[: i])
-
-            # # compute the predicted phase for the current echo
-            # Y_pred = X[i] * coefficients
-
-            # # compute the difference between the predicted phase and the unwrapped phase
-            # Y_diff = Y[i] - Y_pred
-
-            # # compute closest multiple of 2pi to the difference
-            # int_map = np.round(Y_diff / (2 * np.pi)).astype(int)
-
-            # # compute the most often occuring multiple
-            # best_offset = mode(int_map, axis=0, keepdims=False).mode
-
-            # make array with multiple offsets to test
-            offsets = list(range(-10, 11))
-            # create variables to store best residual and best offset
-            best_residual = None
-            best_offset = None
-            for multiple in offsets:
-                # get the ordinate matrix for these echoes
-                Y_copy = Y.copy()[: i + 1, :]
-
-                # add offset
-                Y_copy[i, :] += 2 * np.pi * multiple
-
-                # fit model and compute residuals
-                _, residuals = weighted_regression(X[: i + 1], Y_copy, W[: i + 1])
-
-                # get summary stat of residuals
-                summary_residual = residuals.mean()
-
-                # if no best residual, then just initialize it here
-                if best_residual is None:
-                    best_residual = summary_residual
-                    best_offset = multiple
-                else:  # else we store the residual + offset if it is better
-                    if summary_residual < best_residual:
-                        best_residual = summary_residual
-                        best_offset = multiple
-
-            # update the unwrapped matrix/unwrapped for this echo
-            best_offset = cast(int, best_offset)
+            # Compute offset by method that minimizes residuals
+            best_offset = compute_offset_residual(i, W, X, Y)
             unwrapped[mask_data, i] += 2 * np.pi * best_offset
 
     # return the unwrapped data
@@ -236,7 +192,6 @@ def consecutive(data, idx):
     groups = np.split(data, np.where(np.diff(data) != 1)[0] + 1)
     # only return group with idx
     return [g for g in groups if idx in g][0]
-
 
 def check_temporal_consistency(
     unwrapped_data: npt.NDArray,
@@ -332,6 +287,193 @@ def check_temporal_consistency(
     # return the fixed data
     return unwrapped_data
 
+
+def start_unwrap_process(
+    unwrapped: npt.NDArray,
+    phase: List[nib.Nifti1Image],
+    mag: List[nib.Nifti1Image],
+    TEs: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
+    mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
+    automask: bool = True,
+    correct_global: bool = True,
+    frames: Union[List[int], None] = None,
+    n_cpus: int = 4,
+):
+    """
+    Parameters
+    ----------
+    unwrapped: npt.NDArray
+        Array to store unwrapped data
+    phase : List[nib.Nifti1Image]
+        Phases to unwrap
+    mag : List[nib.Nifti1Image]
+        Magnitudes associated with each phase
+    TEs : Union[List[float], Tuple[float], npt.NDArray[np.float64]]
+        Echo times associated with each phase (in ms)
+    mask : nib.Nifti1Image, optional
+        Boolean mask, by default None
+    automask : bool, optional
+        Automatically generate a mask (ignore mask option), by default True
+    correct_global : bool, optional
+        Corrects global n2π offsets, by default True
+    frames : List[int], optional
+        Only process these frame indices, by default None (which means all frames)
+    n_cpus : int, optional
+        Number of CPUs to use, by default 4
+    """
+
+    # if multiprocessing is not enabled, run serially
+    if n_cpus == 1:
+        logging.info("Running unwrap phase serially")
+        initialize_julia_context()
+        for idx in frames:
+            # get the phase and magnitude data from each echo
+            phase_data: npt.NDArray[np.float64] = rescale_phase(
+                np.stack([p.dataobj[..., idx] for p in phase], axis=-1)
+            ).astype(np.float64)
+            mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
+
+            mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
+
+            unwrapped[..., idx] = unwrap_phase(
+                phase_data,
+                mag_data,
+                TEs,
+                mask_data,
+                automask,
+                correct_global,
+                idx,
+            )
+    # if multiprocessing is enabled, run in parallel using a process pool
+    else:
+        try:
+            logging.info(f"Running unwrap phase in parallel with {n_cpus} processes")
+
+            # use a process pool to speed up the computation
+            executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
+
+            # set error flag for process pool
+            PROCESS_POOL_ERROR = False
+
+            # collect futures in a dictionary, where the value is the frame index
+            futures = dict()
+            # loop over the total number of frames
+            for idx in frames:
+                # get the phase and magnitude data from each echo
+                phase_data: npt.NDArray[np.float64] = rescale_phase(
+                    np.stack([p.dataobj[..., idx] for p in phase], axis=-1)
+                ).astype(np.float64)
+                mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
+
+                mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
+
+                # submit field map computation to the process pool
+                futures[
+                    executor.submit(
+                        unwrap_phase,
+                        phase_data,
+                        mag_data,
+                        TEs,
+                        mask_data,
+                        automask,
+                        correct_global,
+                        idx,
+                    )
+                ] = idx
+
+            # loop over the futures
+            for future in as_completed(futures):
+                # get the frame index
+                idx = futures[future]
+                # get the unwrapped image
+                logging.info(f"Collecting frame: {idx}")
+                unwrapped[..., idx] = future.result()
+        except KeyboardInterrupt:
+            # on keyboard interrupt, just kill all processes in the executor pool
+            for proc in executor._processes.values():
+                proc.kill()
+            # set global error flag
+            PROCESS_POOL_ERROR = True
+        except Exception:
+            traceback.print_exc()
+            # set global error flag
+            PROCESS_POOL_ERROR = True
+        finally:
+            if PROCESS_POOL_ERROR:
+                sys.exit(1)
+            # close the executor
+            else:
+                executor.shutdown()
+    
+    return unwrapped
+
+def start_fieldmap_process(
+    field_maps: npt.NDArray,
+    unwrapped: npt.NDArray,
+    mag: List[nib.Nifti1Image],
+    TEs: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
+    n_cpus: int = 4,
+) -> npt.NDArray:
+    """
+    
+    Parameters
+    ----------
+    field_maps : npt.NDArray
+        Array to store field maps
+    unwrapped : npt.NDArray
+        Array of unwrapped phase data
+    mag : List[nib.Nifti1Image]
+        Magnitudes associated with each phase
+    TEs : Union[List[float], Tuple[float], npt.NDArray[np.float64]]
+        Echo times associated with each phase (in ms)
+    n_cpus : int, optional
+        Number of CPUs to use, by default 4
+    """ 
+    
+    
+    TEs_mat = TEs[:, np.newaxis]
+    
+    # If multiprocessing is not enabled, run serially
+    if n_cpus == 1:
+        logging.info("Running field map computation serially")
+        for frame_num in range(unwrapped.shape[-1]):
+            field_maps[..., frame_num] = compute_field_map(
+                unwrapped[..., frame_num], 
+                mag,
+                TEs.shape[0],
+                TEs_mat,
+                frame_num
+            )
+    # If multiprocessing is enabled, run in parallel using a process pool
+    else: 
+        logging.info(f"Running field map computation in parallel with {n_cpus} processes")
+
+        with ProcessPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
+            # collect futures in a dictionary, where the value is the frame index
+            fieldmap_futures = dict()
+            # loop over the total number of frames
+            for frame_num in range(unwrapped.shape[-1]):
+
+                fieldmap_futures[
+                    fieldmap_executor.submit(
+                        compute_field_map,
+                        unwrapped[..., frame_num], 
+                        mag,
+                        TEs.shape[0],
+                        TEs_mat,
+                        frame_num
+                    )
+                ] = frame_num
+
+            # loop over the futures
+            for fieldmap_future in as_completed(fieldmap_futures):
+                # get the frame index
+                frame_num = fieldmap_futures[fieldmap_future]
+                logging.info(f"Loading frame: {frame_num}")
+                field_maps[..., frame_num] = fieldmap_future.result()
+
+    
+    return field_maps
 
 def unwrap_and_compute_field_maps(
     phase: List[nib.Nifti1Image],
@@ -430,67 +572,8 @@ def unwrap_and_compute_field_maps(
         mask = SimpleNamespace()
         mask.dataobj = np.ones((*phase[0].shape[:3], n_frames))
 
-    # use a process pool to speed up the computation
-    executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
-
-    # set error flag for process pool
-    PROCESS_POOL_ERROR = False
-
-    try:
-        # collect futures in a dictionary, where the value is the frame index
-        futures = dict()
-        # loop over the total number of frames
-        for idx in frames:
-            # get the phase and magnitude data from each echo
-            phase_data: npt.NDArray[np.float64] = rescale_phase(
-                np.stack([p.dataobj[..., idx] for p in phase], axis=-1)
-            ).astype(np.float64)
-            mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
-            mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
-
-            # # FOR DEBUGGING
-            # initialize_julia_context()
-            # field_maps[..., idx] = compute_fieldmap(
-            #     phase_data, mag_data, TEs, mask_data, sigma, automask, correct_global, idx
-            # )
-
-            # submit field map computation to the process pool
-            futures[
-                executor.submit(
-                    unwrap_phase,
-                    phase_data,
-                    mag_data,
-                    TEs,
-                    mask_data,
-                    automask,
-                    correct_global,
-                    idx,
-                )
-            ] = idx
-
-        # loop over the futures
-        for future in as_completed(futures):
-            # get the frame index
-            idx = futures[future]
-            # get the unwrapped image
-            logging.info(f"Collecting frame: {idx}")
-            unwrapped[..., idx] = future.result()
-    except KeyboardInterrupt:
-        # on keyboard interrupt, just kill all processes in the executor pool
-        for proc in executor._processes.values():
-            proc.kill()
-        # set global error flag
-        PROCESS_POOL_ERROR = True
-    except Exception:
-        traceback.print_exc()
-        # set global error flag
-        PROCESS_POOL_ERROR = True
-    finally:
-        if PROCESS_POOL_ERROR:
-            sys.exit(1)
-        # close the executor
-        else:
-            executor.shutdown()
+    # load in unwrapped image
+    unwrapped = start_unwrap_process(unwrapped, phase, mag, TEs, mask, automask, correct_global, frames, n_cpus)
 
     # check temporal consistency to unwrapped phase
     # if motion parameters passed in
@@ -504,6 +587,7 @@ def unwrap_and_compute_field_maps(
         )
 
     # # FOR DEBUGGING
+    #TODO: create flag for this, default false
     # # save out unwrapped phase
     # logging.info("Saving unwrapped phase images...")
     # for i in range(unwrapped.shape[-2]):
@@ -515,16 +599,141 @@ def unwrap_and_compute_field_maps(
     #     )
 
     # compute field maps on temporally consistent unwrapped phase
-    TEs_mat = TEs[:, np.newaxis]
-    for i in range(unwrapped.shape[-1]):
-        logging.info(f"Computing field map for frame: {i}")
-        unwrapped_mat = unwrapped[..., i].reshape(-1, TEs.shape[0]).T
-        mag_data = np.stack([m.dataobj[..., i] for m in mag], axis=-1).astype(np.float64)
-        weights = mag_data.reshape(-1, TEs.shape[0]).T
-        # weights = np.ones_like(mag_data).reshape(-1, TEs.shape[0]).T
-        B0 = weighted_regression(TEs_mat, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
-        B0 *= 1000 / (2 * np.pi)
-        field_maps[..., i] = B0
+    field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus)
 
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)
+
+def compute_field_map(
+    unwrapped_mat: npt.NDArray, 
+    mag: List[nib.Nifti1Image], 
+    num_echos: int, 
+    TEs_mat: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
+    frame_num: int) -> npt.NDArray:
+
+    """
+    Function for computing field map for a given frame
+
+    Parameters
+    ----------
+
+    unwrapped_mat: np.ndarray
+        Array of unwrapped phase data for a given frame
+    mag: List[nib.NiftiImage]
+        List of magnitudes
+    num_echos: int
+        Number of echos
+    TEs_mat: Union[List[float], Tuple[float], np.ndarray]
+        Echo times in a 2d matrix
+    frame_num: int
+        Frame number
+
+    Returns
+    -------
+    B0: np.ndarray
+    
+    """
+    
+    logging.info(f"Computing field map for frame: {frame_num}")
+    unwrapped_mat = unwrapped_mat.reshape(-1, num_echos).T
+    mag_data = np.stack([m.dataobj[..., frame_num] for m in mag], axis=-1).astype(np.float64)
+    weights = mag_data.reshape(-1, num_echos).T
+    B0 = weighted_regression(TEs_mat, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
+    B0 *= 1000 / (2 * np.pi)
+
+    return B0
+
+def compute_offset(
+    echo_ind: int, 
+    W: npt.NDArray[np.float64],
+    X: Union[List[float], Tuple[float], np.ndarray], 
+    Y: npt.NDArray) -> int:
+
+    """
+    Method for computing the global mode offset without looping
+    
+    echo_ind: int
+        Echo index
+    W: np.ndarray
+        Weights
+    X: Union[List[float], Tuple[float], np.ndarray]
+        TEs in 2d matrix
+    Y: np.ndarray
+        Masked unwrapped data weighted by magnitude
+
+    Returns
+    -------
+    best_offset: int
+    """
+
+    # TODO: can do this without for loop by computing the 2pi multiple on the difference of the
+    # estimated linear phase at a TE and the computed unwrapped phase at a TE
+
+    # fit the model to the up to previous echo
+    coefficients, _ = weighted_regression(X[: echo_ind], Y[: echo_ind], W[: echo_ind])
+
+    # compute the predicted phase for the current echo
+    Y_pred = X[echo_ind] * coefficients
+
+    # compute the difference between the predicted phase and the unwrapped phase
+    Y_diff = Y_pred - Y[echo_ind]
+
+    # compute closest multiple of 2pi to the difference
+    int_map = np.round(Y_diff / (2 * np.pi)).astype(int)
+
+    # compute the most often occuring multiple
+    best_offset = mode(int_map, axis=0, keepdims=False).mode
+    best_offset = cast(int, best_offset)
+
+    return best_offset
+
+def compute_offset_residual(
+    echo_ind: int, 
+    W: npt.NDArray[np.float64],
+    X: Union[List[float], Tuple[float], np.ndarray], 
+    Y: npt.NDArray) -> int:
+
+    """
+    Method for computing the offset by minimizing the residual
+    
+    echo_ind: int
+        Echo index
+    W: np.ndarray
+        Weights
+    X: Union[List[float], Tuple[float], np.ndarray]
+        TEs in 2d matrix
+    Y: np.ndarray
+        Masked unwrapped data weighted by magnitude
+
+    Returns
+    -------
+    best_offset: int
+    """
+
+    offsets = list(range(-10, 11))
+    # create variables to store best residual and best offset
+    best_residual = None
+    best_offset = None
+    for multiple in offsets:
+        # get the ordinate matrix for these echoes
+        Y_copy = Y.copy()[: echo_ind + 1, :]
+        # add offset
+        Y_copy[echo_ind, :] += 2 * np.pi * multiple
+
+        # fit model and compute residuals
+        _, residuals = weighted_regression(X[: echo_ind + 1], Y_copy, W[: echo_ind + 1])
+
+        # get summary stat of residuals
+        summary_residual = residuals.mean()
+
+        # if no best residual, then just initialize it here
+        if best_residual is None:
+            best_residual = summary_residual
+            best_offset = multiple
+        else:  # else we store the residual + offset if it is better
+            if summary_residual < best_residual:
+                best_residual = summary_residual
+                best_offset = multiple
+    best_offset = cast(int, best_offset)
+
+    return best_offset
