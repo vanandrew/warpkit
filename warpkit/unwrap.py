@@ -193,6 +193,7 @@ def consecutive(data, idx):
     # only return group with idx
     return [g for g in groups if idx in g][0]
 
+
 def check_temporal_consistency(
     unwrapped_data: npt.NDArray,
     motion_params: npt.NDArray,
@@ -363,7 +364,9 @@ def start_unwrap_process(
                 phase_data: npt.NDArray[np.float64] = rescale_phase(
                     np.stack([p.dataobj[..., idx] for p in phase], axis=-1)
                 ).astype(np.float64)
-                mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(np.float64)
+                mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., idx] for m in mag], axis=-1).astype(
+                    np.float64
+                )
 
                 mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., idx].astype(bool))
 
@@ -404,8 +407,9 @@ def start_unwrap_process(
             # close the executor
             else:
                 executor.shutdown()
-    
+
     return unwrapped
+
 
 def start_fieldmap_process(
     field_maps: npt.NDArray,
@@ -415,7 +419,7 @@ def start_fieldmap_process(
     n_cpus: int = 4,
 ) -> npt.NDArray:
     """
-    
+
     Parameters
     ----------
     field_maps : npt.NDArray
@@ -428,24 +432,19 @@ def start_fieldmap_process(
         Echo times associated with each phase (in ms)
     n_cpus : int, optional
         Number of CPUs to use, by default 4
-    """ 
-    
-    
+    """
+
     TEs_mat = TEs[:, np.newaxis]
-    
+
     # If multiprocessing is not enabled, run serially
     if n_cpus == 1:
         logging.info("Running field map computation serially")
         for frame_num in range(unwrapped.shape[-1]):
             field_maps[..., frame_num] = compute_field_map(
-                unwrapped[..., frame_num], 
-                mag,
-                TEs.shape[0],
-                TEs_mat,
-                frame_num
+                unwrapped[..., frame_num], mag, TEs.shape[0], TEs_mat, frame_num
             )
     # If multiprocessing is enabled, run in parallel using a process pool
-    else: 
+    else:
         logging.info(f"Running field map computation in parallel with {n_cpus} processes")
 
         with ProcessPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
@@ -456,12 +455,7 @@ def start_fieldmap_process(
 
                 fieldmap_futures[
                     fieldmap_executor.submit(
-                        compute_field_map,
-                        unwrapped[..., frame_num], 
-                        mag,
-                        TEs.shape[0],
-                        TEs_mat,
-                        frame_num
+                        compute_field_map, unwrapped[..., frame_num], mag, TEs.shape[0], TEs_mat, frame_num
                     )
                 ] = frame_num
 
@@ -472,8 +466,8 @@ def start_fieldmap_process(
                 logging.info(f"Loading frame: {frame_num}")
                 field_maps[..., frame_num] = fieldmap_future.result()
 
-    
     return field_maps
+
 
 def unwrap_and_compute_field_maps(
     phase: List[nib.Nifti1Image],
@@ -587,7 +581,7 @@ def unwrap_and_compute_field_maps(
         )
 
     # # FOR DEBUGGING
-    #TODO: create flag for this, default false
+    # TODO: create flag for this, default false
     # # save out unwrapped phase
     # logging.info("Saving unwrapped phase images...")
     # for i in range(unwrapped.shape[-2]):
@@ -604,12 +598,14 @@ def unwrap_and_compute_field_maps(
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)
 
+
 def compute_field_map(
-    unwrapped_mat: npt.NDArray, 
-    mag: List[nib.Nifti1Image], 
-    num_echos: int, 
+    unwrapped_mat: npt.NDArray,
+    mag: List[nib.Nifti1Image],
+    num_echos: int,
     TEs_mat: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
-    frame_num: int) -> npt.NDArray:
+    frame_num: int,
+) -> npt.NDArray:
 
     """
     Function for computing field map for a given frame
@@ -631,9 +627,9 @@ def compute_field_map(
     Returns
     -------
     B0: np.ndarray
-    
+
     """
-    
+
     logging.info(f"Computing field map for frame: {frame_num}")
     unwrapped_mat = unwrapped_mat.reshape(-1, num_echos).T
     mag_data = np.stack([m.dataobj[..., frame_num] for m in mag], axis=-1).astype(np.float64)
@@ -643,15 +639,14 @@ def compute_field_map(
 
     return B0
 
+
 def compute_offset(
-    echo_ind: int, 
-    W: npt.NDArray[np.float64],
-    X: Union[List[float], Tuple[float], np.ndarray], 
-    Y: npt.NDArray) -> int:
+    echo_ind: int, W: npt.NDArray[np.float64], X: Union[List[float], Tuple[float], np.ndarray], Y: npt.NDArray
+) -> int:
 
     """
     Method for computing the global mode offset without looping
-    
+
     echo_ind: int
         Echo index
     W: np.ndarray
@@ -670,7 +665,7 @@ def compute_offset(
     # estimated linear phase at a TE and the computed unwrapped phase at a TE
 
     # fit the model to the up to previous echo
-    coefficients, _ = weighted_regression(X[: echo_ind], Y[: echo_ind], W[: echo_ind])
+    coefficients, _ = weighted_regression(X[:echo_ind], Y[:echo_ind], W[:echo_ind])
 
     # compute the predicted phase for the current echo
     Y_pred = X[echo_ind] * coefficients
@@ -687,15 +682,14 @@ def compute_offset(
 
     return best_offset
 
+
 def compute_offset_residual(
-    echo_ind: int, 
-    W: npt.NDArray[np.float64],
-    X: Union[List[float], Tuple[float], np.ndarray], 
-    Y: npt.NDArray) -> int:
+    echo_ind: int, W: npt.NDArray[np.float64], X: Union[List[float], Tuple[float], np.ndarray], Y: npt.NDArray
+) -> int:
 
     """
     Method for computing the offset by minimizing the residual
-    
+
     echo_ind: int
         Echo index
     W: np.ndarray
