@@ -178,7 +178,10 @@ def displacement_maps_to_field_maps(
 
 
 def displacement_map_to_field(
-    displacement_map: nib.Nifti1Image, axis: str = "y", format: str = "itk"
+    displacement_map: nib.Nifti1Image,
+    axis: str = "y",
+    format: str = "itk",
+    frame: int = 0,
 ) -> nib.Nifti1Image:
     """Convert a displacement map to a displacement field
 
@@ -190,6 +193,8 @@ def displacement_map_to_field(
         Axis displacement maps are along, by default "y"
     format : str, optional
         Format of the displacement field, by default "itk"
+    frame : int, optional
+        If the displacement map has multiple frames, this specifies which frame to convert, by default 0
 
     Returns
     -------
@@ -200,8 +205,13 @@ def displacement_map_to_field(
     axis_code = AXIS_MAP[axis]
     displacement_map = cast(nib.Nifti1Image, displacement_map)
 
-    # get data, affine and header info
-    data = displacement_map.get_fdata()
+    # check if the displacement map has multiple frames
+    if len(displacement_map.shape) == 4:
+        data = np.asarray(displacement_map.dataobj[..., frame])
+    else:  # otherwise just get the data
+        data = displacement_map.get_fdata()
+
+    # get affine and header info
     affine = displacement_map.affine
     header = cast(nib.Nifti1Header, displacement_map.header)
 
@@ -362,7 +372,7 @@ def resample_image(
     input_image : nib.Nifti1Image
         Input image to resample.
     transform : nib.Nifti1Image
-        Transform to apply to input image.
+        Transform to apply to input image (must be itk format).
 
     Returns
     -------
