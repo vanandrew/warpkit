@@ -139,3 +139,7 @@ tests/test_outputs/
 # ignore vscode
 .vscode/
 
+# ignore test data
+# download is via box
+tests/data/bidsdata
+tests/data/bidsdata.zip

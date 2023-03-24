@@ -40,6 +40,33 @@ def normalize(data: npt.NDArray) -> npt.NDArray:
     return (data - np.min(data)) / (np.max(data) - np.min(data))
 
 
+def corr2_coeff(A: npt.NDArray, B: npt.NDArray) -> npt.NDArray:
+    """Efficiently calculates correlation coefficient between two 2D arrays
+
+    Parameters
+    ----------
+    A : npt.NDArray
+        1st array to correlate
+    B : npt.NDArray
+        2nd array to correlate
+
+    Returns
+    -------
+    npt.NDArray
+        array of correlation coefficients
+    """
+    # Rowwise mean of input arrays & subtract from input arrays themeselves
+    A_mA = A - A.mean(1)[:, None]
+    B_mB = B - B.mean(1)[:, None]
+
+    # Sum of squares across rows
+    ssA = (A_mA**2).sum(1)
+    ssB = (B_mB**2).sum(1)
+
+    # Finally get corr coeff
+    return np.dot(A_mA, B_mB.T) / np.sqrt(np.dot(ssA[:, None], ssB[None]))
+
+
 def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> npt.NDArray[Any]:
     """Rescale phase data to [-pi, pi]
 
