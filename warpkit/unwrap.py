@@ -9,13 +9,15 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_otsu  # type: ignore
+from skimage.morphology import remove_small_objects
 from skimage.measure import label, regionprops
 from scipy.ndimage import (
     generate_binary_structure,
     binary_erosion,
     binary_dilation,
     binary_fill_holes,
+    gaussian_filter,
 )
 from scipy.stats import mode
 from warpkit.model import weighted_regression
@@ -33,6 +35,29 @@ def initialize_julia_context():
 
     # Set the process's signal handler to ignore SIGINT
     signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT])
+
+
+def get_largest_connected_component(mask_data: npt.NDArray[np.bool8]) -> npt.NDArray[np.bool8]:
+    """Get the largest connected component of a mask
+
+    Parameters
+    ----------
+    mask_data : npt.NDArray[np.bool8]
+        Mask to get the largest connected component of
+
+    Returns
+    -------
+    npt.NDArray[np.bool8]
+        Mask with only the largest connected component
+    """
+    # get the largest connected component
+    labelled_mask = label(mask_data)
+    props = regionprops(labelled_mask)
+    sorted_props = sorted(props, key=lambda x: x.area, reverse=True)
+    mask_data = labelled_mask == sorted_props[0].label
+
+    # return the mask
+    return mask_data
 
 
 def create_brain_mask(mag_shortest: npt.NDArray[np.float64], extra_dilation: int = 0) -> npt.NDArray[np.bool8]:
@@ -59,13 +84,10 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float64], extra_dilation: int
     mask_data = cast(npt.NDArray[np.float64], binary_fill_holes(mask_data, strel))
 
     # erode mask
-    mask_data = binary_erosion(mask_data, structure=strel, iterations=2, border_value=1)
+    mask_data = cast(npt.NDArray[np.bool8], binary_erosion(mask_data, structure=strel, iterations=2, border_value=1))
 
     # get largest connected component
-    labelled_mask = label(mask_data)
-    props = regionprops(labelled_mask)
-    sorted_props = sorted(props, key=lambda x: x.area, reverse=True)
-    mask_data = labelled_mask == sorted_props[0].label
+    mask_data = get_largest_connected_component(mask_data)
 
     # dilate the mask
     mask_data = binary_dilation(mask_data, structure=strel, iterations=2)
@@ -95,7 +117,7 @@ def unwrap_phase(
     automask_dilation: int = 3,
     correct_global: bool = True,
     idx: Union[int, None] = None,
-) -> npt.NDArray[np.float64]:
+) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.int8]]:
     """Unwraps the phase for a single frame of ME-EPI
 
     Parameters
@@ -121,6 +143,8 @@ def unwrap_phase(
     -------
     npt.NDArray[np.float64]
         unwrapped phase in radians
+    npt.NDArray[np.int8]
+        mask
     """
     # use global Julia Context
     global JULIA
@@ -134,8 +158,41 @@ def unwrap_phase(
         echo_idx = np.argmin(TEs)
         mag_shortest = mag_data[..., echo_idx]
 
-        # create the mask
-        mask_data = create_brain_mask(mag_shortest, automask_dilation)
+        # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
+        # and the voxel quality mask can get extra voxels that are not brain, but is noisy
+        # so we combine the two masks to get a better mask
+        vq = JULIA.romeo_voxelquality(phase_data, TEs, mag_data)
+        vq_mask = vq > threshold_otsu(vq)
+        strel = generate_binary_structure(3, 2)
+        vq_mask = cast(npt.NDArray[np.bool8], binary_fill_holes(vq_mask, strel))
+
+        # get largest connected component
+        vq_mask = get_largest_connected_component(vq_mask)
+
+        # combine masks
+        echo_idx = np.argmin(TEs)
+        mag_shortest = mag_data[..., echo_idx]
+        brain_mask = create_brain_mask(mag_shortest)
+        combined_mask = brain_mask | vq_mask
+        combined_mask = get_largest_connected_component(combined_mask)
+
+        # erode then dilate
+        combined_mask = cast(npt.NDArray[np.bool8], binary_erosion(combined_mask, strel, iterations=2))
+        combined_mask = cast(npt.NDArray[np.bool8], binary_dilation(combined_mask, strel, iterations=2))
+
+        # only get largest connected component
+        combined_mask = get_largest_connected_component(combined_mask)
+
+        # get a dilated verision of the mask
+        combined_mask_dilated = cast(
+            npt.NDArray[np.bool8], binary_dilation(combined_mask, strel, iterations=automask_dilation)
+        )
+
+        # get sum of masks (we can select dilated vs original version by indexing)
+        mask_data_select = combined_mask.astype(np.int8) + combined_mask_dilated.astype(np.int8)
+
+        # let mask_data be the dilated version
+        mask_data = mask_data_select > 0
 
     # Do MCPC-3D-S algo to compute phase offset
     signal_diff = mag_data[..., 0] * mag_data[..., 1] * np.exp(1j * (phase_data[..., 1] - phase_data[..., 0]))
@@ -169,8 +226,7 @@ def unwrap_phase(
     # that minimizes the residuals for each subsequent echo
     # this seems to be more robust than romeo's global offset correction
     if correct_global:
-        # use a more stringent brain mask for this
-        # TODO: make this modifiable by user at some point...
+        # use auto mask to get brain mask
         echo_idx = np.argmin(TEs)
         mag_shortest = mag_data[..., echo_idx]
         brain_mask = create_brain_mask(mag_shortest)
@@ -203,8 +259,17 @@ def unwrap_phase(
             # apply the offset
             unwrapped[brain_mask, i] += 2 * np.pi * best_offset
 
+    # set anything outside of mask_data to 0
+    unwrapped[~mask_data] = 0
+
+    # set final mask to return
+    if automask:
+        final_mask = mask_data_select  # type: ignore
+    else:
+        final_mask = mask_data.astype(np.int8)
+
     # return the unwrapped data
-    return unwrapped
+    return unwrapped, final_mask
 
 
 def check_temporal_consistency(
@@ -260,7 +325,7 @@ def check_temporal_consistency(
         # get indices of mask
         indices = np.where(tmask)[0]
 
-        # for each frame compute the mean value along the time axis in the contiguous group
+        # for each frame compute the mean value along the time axis
         mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
 
         # for this frame figure out the integer multiple that minimizes the value to the mean voxel
@@ -310,7 +375,7 @@ def check_temporal_consistency_corr(
     TEs,
     mag: List[nib.Nifti1Image],
     frames: List[int],
-    threshold: float = 0.95,
+    threshold: float = 0.98,
 ) -> npt.NDArray:
     """Ensures phase unwrapping solutions are temporally consistent
 
@@ -347,7 +412,7 @@ def check_temporal_consistency_corr(
         # generate brain mask
         echo_idx = np.argmin(TEs)
         mag_shortest = mag[echo_idx].dataobj[..., frame_idx]
-        mask = create_brain_mask(mag_shortest)
+        mask = create_brain_mask(mag_shortest, -1)
 
         # get the current frame phase
         current_frame_data = unwrapped_echo_1[mask, t]
@@ -355,7 +420,7 @@ def check_temporal_consistency_corr(
         # get the correlation between the current frame and all other frames
         corr = corr2_coeff(
             current_frame_data.reshape(-1)[:, np.newaxis].T, unwrapped_echo_1[mask, :].reshape(-1, len(frames)).T
-        )
+        ).ravel()
 
         # threhold the RD
         tmask = corr > threshold
@@ -363,7 +428,7 @@ def check_temporal_consistency_corr(
         # get indices of mask
         indices = np.where(tmask)[0]
 
-        # for each frame compute the mean value along the time axis in the contiguous group
+        # for each frame compute the mean value along the time axis
         mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
 
         # for this frame figure out the integer multiple that minimizes the value to the mean voxel
@@ -374,10 +439,7 @@ def check_temporal_consistency_corr(
 
         # format weight matrix
         weights_mat = (
-            np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1)
-            .astype(np.float64)
-            .reshape(-1, TEs.shape[0])
-            .T
+            np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
         )
 
         # form design matrix
@@ -418,7 +480,7 @@ def start_unwrap_process(
     automask: bool = True,
     correct_global: bool = True,
     n_cpus: int = 4,
-) -> npt.NDArray:
+) -> Tuple[npt.NDArray, npt.NDArray]:
     """Starts unwrapping processes to unwrap phase data.
 
     Parameters
@@ -446,12 +508,17 @@ def start_unwrap_process(
     -------
     npt.NDArray
         Unwrapped phase data
+    npt.NDArray
+        Mask data
     """
 
     # note that I separate out idx and frame_idx for the case when the user wants to process a subset of
     # non-contiguous frames
     # this function will always reindex the frames to be contiguous however
     # e.g. if the user passes in frames [3, 5, 13] it will be reindexed to [0, 1, 2]
+
+    # array for storing auto-generated masks
+    new_mask_data = np.zeros(mag[0].shape, dtype=np.int8)
 
     # if multiprocessing is not enabled, run serially
     if n_cpus == 1:
@@ -466,8 +533,7 @@ def start_unwrap_process(
                 np.float64
             )
             mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
-
-            unwrapped[..., idx] = unwrap_phase(
+            unwrapped[..., idx], new_mask_data[..., idx] = unwrap_phase(
                 phase_data,
                 mag_data,
                 TEs,
@@ -522,7 +588,7 @@ def start_unwrap_process(
                 idx = futures[future]
                 # get the unwrapped image
                 logging.info(f"Collecting frame: {idx}")
-                unwrapped[..., idx] = future.result()
+                unwrapped[..., idx], new_mask_data[..., idx] = future.result()
         # we do some hacky stuff to kill the process pool on keyboard interrupt since Julia doesn't play nice...
         except KeyboardInterrupt:
             # on keyboard interrupt, just kill all processes in the executor pool
@@ -542,7 +608,7 @@ def start_unwrap_process(
                 executor.shutdown()
 
     # return the unwrapped data
-    return unwrapped
+    return unwrapped, new_mask_data
 
 
 def start_fieldmap_process(
@@ -594,7 +660,6 @@ def start_fieldmap_process(
             fieldmap_futures = dict()
             # loop over the total number of frames
             for frame_num in range(unwrapped.shape[-1]):
-
                 fieldmap_futures[
                     fieldmap_executor.submit(
                         compute_field_map, unwrapped[..., frame_num], mag, TEs.shape[0], TEs_mat, frame_num
@@ -704,6 +769,10 @@ def unwrap_and_compute_field_maps(
     field_maps = np.zeros((*phase[0].shape[:3], n_frames))
     unwrapped = np.zeros((*phase[0].shape[:3], len(TEs), n_frames))
 
+    # DEBUG
+    global affine
+    affine = phase[0].affine
+
     # allocate mask if needed
     if not mask:
         mask = SimpleNamespace()
@@ -713,7 +782,9 @@ def unwrap_and_compute_field_maps(
             mask.dataobj = np.ones(phase[0].shape)
 
     # load in unwrapped image
-    unwrapped = start_unwrap_process(unwrapped, phase, mag, TEs, mask, frames, automask, correct_global, n_cpus)
+    unwrapped, new_masks = start_unwrap_process(
+        unwrapped, phase, mag, TEs, mask, frames, automask, correct_global, n_cpus
+    )
 
     # check temporal consistency to unwrapped phase
     # if motion parameters passed in
@@ -740,9 +811,33 @@ def unwrap_and_compute_field_maps(
     # logging.info("Saving unwrapped phase images...")
     # for i in range(unwrapped.shape[-2]):
     #     nib.Nifti1Image(unwrapped[:, :, :, i, :], phase[0].affine, phase[0].header).to_filename(f"phase{i}.nii.gz")
+    # logging.info("Saving masks..")
+    # nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii.gz")
 
     # compute field maps on temporally consistent unwrapped phase
-    field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus)
+    # TODO: multiprocessing is broken atm for this
+    field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=1)
+
+    # if border voxels defined, use that information to stabilize border regions
+    # need more than 5 frames for temporal SVD filtering of border voxels
+    if new_masks.max() == 2 and n_frames >= 20:
+        smoothed_field_maps = np.zeros(field_maps.shape)
+        voxel_size = phase[0].header.get_zooms()[0]  # type: ignore
+        sigma = 4 / voxel_size
+        for i in range(field_maps.shape[-1]):
+            # smooth by 4 mm kernel
+            smoothed_field_maps[..., i] = gaussian_filter(field_maps[..., i], sigma=sigma)
+        # compute the union of all the masks
+        union_mask = np.sum(new_masks, axis=-1) > 0
+        # do temporal filtering of border voxels with SVD
+        U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
+        # only keep the first 5 components
+        recon = np.dot(U[:, :5] * S[:5], VT[:5, :])
+        recon_img = np.zeros(field_maps.shape)
+        recon_img[union_mask] = recon
+        # set the border voxels in the field map to the smoothed filtered values
+        for i in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
 
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)
