@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import cast, List, Tuple, Union
 from threading import Lock
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing as mp
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
@@ -274,10 +275,13 @@ def unwrap_phase(
 
 def check_temporal_consistency(
     unwrapped_data: npt.NDArray,
+    unwrapped_echo_1: npt.NDArray,
     TEs,
     motion_params: npt.NDArray,
     weights: List[nib.Nifti1Image],
     frames: List[int],
+    t: int,
+    frame_idx: int,
     rd_threshold: float = 0.5,
 ) -> npt.NDArray:
     """Ensures phase unwrapping solutions are temporally consistent
@@ -286,6 +290,8 @@ def check_temporal_consistency(
     ----------
     unwrapped_data : npt.NDArray
         unwrapped phase data, where last column is time, and second to last column are the echoes
+    unwrapped_echo_1 : npt.NDArray
+        copy of unwrapped phase data for the first echo
     TEs : npt.NDArray
         echo times
     motion_params : npt.NDArray
@@ -295,6 +301,10 @@ def check_temporal_consistency(
         weights for regression model
     frames : List[int]
         list of frames that are being processed
+    t : int
+        current frame index
+    frame_idx : int
+        current frame index
     rd_threshold : float
         relative displacement threshold. By default 0.5
 
@@ -303,68 +313,61 @@ def check_temporal_consistency(
     npt.NDArray
         fixed unwrapped phase data
     """
-    # look at the first echo
-    unwrapped_echo_1 = unwrapped_data[..., 0, :].copy()
 
-    # loop over each frame of the data
-    for t, frame_idx in enumerate(frames):
-        logging.info("Computing temporal consistency check for frame: %d" % t)
-        # compute the relative displacements to the current frame
-        # first get the motion parameters for the current frame
-        current_frame_motion_params = motion_params[t][np.newaxis, :]
+    logging.info(f"Computing temporal consistency check for frame: {t}")
+    # compute the relative displacements to the current frame
+    # first get the motion parameters for the current frame
+    current_frame_motion_params = motion_params[t][np.newaxis, :]
 
-        # now get the difference of each motion params to this frame
-        motion_params_diff = motion_params - current_frame_motion_params
+    # now get the difference of each motion params to this frame
+    motion_params_diff = motion_params - current_frame_motion_params
 
-        # now compute the relative displacement by sum of the absolute values
-        RD = np.sum(np.abs(motion_params_diff), axis=1)
+    # now compute the relative displacement by sum of the absolute values
+    RD = np.sum(np.abs(motion_params_diff), axis=1)
 
-        # threhold the RD
-        tmask = RD < rd_threshold
+    # threhold the RD
+    tmask = RD < rd_threshold
 
-        # get indices of mask
-        indices = np.where(tmask)[0]
+    # get indices of mask
+    indices = np.where(tmask)[0]
 
-        # for each frame compute the mean value along the time axis
-        mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
+    # for each frame compute the mean value along the time axis
+    mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
 
-        # for this frame figure out the integer multiple that minimizes the value to the mean voxel
-        int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
+    # for this frame figure out the integer multiple that minimizes the value to the mean voxel
+    int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
 
-        # correct the data using the integer map
-        unwrapped_data[..., 0, t] += 2 * np.pi * int_map
+    # correct the data using the integer map
+    unwrapped_data[..., 0, t] += 2 * np.pi * int_map
 
-        # format weight matrix
-        weights_mat = (
-            np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1)
-            .astype(np.float64)
-            .reshape(-1, TEs.shape[0])
-            .T
+    # format weight matrix
+    weights_mat = (
+        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
+    )
+
+    # form design matrix
+    X = TEs[:, np.newaxis]
+
+    # fit subsequent echos to the weighted linear regression from the first echo
+    for echo in range(1, unwrapped_data.shape[-2]):
+        # form response matrix
+        Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
+
+        # fit model to data
+        coefficients, _ = weighted_regression(X[:echo], Y, weights_mat[:echo])
+
+        # get the predicted values for this echo
+        Y_pred = coefficients * TEs[echo]
+
+        # compute the difference and get the integer multiple map
+        int_map = (
+            np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
+            .astype(int)
+            .T.reshape(*unwrapped_data.shape[:3])
         )
 
-        # form design matrix
-        X = TEs[:, np.newaxis]
-
-        # fit subsequent echos to the weighted linear regression from the first echo
-        for echo in range(1, unwrapped_data.shape[-2]):
-            # form response matrix
-            Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
-
-            # fit model to data
-            coefficients, _ = weighted_regression(X[:echo], Y, weights_mat[:echo])
-
-            # get the predicted values for this echo
-            Y_pred = coefficients * TEs[echo]
-
-            # compute the difference and get the integer multiple map
-            int_map = (
-                np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
-                .astype(int)
-                .T.reshape(*unwrapped_data.shape[:3])
-            )
-
-            # correct the data using the integer map
-            unwrapped_data[..., echo, t] += 2 * np.pi * int_map
+        # correct the data using the integer map
+        unwrapped_data[..., echo, t] += 2 * np.pi * int_map
 
     # return the fixed data
     return unwrapped_data
@@ -372,9 +375,12 @@ def check_temporal_consistency(
 
 def check_temporal_consistency_corr(
     unwrapped_data: npt.NDArray,
+    unwrapped_echo_1: npt.NDArray,
     TEs,
     mag: List[nib.Nifti1Image],
     frames: List[int],
+    t,
+    frame_idx,
     threshold: float = 0.98,
 ) -> npt.NDArray:
     """Ensures phase unwrapping solutions are temporally consistent
@@ -402,72 +408,163 @@ def check_temporal_consistency_corr(
     npt.NDArray
         fixed unwrapped phase data
     """
-    # look at the first echo
-    unwrapped_echo_1 = unwrapped_data[..., 0, :].copy()
 
-    # loop over each frame of the data
-    for t, frame_idx in enumerate(frames):
-        logging.info("Computing temporal consistency check for frame: %d" % t)
+    logging.info(f"Computing temporal consistency check for frame: {t}")
 
-        # generate brain mask
-        echo_idx = np.argmin(TEs)
-        mag_shortest = mag[echo_idx].dataobj[..., frame_idx]
-        mask = create_brain_mask(mag_shortest, -1)
+    # generate brain mask
+    echo_idx = np.argmin(TEs)
+    mag_shortest = mag[echo_idx].dataobj[..., frame_idx]
+    mask = create_brain_mask(mag_shortest, -1)
 
-        # get the current frame phase
-        current_frame_data = unwrapped_echo_1[mask, t]
+    # get the current frame phase
+    current_frame_data = unwrapped_echo_1[mask, t]
 
-        # get the correlation between the current frame and all other frames
-        corr = corr2_coeff(
-            current_frame_data.reshape(-1)[:, np.newaxis].T, unwrapped_echo_1[mask, :].reshape(-1, len(frames)).T
-        ).ravel()
+    # get the correlation between the current frame and all other frames
+    corr = corr2_coeff(
+        current_frame_data.reshape(-1)[:, np.newaxis].T, unwrapped_echo_1[mask, :].reshape(-1, len(frames)).T
+    ).ravel()
 
-        # threhold the RD
-        tmask = corr > threshold
+    # threhold the RD
+    tmask = corr > threshold
 
-        # get indices of mask
-        indices = np.where(tmask)[0]
+    # get indices of mask
+    indices = np.where(tmask)[0]
 
-        # for each frame compute the mean value along the time axis
-        mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
+    # for each frame compute the mean value along the time axis
+    mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
 
-        # for this frame figure out the integer multiple that minimizes the value to the mean voxel
-        int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
+    # for this frame figure out the integer multiple that minimizes the value to the mean voxel
+    int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
 
-        # correct the data using the integer map
-        unwrapped_data[..., 0, t] += 2 * np.pi * int_map
+    # correct the data using the integer map
+    unwrapped_data[..., 0, t] += 2 * np.pi * int_map
 
-        # format weight matrix
-        weights_mat = (
-            np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
+    # format weight matrix
+    weights_mat = (
+        np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
+    )
+
+    # form design matrix
+    X = TEs[:, np.newaxis]
+
+    # fit subsequent echos to the weighted linear regression from the first echo
+    for echo in range(1, unwrapped_data.shape[-2]):
+        # form response matrix
+        Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
+
+        # fit model to data
+        coefficients, _ = weighted_regression(X[:echo], Y, weights_mat[:echo])
+
+        # get the predicted values for this echo
+        Y_pred = coefficients * TEs[echo]
+
+        # compute the difference and get the integer multiple map
+        int_map = (
+            np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
+            .astype(int)
+            .T.reshape(*unwrapped_data.shape[:3])
         )
 
-        # form design matrix
-        X = TEs[:, np.newaxis]
-
-        # fit subsequent echos to the weighted linear regression from the first echo
-        for echo in range(1, unwrapped_data.shape[-2]):
-            # form response matrix
-            Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
-
-            # fit model to data
-            coefficients, _ = weighted_regression(X[:echo], Y, weights_mat[:echo])
-
-            # get the predicted values for this echo
-            Y_pred = coefficients * TEs[echo]
-
-            # compute the difference and get the integer multiple map
-            int_map = (
-                np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
-                .astype(int)
-                .T.reshape(*unwrapped_data.shape[:3])
-            )
-
-            # correct the data using the integer map
-            unwrapped_data[..., echo, t] += 2 * np.pi * int_map
+        # correct the data using the integer map
+        unwrapped_data[..., echo, t] += 2 * np.pi * int_map
 
     # return the fixed data
     return unwrapped_data
+
+
+def start_temporal_consistency(
+    unwrapped,
+    TEs,
+    mag,
+    frames,
+    motion_params = None,
+    n_cpus=4,
+    threshold=0.5,
+):
+    """Starts processes to ensure temporal consistency of phase unwrapping solutions.
+
+    Parameters
+    ----------
+    unwrapped : npt.NDArray
+        unwrapped phase data, where last column is time, and second to last column are the echoes
+    TEs : npt.NDArray
+        echo times
+    motion_params : npt.NDArray
+        motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
+        to mm
+    mag : List[nib.Nifti1Image]
+        magnitude images
+    frames : List[int]
+        list of frames that are being processed
+    n_cpus : int
+        number of cpus to use
+    threshold : float
+        threshold for correlation similarity. By default 0.5
+
+    Returns
+    -------
+    npt.NDArray
+        fixed unwrapped phase data
+    """
+
+    # Make a copy of the first echo data
+    unwrapped_echo_1 = unwrapped[..., 0, :].copy()
+
+    # if multiprocessing is not enabled, just run the function in a single thread
+    if n_cpus == 1:
+        logging.info("Computing temporal consistency serially")
+        unwrapped_echo_1 = unwrapped[..., 0, :].copy()
+        for t, frame_idx in enumerate(frames):
+            if motion_params is not None:
+                check_temporal_consistency(
+                    unwrapped, unwrapped_echo_1, TEs, motion_params, mag, frames, t, frame_idx, threshold
+                )
+            else:
+                check_temporal_consistency_corr(unwrapped, unwrapped_echo_1, TEs, mag, frames, t, frame_idx)
+    # If multiprocessing is enabled, run the temporal consistency in parallel
+    else:
+        logging.info("Computing temporal consistency in parallel threads")
+
+        threaded_futures = dict()
+
+        with ThreadPoolExecutor(max_workers=n_cpus) as executor:
+            for t, frame_idx in enumerate(frames):
+                if motion_params is not None:
+                    threaded_futures[
+                        executor.submit(
+                            check_temporal_consistency,
+                            unwrapped,
+                            unwrapped_echo_1,
+                            TEs,
+                            motion_params,
+                            mag,
+                            frames,
+                            t,
+                            frame_idx,
+                            threshold,
+                        )
+                    ] = frame_idx
+                else:
+                    threaded_futures[
+                        executor.submit(
+                            check_temporal_consistency_corr,
+                            unwrapped,
+                            unwrapped_echo_1,
+                            TEs,
+                            mag,
+                            frames,
+                            t,
+                            frame_idx
+                        )
+                    ] = frame_idx
+            
+            for threaded_future in as_completed(threaded_futures):
+                frame_idx = threaded_futures[threaded_future]
+                logging.info(f"Temporal consistency check for frame {frame_idx} complete")
+
+    return unwrapped
+
+
 
 
 def start_unwrap_process(
@@ -655,7 +752,9 @@ def start_fieldmap_process(
     else:
         logging.info(f"Running field map computation in parallel with {n_cpus} processes")
 
-        with ProcessPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
+        #shared_mag_array = mp.RawArray('i', mag)
+
+        with ThreadPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
             # collect futures in a dictionary, where the value is the frame index
             fieldmap_futures = dict()
             # loop over the total number of frames
@@ -687,6 +786,7 @@ def unwrap_and_compute_field_maps(
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
     n_cpus: int = 4,
+    debug: bool = False,
 ) -> nib.Nifti1Image:
     """Unwrap phase of data weighted by magnitude data and compute field maps. This makes a call
     to the ROMEO phase unwrapping algorithm for each frame. To learn more about ROMEO, see this paper:
@@ -713,6 +813,8 @@ def unwrap_and_compute_field_maps(
         Only process these frame indices, by default None (which means all frames)
     n_cpus : int, optional
         Number of CPUs to use, by default 4
+    debug : bool, optional
+        Debug mode, by default False
 
     Returns
     -------
@@ -789,34 +891,21 @@ def unwrap_and_compute_field_maps(
     # check temporal consistency to unwrapped phase
     # if motion parameters passed in
     if motion_params is not None:
-        unwrapped = check_temporal_consistency(
-            unwrapped,
-            TEs,
-            motion_params[frames],
-            mag,
-            frames,
-            0.5,
-        )
+        unwrapped = start_temporal_consistency(unwrapped, TEs, mag, frames, motion_params[frames], n_cpus, 0.5)
     else:
-        unwrapped = check_temporal_consistency_corr(
-            unwrapped,
-            TEs,
-            mag,
-            frames,
-        )
+        unwrapped = start_temporal_consistency(unwrapped, TEs, mag, frames, None, n_cpus)
 
-    # # FOR DEBUGGING
-    # # TODO: create flag for this, default false
-    # # save out unwrapped phase
-    # logging.info("Saving unwrapped phase images...")
-    # for i in range(unwrapped.shape[-2]):
-    #     nib.Nifti1Image(unwrapped[:, :, :, i, :], phase[0].affine, phase[0].header).to_filename(f"phase{i}.nii.gz")
-    # logging.info("Saving masks..")
-    # nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii.gz")
+    # Save out unwrapped phase for debugging
+    if debug:
+        logging.info("Saving unwrapped phase images...")
+        for i in range(unwrapped.shape[-2]):
+            nib.Nifti1Image(unwrapped[:, :, :, i, :], phase[0].affine, phase[0].header).to_filename(f"phase{i}.nii.gz")
+        logging.info("Saving masks..")
+        nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii.gz")
 
     # compute field maps on temporally consistent unwrapped phase
     # TODO: multiprocessing is broken atm for this
-    field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=1)
+    field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=n_cpus)
 
     # if border voxels defined, use that information to stabilize border regions
     # need more than 5 frames for temporal SVD filtering of border voxels
