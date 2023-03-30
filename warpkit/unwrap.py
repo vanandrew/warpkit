@@ -489,13 +489,13 @@ def start_temporal_consistency(
         unwrapped phase data, where last column is time, and second to last column are the echoes
     TEs : npt.NDArray
         echo times
-    motion_params : npt.NDArray
-        motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
-        to mm
     mag : List[nib.Nifti1Image]
         magnitude images
     frames : List[int]
         list of frames that are being processed
+    motion_params : npt.NDArray
+        motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
+        to mm
     n_cpus : int
         number of cpus to use
     threshold : float
