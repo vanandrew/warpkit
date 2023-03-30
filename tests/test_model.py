@@ -1,6 +1,5 @@
 import numpy as np
 from warpkit.model import weighted_regression
-from cProfile import Profile
 
 
 def test_weighted_regression():
@@ -15,9 +14,7 @@ def test_weighted_regression():
     np_weights, np_residuals, _, _ = np.linalg.lstsq(X, Y, rcond=None)
 
     # compute using weighted_regression
-    with Profile() as pr:
-        weights, residuals = weighted_regression(X, Y, W1)
-    pr.print_stats(sort="cumtime")
+    weights, residuals = weighted_regression(X, Y, W1)
 
     # these should be the same
     assert np.all(np.isclose(np_weights, weights))
