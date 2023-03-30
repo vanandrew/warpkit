@@ -478,6 +478,7 @@ def start_unwrap_process(
     mask: Union[nib.Nifti1Image, SimpleNamespace],
     frames: List[int],
     automask: bool = True,
+    automask_dilation: int = 3,
     correct_global: bool = True,
     n_cpus: int = 4,
 ) -> Tuple[npt.NDArray, npt.NDArray]:
@@ -499,6 +500,8 @@ def start_unwrap_process(
         Only process these frame indices, by default None (which means all frames)
     automask : bool, optional
         Automatically generate a mask (ignore mask option), by default True
+    automask_dilation : int, optional
+        Number of voxels to dilate the automask, by default 3
     correct_global : bool, optional
         Corrects global n2π offsets, by default True
     n_cpus : int, optional
@@ -539,7 +542,7 @@ def start_unwrap_process(
                 TEs,
                 mask_data,
                 automask,
-                3,
+                automask_dilation,
                 correct_global,
                 idx,
             )
@@ -576,7 +579,7 @@ def start_unwrap_process(
                         TEs,
                         mask_data,
                         automask,
-                        3,
+                        automask_dilation,
                         correct_global,
                         idx,
                     )
@@ -785,7 +788,7 @@ def unwrap_and_compute_field_maps(
 
     # load in unwrapped image
     unwrapped, new_masks = start_unwrap_process(
-        unwrapped, phase, mag, TEs, mask, frames, automask, correct_global, n_cpus
+        unwrapped, phase, mag, TEs, mask, frames, automask, 3, correct_global, n_cpus
     )
 
     # check temporal consistency to unwrapped phase
