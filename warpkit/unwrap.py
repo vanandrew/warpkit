@@ -161,7 +161,7 @@ def unwrap_phase(
         # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
-        vq = JULIA.romeo_voxelquality(phase_data, TEs, mag_data)
+        vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(mag_data.shape))
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
         vq_mask = cast(npt.NDArray[np.bool8], binary_fill_holes(vq_mask, strel))
@@ -178,10 +178,8 @@ def unwrap_phase(
 
         # erode then dilate
         combined_mask = cast(npt.NDArray[np.bool8], binary_erosion(combined_mask, strel, iterations=2))
-        combined_mask = cast(npt.NDArray[np.bool8], binary_dilation(combined_mask, strel, iterations=2))
-
-        # only get largest connected component
         combined_mask = get_largest_connected_component(combined_mask)
+        combined_mask = cast(npt.NDArray[np.bool8], binary_dilation(combined_mask, strel, iterations=2))
 
         # get a dilated verision of the mask
         combined_mask_dilated = cast(
@@ -387,9 +385,6 @@ def check_temporal_consistency_corr(
         unwrapped phase data, where last column is time, and second to last column are the echoes
     TEs : npt.NDArray
         echo times
-    motion_params : npt.NDArray
-        motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
-        to mm
     mag : List[nib.Nifti1Image]
         magnitude images
     frames : List[int]
@@ -405,6 +400,9 @@ def check_temporal_consistency_corr(
     # look at the first echo
     unwrapped_echo_1 = unwrapped_data[..., 0, :].copy()
 
+    # reshape the data
+    unwrapped_echo_1 = unwrapped_echo_1.reshape(-1, len(frames))
+
     # loop over each frame of the data
     for t, frame_idx in enumerate(frames):
         logging.info("Computing temporal consistency check for frame: %d" % t)
@@ -412,15 +410,13 @@ def check_temporal_consistency_corr(
         # generate brain mask
         echo_idx = np.argmin(TEs)
         mag_shortest = mag[echo_idx].dataobj[..., frame_idx]
-        mask = create_brain_mask(mag_shortest, -1)
+        mask = create_brain_mask(mag_shortest, -1).ravel()
 
         # get the current frame phase
-        current_frame_data = unwrapped_echo_1[mask, t]
+        current_frame_data = unwrapped_echo_1[mask, t][:, np.newaxis]
 
         # get the correlation between the current frame and all other frames
-        corr = corr2_coeff(
-            current_frame_data.reshape(-1)[:, np.newaxis].T, unwrapped_echo_1[mask, :].reshape(-1, len(frames)).T
-        ).ravel()
+        corr = corr2_coeff(current_frame_data, unwrapped_echo_1[mask, :]).ravel()
 
         # threhold the RD
         tmask = corr > threshold
@@ -429,10 +425,14 @@ def check_temporal_consistency_corr(
         indices = np.where(tmask)[0]
 
         # for each frame compute the mean value along the time axis
-        mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
+        mean_voxels = np.mean(unwrapped_echo_1[:, indices], axis=-1)
 
         # for this frame figure out the integer multiple that minimizes the value to the mean voxel
-        int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
+        int_map = (
+            np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi))
+            .astype(int)
+            .reshape(*unwrapped_data.shape[:3])
+        )
 
         # correct the data using the integer map
         unwrapped_data[..., 0, t] += 2 * np.pi * int_map
@@ -772,6 +772,8 @@ def unwrap_and_compute_field_maps(
     # DEBUG
     global affine
     affine = phase[0].affine
+    global header
+    header = phase[0].header
 
     # allocate mask if needed
     if not mask:
@@ -818,9 +820,12 @@ def unwrap_and_compute_field_maps(
     # TODO: multiprocessing is broken atm for this
     field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=1)
 
-    # if border voxels defined, use that information to stabilize border regions
-    # need more than 5 frames for temporal SVD filtering of border voxels
-    if new_masks.max() == 2 and n_frames >= 20:
+    # if border voxels defined, use that information to stabilize border regions using SVD filtering
+    # this will probably kill any respiration signals in these voxels but improve the
+    # temporal stability of the field maps in these regions (and could we really resolve
+    # respiration in those voxels any way? probably not...)
+    if new_masks.max() == 2 and n_frames >= 10:
+        logging.info("Performing spatial/temporal filtering of border voxels...")
         smoothed_field_maps = np.zeros(field_maps.shape)
         voxel_size = phase[0].header.get_zooms()[0]  # type: ignore
         sigma = 4 / voxel_size
@@ -831,13 +836,40 @@ def unwrap_and_compute_field_maps(
         union_mask = np.sum(new_masks, axis=-1) > 0
         # do temporal filtering of border voxels with SVD
         U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
-        # only keep the first 5 components
-        recon = np.dot(U[:, :5] * S[:5], VT[:5, :])
+        # only keep the first 10 components
+        recon = np.dot(U[:, :10] * S[:10], VT[:10, :])
         recon_img = np.zeros(field_maps.shape)
         recon_img[union_mask] = recon
-        # set the border voxels in the field map to the smoothed filtered values
+        # set the border voxels in the field map to the recon values
         for i in range(field_maps.shape[-1]):
             field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
+        # do second SVD pass
+        U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
+        # only keep the first 10 components
+        recon = np.dot(U[:, :10] * S[:10], VT[:10, :])
+        recon_img = np.zeros(field_maps.shape)
+        recon_img[union_mask] = recon
+        # set the border voxels in the field map to the recon values
+        for i in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
+
+    # use svd filter to denoise the field maps
+    denoise = True
+    n_components = 30
+    if denoise and n_frames >= n_components:
+        logging.info("Denoising field maps with SVD...")
+        logging.info(f"Keeping {n_components} components...")
+        # compute the union of all the masks
+        union_mask = np.sum(new_masks, axis=-1) > 0
+        # compute SVD
+        U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
+        # only keep the first n_components components
+        recon = np.dot(U[:, :n_components] * S[:n_components], VT[:n_components, :])
+        recon_img = np.zeros(field_maps.shape)
+        recon_img[union_mask] = recon
+        # set the voxel values in the mask to the recon values
+        for i in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i] > 0, i] = recon_img[new_masks[..., i] > 0, i]
 
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)

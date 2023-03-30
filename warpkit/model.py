@@ -33,7 +33,7 @@ def weighted_regression(X: npt.NDArray, Y: npt.NDArray, W: npt.NDArray) -> Tuple
     sq_WX = np.sum(WX**2, axis=0, keepdims=True)
 
     # get the inverse X
-    inv_WX = np.zeros_like(WX)
+    inv_WX = np.zeros(WX.shape)
     np.divide(WX, sq_WX, out=inv_WX, where=(sq_WX != 0))
 
     # compute the weights
