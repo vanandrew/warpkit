@@ -686,6 +686,7 @@ def unwrap_and_compute_field_maps(
     TEs: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
+    border_size: int = 3,
     correct_global: bool = True,
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
@@ -710,6 +711,8 @@ def unwrap_and_compute_field_maps(
         Boolean mask, by default None
     automask : bool, optional
         Automatically generate a mask (ignore mask option), by default True
+    border_size : int, optional
+        Size of border in automask, by default 3
     correct_global : bool, optional
         Corrects global n2π offsets, by default True
     frames : List[int], optional
@@ -788,7 +791,7 @@ def unwrap_and_compute_field_maps(
 
     # load in unwrapped image
     unwrapped, new_masks = start_unwrap_process(
-        unwrapped, phase, mag, TEs, mask, frames, automask, 3, correct_global, n_cpus
+        unwrapped, phase, mag, TEs, mask, frames, automask, border_size, correct_global, n_cpus
     )
 
     # check temporal consistency to unwrapped phase
