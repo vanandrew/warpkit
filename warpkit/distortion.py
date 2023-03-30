@@ -14,6 +14,7 @@ def medic(
     phase_encoding_direction: str,
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
+    border_size: int = 3,
     n_cpus: int = 4,
     debug: bool = False
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
@@ -43,6 +44,8 @@ def medic(
         Only process these frame indices, by default None (which means all frames)
     motion_params : Union[npt.NDArray, None]
         Numpy array containing rigid-body motion parameters (by default None)
+    border_size : int, optional
+        Size of border in automask, by default 3
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional
@@ -70,7 +73,7 @@ def medic(
 
     # unwrap phase and compute field maps
     field_maps_native = unwrap_and_compute_field_maps(
-        phase, mag, TEs, frames=frames, motion_params=motion_params, n_cpus=n_cpus, debug=debug
+        phase, mag, TEs, border_size=border_size, frames=frames, motion_params=motion_params, n_cpus=n_cpus, debug=debug
     )
 
     # convert to displacement maps (these are in distorted space)

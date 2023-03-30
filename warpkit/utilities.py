@@ -41,7 +41,7 @@ def normalize(data: npt.NDArray) -> npt.NDArray:
 
 
 def corr2_coeff(A: npt.NDArray, B: npt.NDArray) -> npt.NDArray:
-    """Efficiently calculates correlation coefficient between two 2D arrays
+    """Efficiently calculates correlation coefficient between the columns of two 2D arrays
 
     Parameters
     ----------
@@ -55,16 +55,20 @@ def corr2_coeff(A: npt.NDArray, B: npt.NDArray) -> npt.NDArray:
     npt.NDArray
         array of correlation coefficients
     """
+    # Transpose A and B
+    A = A.T
+    B = B.T
+
     # Rowwise mean of input arrays & subtract from input arrays themeselves
-    A_mA = A - A.mean(1)[:, None]
-    B_mB = B - B.mean(1)[:, None]
+    A_mA = A - A.mean(axis=1, keepdims=True)
+    B_mB = B - B.mean(axis=1, keepdims=True)
 
     # Sum of squares across rows
-    ssA = (A_mA**2).sum(1)
-    ssB = (B_mB**2).sum(1)
+    ssA = (A_mA**2).sum(axis=1, keepdims=True)
+    ssB = (B_mB**2).sum(axis=1, keepdims=True).T
 
     # Finally get corr coeff
-    return np.dot(A_mA, B_mB.T) / np.sqrt(np.dot(ssA[:, None], ssB[None]))
+    return np.dot(A_mA, B_mB.T) / np.sqrt(np.dot(ssA, ssB))
 
 
 def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> npt.NDArray[Any]:

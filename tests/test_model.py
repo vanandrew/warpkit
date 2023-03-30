@@ -4,9 +4,10 @@ from warpkit.model import weighted_regression
 
 def test_weighted_regression():
     # compare weighted regression implementation to numpy
-    X = np.random.rand(10, 1)
-    Y = np.random.rand(10, 10)
-    W1 = np.ones((10, 10))
+    size = 10
+    X = np.random.rand(size, 1)
+    Y = np.random.rand(size, size)
+    W1 = np.ones((size, size))
     W2 = 2 * W1
 
     # compute regression using lstsq (no weights)
