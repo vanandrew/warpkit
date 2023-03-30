@@ -276,7 +276,6 @@ def check_temporal_consistency(
     TEs,
     motion_params: npt.NDArray,
     weights: List[nib.Nifti1Image],
-    frames: List[int],
     t: int,
     frame_idx: int,
     rd_threshold: float = 0.5,
@@ -339,7 +338,10 @@ def check_temporal_consistency(
 
     # format weight matrix
     weights_mat = (
-        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
+        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1)
+        .astype(np.float64)
+        .reshape(-1, TEs.shape[0])
+        .T
     )
 
     # form design matrix
@@ -365,17 +367,14 @@ def check_temporal_consistency(
 
         # correct the data using the integer map
         unwrapped_data[..., echo, t] += 2 * np.pi * int_map
-
     # return the fixed data
     return unwrapped_data
-
 
 def check_temporal_consistency_corr(
     unwrapped_data: npt.NDArray,
     unwrapped_echo_1: npt.NDArray,
     TEs,
     mag: List[nib.Nifti1Image],
-    frames: List[int],
     t,
     frame_idx,
     masks: npt.NDArray,
@@ -468,6 +467,7 @@ def start_temporal_consistency(
     mag,
     frames,
     motion_params = None,
+    masks = None,
     n_cpus=4,
     threshold=0.5,
 ):
@@ -507,10 +507,10 @@ def start_temporal_consistency(
         for t, frame_idx in enumerate(frames):
             if motion_params is not None:
                 check_temporal_consistency(
-                    unwrapped, unwrapped_echo_1, TEs, motion_params, mag, frames, t, frame_idx, threshold
+                    unwrapped, unwrapped_echo_1, TEs, motion_params, mag, t, frame_idx, threshold
                 )
             else:
-                check_temporal_consistency_corr(unwrapped, unwrapped_echo_1, TEs, mag, frames, t, frame_idx)
+                check_temporal_consistency_corr(unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, masks)
     # If multiprocessing is enabled, run the temporal consistency in parallel
     else:
         logging.info("Computing temporal consistency in parallel threads")
@@ -528,7 +528,6 @@ def start_temporal_consistency(
                             TEs,
                             motion_params,
                             mag,
-                            frames,
                             t,
                             frame_idx,
                             threshold,
@@ -542,9 +541,9 @@ def start_temporal_consistency(
                             unwrapped_echo_1,
                             TEs,
                             mag,
-                            frames,
                             t,
-                            frame_idx
+                            frame_idx,
+                            masks
                         )
                     ] = frame_idx
             
@@ -886,9 +885,9 @@ def unwrap_and_compute_field_maps(
     # check temporal consistency to unwrapped phase
     # if motion parameters passed in
     if motion_params is not None:
-        unwrapped = start_temporal_consistency(unwrapped, TEs, mag, frames, motion_params[frames], n_cpus, 0.5)
+        unwrapped = start_temporal_consistency(unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, motion_params=motion_params[frames], masks=None, n_cpus=n_cpus, threshold=0.5)
     else:
-        unwrapped = start_temporal_consistency(unwrapped, TEs, mag, frames, None, n_cpus)
+        unwrapped = start_temporal_consistency(unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, motion_params=None, masks=new_masks, n_cpus=n_cpus)
 
     # Save out unwrapped phase for debugging
     if debug:
