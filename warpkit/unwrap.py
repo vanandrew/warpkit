@@ -373,6 +373,7 @@ def check_temporal_consistency_corr(
     TEs,
     mag: List[nib.Nifti1Image],
     frames: List[int],
+    masks: npt.NDArray,
     threshold: float = 0.98,
 ) -> npt.NDArray:
     """Ensures phase unwrapping solutions are temporally consistent
@@ -400,23 +401,20 @@ def check_temporal_consistency_corr(
     # look at the first echo
     unwrapped_echo_1 = unwrapped_data[..., 0, :].copy()
 
-    # reshape the data
-    unwrapped_echo_1 = unwrapped_echo_1.reshape(-1, len(frames))
-
     # loop over each frame of the data
     for t, frame_idx in enumerate(frames):
         logging.info("Computing temporal consistency check for frame: %d" % t)
 
-        # generate brain mask
+        # generate brain mask (with 1 voxel erosion)
         echo_idx = np.argmin(TEs)
         mag_shortest = mag[echo_idx].dataobj[..., frame_idx]
-        mask = create_brain_mask(mag_shortest, -1).ravel()
+        brain_mask = create_brain_mask(mag_shortest, -1)
 
         # get the current frame phase
-        current_frame_data = unwrapped_echo_1[mask, t][:, np.newaxis]
+        current_frame_data = unwrapped_echo_1[brain_mask, t][:, np.newaxis]
 
         # get the correlation between the current frame and all other frames
-        corr = corr2_coeff(current_frame_data, unwrapped_echo_1[mask, :]).ravel()
+        corr = corr2_coeff(current_frame_data, unwrapped_echo_1[brain_mask, :]).ravel()
 
         # threhold the RD
         tmask = corr > threshold
@@ -424,23 +422,20 @@ def check_temporal_consistency_corr(
         # get indices of mask
         indices = np.where(tmask)[0]
 
-        # for each frame compute the mean value along the time axis
-        mean_voxels = np.mean(unwrapped_echo_1[:, indices], axis=-1)
+        # get mask for frame
+        mask = masks[..., t] > 0
+
+        # for each frame compute the mean value along the time axis (masked by indices and mask)
+        mean_voxels = np.mean(unwrapped_echo_1[mask][:, indices], axis=-1)
 
         # for this frame figure out the integer multiple that minimizes the value to the mean voxel
-        int_map = (
-            np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi))
-            .astype(int)
-            .reshape(*unwrapped_data.shape[:3])
-        )
+        int_map = np.round((mean_voxels - unwrapped_echo_1[mask, t]) / (2 * np.pi)).astype(int)
 
         # correct the data using the integer map
-        unwrapped_data[..., 0, t] += 2 * np.pi * int_map
+        unwrapped_data[mask, 0, t] += 2 * np.pi * int_map
 
         # format weight matrix
-        weights_mat = (
-            np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
-        )
+        weights_mat = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1)[mask].T
 
         # form design matrix
         X = TEs[:, np.newaxis]
@@ -448,7 +443,7 @@ def check_temporal_consistency_corr(
         # fit subsequent echos to the weighted linear regression from the first echo
         for echo in range(1, unwrapped_data.shape[-2]):
             # form response matrix
-            Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
+            Y = unwrapped_data[mask, :echo, t].T
 
             # fit model to data
             coefficients, _ = weighted_regression(X[:echo], Y, weights_mat[:echo])
@@ -457,14 +452,10 @@ def check_temporal_consistency_corr(
             Y_pred = coefficients * TEs[echo]
 
             # compute the difference and get the integer multiple map
-            int_map = (
-                np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
-                .astype(int)
-                .T.reshape(*unwrapped_data.shape[:3])
-            )
+            int_map = np.round((Y_pred - unwrapped_data[mask, echo, t]) / (2 * np.pi)).astype(int)
 
             # correct the data using the integer map
-            unwrapped_data[..., echo, t] += 2 * np.pi * int_map
+            unwrapped_data[mask, echo, t] += 2 * np.pi * int_map
 
     # return the fixed data
     return unwrapped_data
@@ -521,7 +512,7 @@ def start_unwrap_process(
     # e.g. if the user passes in frames [3, 5, 13] it will be reindexed to [0, 1, 2]
 
     # array for storing auto-generated masks
-    new_mask_data = np.zeros(mag[0].shape, dtype=np.int8)
+    new_mask_data = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
 
     # if multiprocessing is not enabled, run serially
     if n_cpus == 1:
@@ -811,6 +802,7 @@ def unwrap_and_compute_field_maps(
             TEs,
             mag,
             frames,
+            new_masks,
         )
 
     # # FOR DEBUGGING
