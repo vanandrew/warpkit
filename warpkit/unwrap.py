@@ -117,6 +117,7 @@ def unwrap_phase(
     automask_dilation: int = 3,
     correct_global: bool = True,
     idx: Union[int, None] = None,
+    residual_offset: bool = False,
 ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.int8]]:
     """Unwraps the phase for a single frame of ME-EPI
 
@@ -138,6 +139,8 @@ def unwrap_phase(
         Corrects global n2π offset, by default True
     idx : int, optional
         Index of the frame being processed for verbosity, by default None
+    residual_offset: bool, optional
+        Computes offset using residuals, by default False
 
     Returns
     -------
@@ -249,10 +252,11 @@ def unwrap_phase(
             Y = unwrapped[brain_mask, :].T
 
             # Compute offset by method that minimizes residuals
-            # best_offset = compute_offset_residual(i, W, X, Y)
-
-            # Compute offset through linear regression method
-            best_offset = compute_offset(i, W, X, Y)
+            if residual_offset:
+                best_offset = compute_offset_residual(i, W, X, Y)
+            else:
+                # Compute offset through linear regression method
+                best_offset = compute_offset(i, W, X, Y)
 
             # apply the offset
             unwrapped[brain_mask, i] += 2 * np.pi * best_offset
@@ -564,6 +568,7 @@ def start_unwrap_process(
     automask_dilation: int = 3,
     correct_global: bool = True,
     n_cpus: int = 4,
+    residual_offset: bool = False
 ) -> Tuple[npt.NDArray, npt.NDArray]:
     """Starts unwrapping processes to unwrap phase data.
 
@@ -589,6 +594,8 @@ def start_unwrap_process(
         Corrects global n2π offsets, by default True
     n_cpus : int, optional
         Number of CPUs to use, by default 4
+    residual_offset : bool, optional
+        Computes best offset using residuals, by default False
 
     Returns
     -------
@@ -628,12 +635,13 @@ def start_unwrap_process(
                 automask_dilation,
                 correct_global,
                 idx,
+                residual_offset
             )
     # if multiprocessing is enabled, run in parallel using a process pool
     else:
         # use a process pool to speed up the computation
         executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
-
+        
         # set error flag for process pool
         PROCESS_POOL_ERROR = False
 
@@ -645,6 +653,7 @@ def start_unwrap_process(
             # loop over the total number of frames
             for idx, frame_idx in enumerate(frames):
                 # get the phase and magnitude data from each echo
+                
                 phase_data: npt.NDArray[np.float64] = rescale_phase(
                     np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
                 ).astype(np.float64)
@@ -665,6 +674,7 @@ def start_unwrap_process(
                         automask_dilation,
                         correct_global,
                         idx,
+                        residual_offset
                     )
                 ] = idx
 
