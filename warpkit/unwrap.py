@@ -4,7 +4,6 @@ import logging
 import traceback
 from types import SimpleNamespace
 from typing import cast, List, Tuple, Union
-from threading import Lock
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import nibabel as nib
 import numpy as np
