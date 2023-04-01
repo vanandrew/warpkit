@@ -14,7 +14,7 @@ def medic(
     phase_encoding_direction: str,
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
-    border_size: int = 3,
+    border_size: int = 5,
     n_cpus: int = 4,
     debug: bool = False
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
@@ -45,7 +45,7 @@ def medic(
     motion_params : Union[npt.NDArray, None]
         Numpy array containing rigid-body motion parameters (by default None)
     border_size : int, optional
-        Size of border in automask, by default 3
+        Size of border in automask, by default 5
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional

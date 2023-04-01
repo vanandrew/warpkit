@@ -780,7 +780,7 @@ def unwrap_and_compute_field_maps(
     TEs: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
-    border_size: int = 3,
+    border_size: int = 5,
     correct_global: bool = True,
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
@@ -807,7 +807,7 @@ def unwrap_and_compute_field_maps(
     automask : bool, optional
         Automatically generate a mask (ignore mask option), by default True
     border_size : int, optional
-        Size of border in automask, by default 3
+        Size of border in automask, by default 5
     correct_global : bool, optional
         Corrects global n2π offsets, by default True
     frames : List[int], optional
@@ -914,7 +914,7 @@ def unwrap_and_compute_field_maps(
     # this will probably kill any respiration signals in these voxels but improve the
     # temporal stability of the field maps in these regions (and could we really resolve
     # respiration in those voxels any way? probably not...)
-    if new_masks.max() == 2 and n_frames >= 10:
+    if new_masks.max() == 2 and n_frames >= 5:
         logging.info("Performing spatial/temporal filtering of border voxels...")
         smoothed_field_maps = np.zeros(field_maps.shape)
         voxel_size = phase[0].header.get_zooms()[0]  # type: ignore
@@ -926,8 +926,8 @@ def unwrap_and_compute_field_maps(
         union_mask = np.sum(new_masks, axis=-1) > 0
         # do temporal filtering of border voxels with SVD
         U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
-        # only keep the first 10 components
-        recon = np.dot(U[:, :10] * S[:10], VT[:10, :])
+        # only keep the first 5 components
+        recon = np.dot(U[:, :5] * S[:5], VT[:5, :])
         recon_img = np.zeros(field_maps.shape)
         recon_img[union_mask] = recon
         # set the border voxels in the field map to the recon values
@@ -935,8 +935,8 @@ def unwrap_and_compute_field_maps(
             field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
         # do second SVD pass
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
-        # only keep the first 10 components
-        recon = np.dot(U[:, :10] * S[:10], VT[:10, :])
+        # only keep the first 5 components
+        recon = np.dot(U[:, :5] * S[:5], VT[:5, :])
         recon_img = np.zeros(field_maps.shape)
         recon_img[union_mask] = recon
         # set the border voxels in the field map to the recon values
