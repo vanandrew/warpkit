@@ -1,4 +1,4 @@
-from typing import cast, List, Tuple, Union
+from typing import List, Tuple, Union
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
@@ -15,8 +15,10 @@ def medic(
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
     border_size: int = 5,
+    border_filt: Tuple[int, int] = (1, 5),
+    svd_filt: int = 30,
     n_cpus: int = 4,
-    debug: bool = False
+    debug: bool = False,
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
     """This runs Multi-Echo DIstortion Correction (MEDIC) on a set of phase and magnitude images.
 
@@ -46,6 +48,10 @@ def medic(
         Numpy array containing rigid-body motion parameters (by default None)
     border_size : int, optional
         Size of border in automask, by default 5
+    border_filt : Tuple[int, int], optional
+        Number of SVD components for each step of border filtering, by default (1, 5)
+    svd_filt : int, optional
+        Number of SVD components to use for filtering of field maps, by default 30
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional
@@ -73,7 +79,16 @@ def medic(
 
     # unwrap phase and compute field maps
     field_maps_native = unwrap_and_compute_field_maps(
-        phase, mag, TEs, border_size=border_size, frames=frames, motion_params=motion_params, n_cpus=n_cpus, debug=debug
+        phase,
+        mag,
+        TEs,
+        border_size=border_size,
+        border_filt=border_filt,
+        svd_filt=svd_filt,
+        frames=frames,
+        motion_params=motion_params,
+        n_cpus=n_cpus,
+        debug=debug,
     )
 
     # convert to displacement maps (these are in distorted space)

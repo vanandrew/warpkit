@@ -341,10 +341,7 @@ def check_temporal_consistency(
 
     # format weight matrix
     weights_mat = (
-        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1)
-        .astype(np.float64)
-        .reshape(-1, TEs.shape[0])
-        .T
+        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
     )
 
     # form design matrix
@@ -372,6 +369,7 @@ def check_temporal_consistency(
         unwrapped_data[..., echo, t] += 2 * np.pi * int_map
     # return the fixed data
     return unwrapped_data
+
 
 def check_temporal_consistency_corr(
     unwrapped_data: npt.NDArray,
@@ -465,14 +463,14 @@ def check_temporal_consistency_corr(
 
 
 def start_temporal_consistency(
-    unwrapped,
-    TEs,
-    mag,
-    frames,
-    motion_params = None,
-    masks = None,
-    n_cpus=4,
-    threshold=0.5,
+    unwrapped: npt.NDArray,
+    TEs: npt.NDArray,
+    mag: List[nib.Nifti1Image],
+    frames: List[int],
+    motion_params: Union[npt.NDArray, None] = None,
+    masks: Union[npt.NDArray, None] = None,
+    n_cpus: int = 4,
+    threshold: float = 0.5,
 ):
     """Starts processes to ensure temporal consistency of phase unwrapping solutions.
 
@@ -489,6 +487,8 @@ def start_temporal_consistency(
     motion_params : npt.NDArray
         motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
         to mm
+    masks : npt.NDArray
+        masks for each frame
     n_cpus : int
         number of cpus to use
     threshold : float
@@ -513,7 +513,9 @@ def start_temporal_consistency(
                     unwrapped, unwrapped_echo_1, TEs, motion_params, mag, t, frame_idx, threshold
                 )
             else:
-                check_temporal_consistency_corr(unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, masks)
+                check_temporal_consistency_corr(
+                    unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks)
+                )
     # If multiprocessing is enabled, run the temporal consistency in parallel
     else:
         logging.info("Computing temporal consistency in parallel threads")
@@ -546,15 +548,16 @@ def start_temporal_consistency(
                             mag,
                             t,
                             frame_idx,
-                            masks
+                            cast(npt.NDArray, masks),
                         )
                     ] = frame_idx
-            
+
             for threaded_future in as_completed(threaded_futures):
                 frame_idx = threaded_futures[threaded_future]
                 logging.info(f"Temporal consistency check for frame {frame_idx} complete")
 
     return unwrapped
+
 
 def start_unwrap_process(
     unwrapped: npt.NDArray,
@@ -567,7 +570,7 @@ def start_unwrap_process(
     automask_dilation: int = 3,
     correct_global: bool = True,
     n_cpus: int = 4,
-    residual_offset: bool = False
+    residual_offset: bool = False,
 ) -> Tuple[npt.NDArray, npt.NDArray]:
     """Starts unwrapping processes to unwrap phase data.
 
@@ -626,21 +629,13 @@ def start_unwrap_process(
             )
             mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
             unwrapped[..., idx], new_mask_data[..., idx] = unwrap_phase(
-                phase_data,
-                mag_data,
-                TEs,
-                mask_data,
-                automask,
-                automask_dilation,
-                correct_global,
-                idx,
-                residual_offset
+                phase_data, mag_data, TEs, mask_data, automask, automask_dilation, correct_global, idx, residual_offset
             )
     # if multiprocessing is enabled, run in parallel using a process pool
     else:
         # use a process pool to speed up the computation
         executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
-        
+
         # set error flag for process pool
         PROCESS_POOL_ERROR = False
 
@@ -652,7 +647,7 @@ def start_unwrap_process(
             # loop over the total number of frames
             for idx, frame_idx in enumerate(frames):
                 # get the phase and magnitude data from each echo
-                
+
                 phase_data: npt.NDArray[np.float64] = rescale_phase(
                     np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
                 ).astype(np.float64)
@@ -673,7 +668,7 @@ def start_unwrap_process(
                         automask_dilation,
                         correct_global,
                         idx,
-                        residual_offset
+                        residual_offset,
                     )
                 ] = idx
 
@@ -750,7 +745,7 @@ def start_fieldmap_process(
     else:
         logging.info(f"Running field map computation in parallel with {n_cpus} processes")
 
-        #shared_mag_array = mp.RawArray('i', mag)
+        # shared_mag_array = mp.RawArray('i', mag)
 
         with ThreadPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
             # collect futures in a dictionary, where the value is the frame index
@@ -781,6 +776,8 @@ def unwrap_and_compute_field_maps(
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
     border_size: int = 5,
+    border_filt: Tuple[int, int] = (1, 5),
+    svd_filt: int = 30,
     correct_global: bool = True,
     frames: Union[List[int], None] = None,
     motion_params: Union[npt.NDArray, None] = None,
@@ -808,6 +805,10 @@ def unwrap_and_compute_field_maps(
         Automatically generate a mask (ignore mask option), by default True
     border_size : int, optional
         Size of border in automask, by default 5
+    border_filt : Tuple[int, int], optional
+        Number of SVD components for each step of border filtering, by default (1, 5)
+    svd_filt : int, optional
+        Number of SVD components to use for filtering of field maps, by default 30
     correct_global : bool, optional
         Corrects global n2π offsets, by default True
     frames : List[int], optional
@@ -894,9 +895,20 @@ def unwrap_and_compute_field_maps(
     # check temporal consistency to unwrapped phase
     # if motion parameters passed in
     if motion_params is not None:
-        unwrapped = start_temporal_consistency(unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, motion_params=motion_params[frames], masks=None, n_cpus=n_cpus, threshold=0.5)
+        unwrapped = start_temporal_consistency(
+            unwrapped=unwrapped,
+            TEs=TEs,
+            mag=mag,
+            frames=frames,
+            motion_params=motion_params[frames],
+            masks=None,
+            n_cpus=n_cpus,
+            threshold=0.5,
+        )
     else:
-        unwrapped = start_temporal_consistency(unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, motion_params=None, masks=new_masks, n_cpus=n_cpus)
+        unwrapped = start_temporal_consistency(
+            unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, motion_params=None, masks=new_masks, n_cpus=n_cpus
+        )
 
     # Save out unwrapped phase for debugging
     if debug:
@@ -907,36 +919,35 @@ def unwrap_and_compute_field_maps(
         nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii.gz")
 
     # compute field maps on temporally consistent unwrapped phase
-    # TODO: multiprocessing is broken atm for this
     field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=n_cpus)
 
     # if border voxels defined, use that information to stabilize border regions using SVD filtering
     # this will probably kill any respiration signals in these voxels but improve the
     # temporal stability of the field maps in these regions (and could we really resolve
     # respiration in those voxels any way? probably not...)
-    if new_masks.max() == 2 and n_frames >= 5:
+    if new_masks.max() == 2 and n_frames >= np.max(border_filt):
         logging.info("Performing spatial/temporal filtering of border voxels...")
         smoothed_field_maps = np.zeros(field_maps.shape)
         voxel_size = phase[0].header.get_zooms()[0]  # type: ignore
-        sigma = 4 / voxel_size
+        # smooth by 4 mm kernel
+        sigma = (4 / voxel_size) / 2.355
         for i in range(field_maps.shape[-1]):
-            # smooth by 4 mm kernel
             smoothed_field_maps[..., i] = gaussian_filter(field_maps[..., i], sigma=sigma)
         # compute the union of all the masks
         union_mask = np.sum(new_masks, axis=-1) > 0
         # do temporal filtering of border voxels with SVD
         U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
-        # only keep the first 5 components
-        recon = np.dot(U[:, :5] * S[:5], VT[:5, :])
+        # first pass of SVD filtering
+        recon = np.dot(U[:, : border_filt[0]] * S[: border_filt[0]], VT[: border_filt[0], :])
         recon_img = np.zeros(field_maps.shape)
         recon_img[union_mask] = recon
         # set the border voxels in the field map to the recon values
         for i in range(field_maps.shape[-1]):
             field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
-        # do second SVD pass
+        # do second SVD filtering pass
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
-        # only keep the first 5 components
-        recon = np.dot(U[:, :5] * S[:5], VT[:5, :])
+        # second pass of SVD filtering
+        recon = np.dot(U[:, : border_filt[1]] * S[: border_filt[1]], VT[: border_filt[1], :])
         recon_img = np.zeros(field_maps.shape)
         recon_img[union_mask] = recon
         # set the border voxels in the field map to the recon values
@@ -944,17 +955,15 @@ def unwrap_and_compute_field_maps(
             field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
 
     # use svd filter to denoise the field maps
-    denoise = True
-    n_components = 30
-    if denoise and n_frames >= n_components:
+    if n_frames >= svd_filt:
         logging.info("Denoising field maps with SVD...")
-        logging.info(f"Keeping {n_components} components...")
+        logging.info(f"Keeping {svd_filt} components...")
         # compute the union of all the masks
         union_mask = np.sum(new_masks, axis=-1) > 0
         # compute SVD
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
         # only keep the first n_components components
-        recon = np.dot(U[:, :n_components] * S[:n_components], VT[:n_components, :])
+        recon = np.dot(U[:, :svd_filt] * S[:svd_filt], VT[:svd_filt, :])
         recon_img = np.zeros(field_maps.shape)
         recon_img[union_mask] = recon
         # set the voxel values in the mask to the recon values
