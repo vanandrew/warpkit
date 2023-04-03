@@ -61,7 +61,7 @@ set(ITK_DIR ${itk_BINARY_DIR})
 find_package(ITK REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementField)
 
 # display all warnings
-add_compile_options(-Wall)
+add_compile_options(-Wall -O3 -march=skylake)
 
 # compile pybind11 interface
 pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)
