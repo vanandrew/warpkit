@@ -13,9 +13,21 @@ pip install ./ -v
 ```
 > :warning: You need Julia pre-installed on your system. The installer will raise an error if it is not found.
 
+## What is MEDIC?
+
+MEDIC takes your ME-EPI phase data from this:
+
+![phase](notes/phase.png)
+
+to this:
+
+![field map](notes/fmap.png)
+
+for each frame of your data. You can then use these field maps to distortion correct your data.
+
 ## MEDIC Usage
-The `warpkit` library is meant for integration into a larger python pipeline/package. If you're looking for a script to
-run MEDIC, see the [omni](https://gitlab.com/vanandrew/omni) library.
+The `warpkit` library is meant for integration into a larger python pipeline/package. ~~If you're looking for a script to
+run MEDIC, see the [omni](https://gitlab.com/vanandrew/omni) library~~ (NOT YET IMPLEMENTED).
 
 An example of how to call MEDIC from python is provided below:
 ```python
