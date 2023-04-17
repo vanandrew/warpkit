@@ -59,12 +59,12 @@ def get_largest_connected_component(mask_data: npt.NDArray[np.bool8]) -> npt.NDA
     return mask_data
 
 
-def create_brain_mask(mag_shortest: npt.NDArray[np.float64], extra_dilation: int = 0) -> npt.NDArray[np.bool8]:
+def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int = 0) -> npt.NDArray[np.bool8]:
     """Create a quick brain mask for a single frame.
 
     Parameters
     ----------
-    mag_shortest : npt.NDArray[np.float64]
+    mag_shortest : npt.NDArray[np.float32]
         Magnitude data with the shortest echo time
     extra_dilation : int
         Number of extra dilations (or erosions if negative) to perform, by default 0
@@ -80,7 +80,7 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float64], extra_dilation: int
     # get the otsu threshold
     threshold = threshold_otsu(mag_shortest)
     mask_data = mag_shortest > threshold
-    mask_data = cast(npt.NDArray[np.float64], binary_fill_holes(mask_data, strel))
+    mask_data = cast(npt.NDArray[np.float32], binary_fill_holes(mask_data, strel))
 
     # erode mask
     mask_data = cast(npt.NDArray[np.bool8], binary_erosion(mask_data, structure=strel, iterations=2, border_value=1))
@@ -108,25 +108,25 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float64], extra_dilation: int
 
 
 def unwrap_phase(
-    phase_data: npt.NDArray[np.float64],
-    mag_data: npt.NDArray[np.float64],
-    TEs: npt.NDArray[np.float64],
+    phase_data: npt.NDArray[np.float32],
+    mag_data: npt.NDArray[np.float32],
+    TEs: npt.NDArray[np.float32],
     mask_data: npt.NDArray[np.bool8],
     automask: bool = True,
     automask_dilation: int = 3,
     correct_global: bool = True,
     idx: Union[int, None] = None,
     residual_offset: bool = False,
-) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.int8]]:
+) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int8]]:
     """Unwraps the phase for a single frame of ME-EPI
 
     Parameters
     ----------
-    phase_data : npt.NDArray[np.float64]
+    phase_data : npt.NDArray[np.float32]
         Single frame of phase data with shape (x, y, z, echo)
-    mag_data : npt.NDArray[np.float64]
+    mag_data : npt.NDArray[np.float32]
         Single frame of magnitude data with shape (x, y, z, echo)
-    TEs : npt.NDArray[np.float64]
+    TEs : npt.NDArray[np.float32]
         Echo times associated with each phase
     mask_data : npt.NDArray[np.bool8]
         Mask of voxels to use for unwrapping
@@ -143,7 +143,7 @@ def unwrap_phase(
 
     Returns
     -------
-    npt.NDArray[np.float64]
+    npt.NDArray[np.float32]
         unwrapped phase in radians
     npt.NDArray[np.int8]
         mask
@@ -341,7 +341,7 @@ def check_temporal_consistency(
 
     # format weight matrix
     weights_mat = (
-        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1).astype(np.float64).reshape(-1, TEs.shape[0]).T
+        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1).astype(np.float32).reshape(-1, TEs.shape[0]).T
     )
 
     # form design matrix
@@ -563,7 +563,7 @@ def start_unwrap_process(
     unwrapped: npt.NDArray,
     phase: List[nib.Nifti1Image],
     mag: List[nib.Nifti1Image],
-    TEs: npt.NDArray[np.float64],
+    TEs: npt.NDArray[np.float32],
     mask: Union[nib.Nifti1Image, SimpleNamespace],
     frames: List[int],
     automask: bool = True,
@@ -582,7 +582,7 @@ def start_unwrap_process(
         Phases to unwrap
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
-    TEs : npt.NDArray[np.float64]
+    TEs : npt.NDArray[np.float32]
         Echo times associated with each phase (in ms)
     mask : Union[nib.Nifti1Image, SimpleNamespace]
         Boolean mask, by default None
@@ -621,11 +621,11 @@ def start_unwrap_process(
         initialize_julia_context()
         for idx, frame_idx in enumerate(frames):
             # get the phase and magnitude data from each echo
-            phase_data: npt.NDArray[np.float64] = rescale_phase(
+            phase_data: npt.NDArray[np.float32] = rescale_phase(
                 np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
-            ).astype(np.float64)
-            mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
-                np.float64
+            ).astype(np.float32)
+            mag_data: npt.NDArray[np.float32] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
+                np.float32
             )
             mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
             unwrapped[..., idx], new_mask_data[..., idx] = unwrap_phase(
@@ -648,11 +648,11 @@ def start_unwrap_process(
             for idx, frame_idx in enumerate(frames):
                 # get the phase and magnitude data from each echo
 
-                phase_data: npt.NDArray[np.float64] = rescale_phase(
+                phase_data: npt.NDArray[np.float32] = rescale_phase(
                     np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
-                ).astype(np.float64)
-                mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
-                    np.float64
+                ).astype(np.float32)
+                mag_data: npt.NDArray[np.float32] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
+                    np.float32
                 )
                 mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
 
@@ -705,7 +705,7 @@ def start_fieldmap_process(
     field_maps: npt.NDArray,
     unwrapped: npt.NDArray,
     mag: List[nib.Nifti1Image],
-    TEs: npt.NDArray[np.float64],
+    TEs: npt.NDArray[np.float32],
     n_cpus: int = 4,
 ) -> npt.NDArray:
     """Start the field map computation process.
@@ -721,7 +721,7 @@ def start_fieldmap_process(
         Array of unwrapped phase data
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
-    TEs : npt.NDArray[np.float64]
+    TEs : npt.NDArray[np.float32]
         Echo times associated with each phase (in ms)
     n_cpus : int, optional
         Number of CPUs to use, by default 4
@@ -772,7 +772,7 @@ def start_fieldmap_process(
 def unwrap_and_compute_field_maps(
     phase: List[nib.Nifti1Image],
     mag: List[nib.Nifti1Image],
-    TEs: Union[List[float], Tuple[float], npt.NDArray[np.float64]],
+    TEs: Union[List[float], Tuple[float], npt.NDArray[np.float32]],
     mask: Union[nib.Nifti1Image, SimpleNamespace, None] = None,
     automask: bool = True,
     border_size: int = 5,
@@ -797,7 +797,7 @@ def unwrap_and_compute_field_maps(
         Phases to unwrap
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
-    TEs : Union[List[float], Tuple[float], npt.NDArray[np.float64]]
+    TEs : Union[List[float], Tuple[float], npt.NDArray[np.float32]]
         Echo times associated with each phase (in ms)
     mask : nib.Nifti1Image, optional
         Boolean mask, by default None
@@ -830,7 +830,7 @@ def unwrap_and_compute_field_maps(
         )
 
     # convert TEs to np array
-    TEs = cast(npt.NDArray[np.float64], np.array(TEs))
+    TEs = cast(npt.NDArray[np.float32], np.array(TEs))
 
     # make sure affines/shapes are all correct
     for p1, m1 in zip(phase, mag):
@@ -1002,7 +1002,7 @@ def compute_field_map(
     """
     logging.info(f"Computing field map for frame: {frame_num}")
     unwrapped_mat = unwrapped_mat.reshape(-1, num_echos).T
-    mag_data = np.stack([m.dataobj[..., frame_num] for m in mag], axis=-1).astype(np.float64)
+    mag_data = np.stack([m.dataobj[..., frame_num] for m in mag], axis=-1).astype(np.float32)
     weights = mag_data.reshape(-1, num_echos).T
     B0 = weighted_regression(TEs_mat, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
     B0 *= 1000 / (2 * np.pi)
