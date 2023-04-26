@@ -159,15 +159,13 @@ def unwrap_phase(
         # get the index with the shortest echo time
         echo_idx = np.argmin(TEs)
         mag_shortest = mag_data[..., echo_idx]
-
         # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
-        vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(mag_data.shape))
+        vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
         vq_mask = cast(npt.NDArray[np.bool8], binary_fill_holes(vq_mask, strel))
-
         # get largest connected component
         vq_mask = get_largest_connected_component(vq_mask)
 
@@ -196,20 +194,25 @@ def unwrap_phase(
 
     # Do MCPC-3D-S algo to compute phase offset
     signal_diff = mag_data[..., 0] * mag_data[..., 1] * np.exp(1j * (phase_data[..., 1] - phase_data[..., 0]))
+
     mag_diff = np.abs(signal_diff)
+
     phase_diff = np.angle(signal_diff)
+
     unwrapped_diff = JULIA.romeo_unwrap3D(
         phase=phase_diff,
         weights="romeo",
         mag=mag_diff,
         mask=mask_data,
     )
+
     # compute the phase offset
     phase_offset = np.angle(np.exp(1j * (phase_data[..., 0] - ((TEs[0] * unwrapped_diff) / (TEs[1] - TEs[0])))))
     # remove phase offset from data
     phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
+
     unwrapped = JULIA.romeo_unwrap4D(
         phase=phase_data,
         TEs=TEs,
@@ -221,6 +224,7 @@ def unwrap_phase(
         merge_regions=False,
         correct_regions=False,
     )
+
     # global mode correction
     # this computes the global mode offset for the first echo then tries to find the offset
     # that minimizes the residuals for each subsequent echo
@@ -628,6 +632,8 @@ def start_unwrap_process(
                 np.float32
             )
             mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
+            TEs = TEs.astype(np.float32)
+
             unwrapped[..., idx], new_mask_data[..., idx] = unwrap_phase(
                 phase_data, mag_data, TEs, mask_data, automask, automask_dilation, correct_global, idx, residual_offset
             )
@@ -655,6 +661,9 @@ def start_unwrap_process(
                     np.float32
                 )
                 mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
+                print(f"Within start_unwrap_process, TEs = {TEs.dtype}")
+                TEs = TEs.astype(np.float32)
+                print(f"After conversion, TEs = {TEs.dtype}")
 
                 # submit field map computation to the process pool
                 futures[
