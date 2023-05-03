@@ -615,6 +615,20 @@ def start_unwrap_process(
     # array for storing auto-generated masks
     new_mask_data = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
 
+    # estimate the min and max phase values, we assume the phase ranges from -pi to pi
+    min_phases = []
+    max_phases = []
+    for phase_echo in phase:
+        # only look at the first frame
+        phase_data = phase_echo.dataobj[..., frames[0]]
+        # get the min and max phase value
+        min_phases.append(phase_data.min())
+        max_phases.append(phase_data.max())
+    min_phase = mode(min_phases, keepdims=False).mode
+    max_phase = mode(max_phases, keepdims=False).mode
+    logging.info("Estimated min phase: %f", min_phase)
+    logging.info("Estimated max phase: %f", max_phase)
+
     # if multiprocessing is not enabled, run serially
     if n_cpus == 1:
         logging.info("Running unwrap phase serially")
@@ -622,7 +636,7 @@ def start_unwrap_process(
         for idx, frame_idx in enumerate(frames):
             # get the phase and magnitude data from each echo
             phase_data: npt.NDArray[np.float64] = rescale_phase(
-                np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
+                np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1), min=min_phase, max=max_phase,
             ).astype(np.float64)
             mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
                 np.float64
@@ -649,7 +663,7 @@ def start_unwrap_process(
                 # get the phase and magnitude data from each echo
 
                 phase_data: npt.NDArray[np.float64] = rescale_phase(
-                    np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
+                    np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1), min=min_phase, max=max_phase,
                 ).astype(np.float64)
                 mag_data: npt.NDArray[np.float64] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
                     np.float64
