@@ -24,7 +24,7 @@ PYBIND11_MODULE(warpkit_cpp, m) {
       //        "Wrapper for MriResearchTools robustmask function", py::arg("weight"), py::arg("factor") = 1,
       //        py::return_value_policy::move);
 
-    m.def("invert_displacement_map", &invert_displacement_map<double>, "Invert a displacement map",
+    m.def("invert_displacement_map", &invert_displacement_map<float>, "Invert a displacement map",
           py::arg("displacement_map"), py::arg("origin"), py::arg("direction"), py::arg("spacing"), py::arg("axis") = 1,
           py::arg("iterations") = 50, py::arg("verbose") = false, py::return_value_policy::move);
 

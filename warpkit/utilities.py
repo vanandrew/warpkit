@@ -129,7 +129,18 @@ def field_maps_to_displacement_maps(
 
     # convert field maps to displacement maps
     data = field_maps.get_fdata()
+    if type(data) == np.ndarray:
+        print(f"DATA IN FIELDMAPSTODISPLACEMENTMAPS (this is fieldmaps directly from unwrap): {data.dtype}")
+    else:
+        print(f"DATA IN FIELDMAPSTODISPLACEMENTMAPS, NOT A NUMPY ARRAY: {type(data)}")
+
     new_data = data * total_readout_time * voxel_size
+
+    if type(new_data) == np.ndarray:
+        print(f"NEW DATA IN FIELDMAPSTODISPLACEMENTMAPS: {new_data.dtype}")
+    else:
+        print(f"NEW DATA IN FIELDMAPSTODISPLACEMENTMAPS, NOT A NUMPY ARRAY: {type(new_data)}")
+
     return nib.Nifti1Image(new_data, field_maps.affine, field_maps.header)
 
 
@@ -178,6 +189,12 @@ def displacement_maps_to_field_maps(
     new_data = data / (total_readout_time * voxel_size)
     if flip_sign:
         new_data *= -1
+    
+    if type(new_data) == np.ndarray:
+        print(f"NEW DATA IN DISPLACEMENTMAPSTOFIELDMAPS: {new_data.dtype}")
+    else:
+        print(f"NEW DATA IN DISPLACEMENTMAPSTOFIELDMAPS, NOT A NUMPY ARRAY: {type(new_data)}")
+
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
 
 
@@ -299,21 +316,58 @@ def invert_displacement_maps(
     # split affine into components
     translations, rotations, zooms, _ = decompose44(displacement_maps_ras.affine)
 
+    if type(translations) == np.ndarray:
+        print(f"TRANSLATIONS IN INVERT DISPLACEMENT MAPS: {translations.dtype}")
+        if translations.dtype == np.float64:
+            translations = translations.astype(np.float32)
+            print(f"TRANSLATIONS IN INVERT DISPLACEMENT MAPS AFTER CAST: {translations.dtype}")
+    else:
+        print(f"TRANSLATIONS IN INVERT DISPLACEMENT MAPS, NOT A NUMPY ARRAY: {type(translations)}")
+    
+    if type(rotations) == np.ndarray:
+        print(f"ROTATIONS IN INVERT DISPLACEMENT MAPS: {rotations.dtype}")
+        if rotations.dtype == np.float64:
+            rotations = rotations.astype(np.float32)
+            print(f"ROTATIONS IN INVERT DISPLACEMENT MAPS AFTER CAST: {rotations.dtype}")
+    else:
+        print(f"ROTATIONS IN INVERT DISPLACEMENT MAPS, NOT A NUMPY ARRAY: {type(rotations)}")
+
+    if type(zooms) == np.ndarray:
+        print(f"ZOOMS IN INVERT DISPLACEMENT MAPS: {zooms.dtype}")
+        if zooms.dtype == np.float64:
+            zooms = zooms.astype(np.float32)
+            print(f"ZOOMS IN INVERT DISPLACEMENT MAPS AFTER CAST: {zooms.dtype}")
+    else:
+        print(f"ZOOMS IN INVERT DISPLACEMENT MAPS, NOT A NUMPY ARRAY: {type(zooms)}")
+
     # invert maps
     new_data = np.zeros(data.shape)
-    logging.info("Inverting displacement maps...")
     for i in range(data.shape[-1]):
-        logging.info(f"Processing frame: {i}")
         # pad array with edge values so edge effects of inverse are avoided
         mod_data = np.pad(data[..., i], pad_width=1)
+
+        if type(mod_data) == np.ndarray:
+            print(f"MOD DATA IN INVERT DISPLACEMENT MAPS: {mod_data.dtype}")
+            if mod_data.dtype == np.float64:
+                mod_data = mod_data.astype(np.float32)
+                print(f"MOD DATA IN INVERT DISPLACEMENT MAPS AFTER CAST: {mod_data.dtype}")
+        else:
+            print(f"MOD DATA IN INVERT DISPLACEMENT MAPS, NOT A NUMPY ARRAY: {type(mod_data)}")
+
         new_data[..., i] = invert_displacement_map_cpp(
             mod_data, translations, rotations, zooms, axis=axis_code, verbose=verbose
-        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
+        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1].astype(np.float32)
+
+    if type(new_data) == np.ndarray:
+        print(f"INSIDE OF INVERT DISPLACEMENT MAPS AFTER CALL TO INVERTDISPLACEMENTMAPCPP: {new_data.dtype}")
+    else:
+        print(f"INSIDE OF INVERT DISPLACEMENT MAPS, NOT A NUMPY ARRAY, AFTER CALL TO INVERTDISPLACEMENTMAPCPP: {type(new_data)}")
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(
         new_data, displacement_maps_ras.affine, displacement_maps_ras.header
     ).as_reoriented(from_canonical)
+
 
     # return inverted maps
     return cast(nib.Nifti1Image, inv_displacement_maps)
@@ -354,6 +408,11 @@ def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool
     new_data = invert_displacement_field_cpp(mod_data, translations, rotations, zooms, verbose=verbose)[
         1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1
     ]
+
+    if type(new_data) == np.ndarray:
+        print(f"INSIDE OF INVERT DISPLACEMENT FIELD AFTER CALL TO INVERTDISPLACEMENTFIELDCPP: {new_data.dtype}")
+    else:
+        print(f"INSIDE OF INVERT DISPLACEMENT FIELD, NOT A NUMPY ARRAY, AFTER CALL TO INVERTDISPLACEMENTFIELDCPP: {type(new_data)}")
 
     # make new image
     inv_displacement_field = nib.Nifti1Image(

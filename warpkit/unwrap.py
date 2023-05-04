@@ -517,7 +517,7 @@ def start_temporal_consistency(
                     unwrapped, unwrapped_echo_1, TEs, motion_params, mag, t, frame_idx, threshold
                 )
             else:
-                check_temporal_consistency_corr(
+                check_temporal_consistelsncy_corr(
                     unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks)
                 )
     # If multiprocessing is enabled, run the temporal consistency in parallel
@@ -653,6 +653,8 @@ def start_unwrap_process(
             # loop over the total number of frames
             for idx, frame_idx in enumerate(frames):
                 # get the phase and magnitude data from each echo
+
+                print(f"Within start_unwrap_process, unwrapped type is {unwrapped.dtype}")
 
                 phase_data: npt.NDArray[np.float32] = rescale_phase(
                     np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1)
@@ -879,8 +881,8 @@ def unwrap_and_compute_field_maps(
         raise ValueError("Number of echo times must equal number of mag and phase images.")
 
     # allocate space for field maps and unwrapped
-    field_maps = np.zeros((*phase[0].shape[:3], n_frames))
-    unwrapped = np.zeros((*phase[0].shape[:3], len(TEs), n_frames))
+    field_maps = np.zeros((*phase[0].shape[:3], n_frames), dtype=np.float32)
+    unwrapped = np.zeros((*phase[0].shape[:3], len(TEs), n_frames), dtype=np.float32)
 
     # DEBUG
     global affine
@@ -936,7 +938,7 @@ def unwrap_and_compute_field_maps(
     # respiration in those voxels any way? probably not...)
     if new_masks.max() == 2 and n_frames >= np.max(border_filt):
         logging.info("Performing spatial/temporal filtering of border voxels...")
-        smoothed_field_maps = np.zeros(field_maps.shape)
+        smoothed_field_maps = np.zeros(field_maps.shape, dtype=np.float32)
         voxel_size = phase[0].header.get_zooms()[0]  # type: ignore
         # smooth by 4 mm kernel
         sigma = (4 / voxel_size) / 2.355
@@ -948,7 +950,7 @@ def unwrap_and_compute_field_maps(
         U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
         # first pass of SVD filtering
         recon = np.dot(U[:, : border_filt[0]] * S[: border_filt[0]], VT[: border_filt[0], :])
-        recon_img = np.zeros(field_maps.shape)
+        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
         recon_img[union_mask] = recon
         # set the border voxels in the field map to the recon values
         for i in range(field_maps.shape[-1]):
@@ -957,7 +959,7 @@ def unwrap_and_compute_field_maps(
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
         # second pass of SVD filtering
         recon = np.dot(U[:, : border_filt[1]] * S[: border_filt[1]], VT[: border_filt[1], :])
-        recon_img = np.zeros(field_maps.shape)
+        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
         recon_img[union_mask] = recon
         # set the border voxels in the field map to the recon values
         for i in range(field_maps.shape[-1]):
@@ -973,7 +975,7 @@ def unwrap_and_compute_field_maps(
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
         # only keep the first n_components components
         recon = np.dot(U[:, :svd_filt] * S[:svd_filt], VT[:svd_filt, :])
-        recon_img = np.zeros(field_maps.shape)
+        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
         recon_img[union_mask] = recon
         # set the voxel values in the mask to the recon values
         for i in range(field_maps.shape[-1]):
