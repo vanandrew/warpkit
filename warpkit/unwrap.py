@@ -517,7 +517,7 @@ def start_temporal_consistency(
                     unwrapped, unwrapped_echo_1, TEs, motion_params, mag, t, frame_idx, threshold
                 )
             else:
-                check_temporal_consistelsncy_corr(
+                check_temporal_consistency_corr(
                     unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks)
                 )
     # If multiprocessing is enabled, run the temporal consistency in parallel
@@ -675,9 +675,7 @@ def start_unwrap_process(
                     np.float32
                 )
                 mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
-                print(f"Within start_unwrap_process, TEs = {TEs.dtype}")
                 TEs = TEs.astype(np.float32)
-                print(f"After conversion, TEs = {TEs.dtype}")
 
                 # submit field map computation to the process pool
                 futures[
