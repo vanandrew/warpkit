@@ -129,7 +129,9 @@ def field_maps_to_displacement_maps(
 
     # convert field maps to displacement maps
     data = field_maps.get_fdata()
+
     new_data = data * total_readout_time * voxel_size
+
     return nib.Nifti1Image(new_data, field_maps.affine, field_maps.header)
 
 
@@ -178,6 +180,7 @@ def displacement_maps_to_field_maps(
     new_data = data / (total_readout_time * voxel_size)
     if flip_sign:
         new_data *= -1
+
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
 
 
@@ -220,7 +223,7 @@ def displacement_map_to_field(
     header = cast(nib.Nifti1Header, displacement_map.header)
 
     # create a new array to hold the displacement field
-    new_data = np.zeros((*data.shape, 3))
+    new_data = np.zeros((*data.shape, 3), dtype=np.float32)
 
     # insert data at axis
     new_data[..., axis_code] = data  # type: ignore
@@ -300,15 +303,16 @@ def invert_displacement_maps(
     translations, rotations, zooms, _ = decompose44(displacement_maps_ras.affine)
 
     # invert maps
-    new_data = np.zeros(data.shape)
+    new_data = np.zeros(data.shape, dtype=np.float32)
     logging.info("Inverting displacement maps...")
     for i in range(data.shape[-1]):
         logging.info(f"Processing frame: {i}")
         # pad array with edge values so edge effects of inverse are avoided
         mod_data = np.pad(data[..., i], pad_width=1)
+
         new_data[..., i] = invert_displacement_map_cpp(
             mod_data, translations, rotations, zooms, axis=axis_code, verbose=verbose
-        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
+        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1].astype(np.float32)
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(

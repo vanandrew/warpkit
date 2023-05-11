@@ -60,7 +60,7 @@ class JuliaContext {
         // wrap them in lambdas so we can call arguments positionally
         jl_voxelquality =
             static_cast<jl_function_t*>(jl_eval_string("voxelquality_positional_wrapper(phase, TEs, mag) = "
-                                                       "replace!(Float64.(voxelquality(Float32.(phase); "
+                                                       "replace!(Float32.(voxelquality(Float32.(phase); "
                                                        "TEs=Float32.(TEs), mag=Float32.(mag))), NaN=>0);"));
         jl_unwrap3D = static_cast<jl_function_t*>(
             jl_eval_string("unwrap3D_positional_wrapper(phase, weights, mag, mask, correctglobal, "
