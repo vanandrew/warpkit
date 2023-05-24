@@ -5,6 +5,7 @@
 #include <itkConstantBoundaryCondition.h>
 #include <itkDisplacementFieldJacobianDeterminantFilter.h>
 #include <itkExtractImageFilter.h>
+#include <itkHausdorffDistanceImageFilter.h>
 #include <itkImportImageFilter.h>
 #include <itkModifiedInvertDisplacementFieldImageFilter.h>
 #include <itkNthElementImageAdaptor.h>
@@ -471,6 +472,83 @@ py::array_t<T, py::array::f_style> resample(
                                 output_iterator.GetIndex()[2]) = output_iterator.Get();
     }
     return output_array;
+}
+
+/* Compute the Hausdorff Distance between two images */
+template <typename T>
+T compute_hausdorff_distance(
+    py::array_t<T, py::array::f_style> image1, py::array_t<T, py::array::f_style> image1_origin,
+    py::array_t<T, py::array::f_style> image1_direction, py::array_t<T, py::array::f_style> image1_spacing,
+    py::array_t<T, py::array::f_style> image2, py::array_t<T, py::array::f_style> image2_origin,
+    py::array_t<T, py::array::f_style> image2_direction, py::array_t<T, py::array::f_style> image2_spacing) {
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+    // Setup types
+    using ImageType = typename itk::Image<T, 3>;
+
+    // Use ImportImageFilter to import the images
+    using ImportImageFilterType = typename itk::ImportImageFilter<T, 3>;
+    typename ImportImageFilterType::Pointer input_import_filter1 = ImportImageFilterType::New();
+    typename ImportImageFilterType::Pointer input_import_filter2 = ImportImageFilterType::New();
+
+    // Setup input import filter for image 1
+    typename ImageType::IndexType input_start1({0, 0, 0});
+    using size_value_type = typename ImageType::SizeValueType;
+    typename ImageType::SizeType input_size1({static_cast<size_value_type>(image1.shape(0)),
+                                              static_cast<size_value_type>(image1.shape(1)),
+                                              static_cast<size_value_type>(image1.shape(2))});
+    typename ImageType::RegionType image1_region(input_start1, input_size1);
+    typename ImageType::PointType image1_origin_point({image1_origin.at(0), image1_origin.at(1), image1_origin.at(2)});
+    typename ImageType::DirectionType image1_direction_type;
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            image1_direction_type[i][j] = image1_direction.at(i, j);
+        }
+    }
+    typename ImageType::SpacingType image1_spacing_type(
+        {image1_spacing.at(0), image1_spacing.at(1), image1_spacing.at(2)});
+    input_import_filter1->SetRegion(image1_region);
+    input_import_filter1->SetOrigin(image1_origin_point);
+    input_import_filter1->SetDirection(image1_direction_type);
+    input_import_filter1->SetSpacing(image1_spacing_type);
+    input_import_filter1->SetImportPointer(image1.mutable_data(), image1.size(), false);
+
+    // Setup input import filter for image 2
+    typename ImageType::IndexType input_start2({0, 0, 0});
+    using size_value_type = typename ImageType::SizeValueType;
+    typename ImageType::SizeType input_size2({static_cast<size_value_type>(image2.shape(0)),
+                                              static_cast<size_value_type>(image2.shape(1)),
+                                              static_cast<size_value_type>(image2.shape(2))});
+    typename ImageType::RegionType image2_region(input_start2, input_size2);
+    typename ImageType::PointType image2_origin_point({image2_origin.at(0), image2_origin.at(1), image2_origin.at(2)});
+    typename ImageType::DirectionType image2_direction_type;
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t j = 0; j < 3; j++) {
+            image2_direction_type[i][j] = image2_direction.at(i, j);
+        }
+    }
+    typename ImageType::SpacingType image1_spacing_type(
+        {image2_spacing.at(0), image2_spacing.at(1), image2_spacing.at(2)});
+    input_import_filter2->SetRegion(image2_region);
+    input_import_filter2->SetOrigin(image2_origin_point);
+    input_import_filter2->SetDirection(image2_direction_type);
+    input_import_filter2->SetSpacing(image2_spacing_type);
+    input_import_filter2->SetImportPointer(image2.mutable_data(), image2.size(), false);
+
+    // Create the Hausdorff Distance filter
+    using HausdorffDistanceFilterType = typename itk::HausdorffDistanceImageFilter<ImageType, ImageType>;
+    typename HausdorffDistanceFilterType::Pointer hausdorff_filter = HausdorffDistanceFilterType::New();
+    hausdorff_filter->SetInput1(input_import_filter1->GetOutput());
+    hausdorff_filter->SetInput2(input_import_filter2->GetOutput());
+    hausdorff_filter->SetUseImageSpacing(true);
+
+    // Get the hausdorff distance
+    hausdorff_filter->Update();
+    T hausdorff_distance = hausdorff_filter->GetHausdorffDistance();
+    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
+
+    // Return the hausdorff distance
+    return hausdorff_distance;
 }
 
 #endif

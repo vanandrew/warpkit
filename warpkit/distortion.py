@@ -1,9 +1,15 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple, Optional, Union
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
+from scipy import signal
 from warpkit.unwrap import unwrap_and_compute_field_maps
-from warpkit.utilities import field_maps_to_displacement_maps, invert_displacement_maps, displacement_maps_to_field_maps
+from warpkit.utilities import (
+    field_maps_to_displacement_maps,
+    invert_displacement_maps,
+    displacement_maps_to_field_maps,
+    build_low_pass_filter,
+)
 
 
 def medic(
@@ -12,11 +18,12 @@ def medic(
     TEs: Union[List[float], Tuple[float]],
     total_readout_time: float,
     phase_encoding_direction: str,
-    frames: Union[List[int], None] = None,
-    motion_params: Union[npt.NDArray, None] = None,
+    frames: Optional[List[int]] = None,
     border_size: int = 5,
     border_filt: Tuple[int, int] = (1, 5),
-    svd_filt: int = 30,
+    svd_filt: int = 5,
+    critical_freq: Optional[float] = 0.01,
+    filter_order: int = 6,
     n_cpus: int = 4,
     debug: bool = False,
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
@@ -44,14 +51,16 @@ def medic(
         Phase encoding direction (can be i, j, k, i-, j-, k-) or (x, y, z, x-, y-, z-)
     frames : int, optional
         Only process these frame indices, by default None (which means all frames)
-    motion_params : Union[npt.NDArray, None]
-        Numpy array containing rigid-body motion parameters (by default None)
     border_size : int, optional
         Size of border in automask, by default 5
     border_filt : Tuple[int, int], optional
         Number of SVD components for each step of border filtering, by default (1, 5)
     svd_filt : int, optional
-        Number of SVD components to use for filtering of field maps, by default 30
+        Number of SVD components to use for filtering of field maps, by default 5
+    critical_freq: float, optional
+        Critical frequency for low pass filter, by default 0.01, if set to None will disable the filter
+    filter_order : int, optional
+        Order of the low pass filter, by default 6
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional
@@ -86,10 +95,20 @@ def medic(
         border_filt=border_filt,
         svd_filt=svd_filt,
         frames=frames,
-        motion_params=motion_params,
         n_cpus=n_cpus,
         debug=debug,
     )
+
+    # low pass filter field maps if set
+    if critical_freq is not None:
+        # filter out higher frequencies
+        # get the TR from the first mag image
+        TR = mag[0].header.get_zooms()[3]
+        b, a = build_low_pass_filter(TR, critical_freq, filter_order)
+        fmap_data = field_maps_native.get_fdata()
+        # apply low pass filter to field maps
+        fmap_data = signal.filtfilt(b, a, fmap_data, axis=3)
+        field_maps_native = nib.Nifti1Image(fmap_data, field_maps_native.affine, field_maps_native.header)
 
     # convert to displacement maps (these are in distorted space)
     inv_displacement_maps = field_maps_to_displacement_maps(

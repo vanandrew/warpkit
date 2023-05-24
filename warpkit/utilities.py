@@ -3,6 +3,7 @@ import numpy as np
 import numpy.typing as npt
 import nibabel as nib
 from transforms3d.affines import decompose44
+from scipy import signal
 from typing import Any, cast, Tuple
 from . import (
     invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
@@ -312,7 +313,7 @@ def invert_displacement_maps(
 
         new_data[..., i] = invert_displacement_map_cpp(
             mod_data, translations, rotations, zooms, axis=axis_code, verbose=verbose
-        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1].astype(np.float32)
+        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(
@@ -508,3 +509,30 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
 
     # return the warp
     return cast(nib.Nifti1Image, out_warp)
+
+
+def build_low_pass_filter(
+    TR_in_sec: float, critical_freq: float = 0.01, filter_order: int = 6,
+) -> Tuple[npt.NDArray, npt.NDArray]:
+    """Function for calculating filter parameters for low pass filter
+
+    Parameters
+    ----------
+    TR_in_sec : float
+        TR in seconds
+    critical_freq : float, optional
+        Critical frequency for low pass filter, by default 0.01
+    filter_order : int, optional
+        Filter order, by default 6
+
+    Returns
+    -------
+    Tuple[npt.NDArray, npt.NDArray]
+        Filter coefficients for IIR filter
+    """
+
+    fs = 1.0 / TR_in_sec  # Sampling frequency (Hz)
+    fn = fs / 2.0  # Nyquist frequency (Hz)
+    w0_cutoff = critical_freq / fn  # Normalized cutoff frequency
+    b, a = signal.iirfilter(filter_order, w0_cutoff, btype='lowpass', output='ba', ftype='butter')
+    return b, a

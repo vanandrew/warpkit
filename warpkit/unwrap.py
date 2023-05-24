@@ -9,7 +9,6 @@ import nibabel as nib
 import numpy as np
 import numpy.typing as npt
 from skimage.filters import threshold_otsu  # type: ignore
-from skimage.morphology import remove_small_objects
 from skimage.measure import label, regionprops
 from scipy.ndimage import (
     generate_binary_structure,
@@ -194,25 +193,20 @@ def unwrap_phase(
 
     # Do MCPC-3D-S algo to compute phase offset
     signal_diff = mag_data[..., 0] * mag_data[..., 1] * np.exp(1j * (phase_data[..., 1] - phase_data[..., 0]))
-
     mag_diff = np.abs(signal_diff)
-
     phase_diff = np.angle(signal_diff)
-
     unwrapped_diff = JULIA.romeo_unwrap3D(
         phase=phase_diff,
         weights="romeo",
         mag=mag_diff,
         mask=mask_data,
     )
-
     # compute the phase offset
     phase_offset = np.angle(np.exp(1j * (phase_data[..., 0] - ((TEs[0] * unwrapped_diff) / (TEs[1] - TEs[0])))))
     # remove phase offset from data
     phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
-
     unwrapped = JULIA.romeo_unwrap4D(
         phase=phase_data,
         TEs=TEs,
@@ -277,104 +271,6 @@ def unwrap_phase(
     return unwrapped, final_mask
 
 
-def check_temporal_consistency(
-    unwrapped_data: npt.NDArray,
-    unwrapped_echo_1: npt.NDArray,
-    TEs,
-    motion_params: npt.NDArray,
-    weights: List[nib.Nifti1Image],
-    t: int,
-    frame_idx: int,
-    rd_threshold: float = 0.5,
-) -> npt.NDArray:
-    """Ensures phase unwrapping solutions are temporally consistent
-
-    Parameters
-    ----------
-    unwrapped_data : npt.NDArray
-        unwrapped phase data, where last column is time, and second to last column are the echoes
-    unwrapped_echo_1 : npt.NDArray
-        copy of unwrapped phase data for the first echo
-    TEs : npt.NDArray
-        echo times
-    motion_params : npt.NDArray
-        motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
-        to mm
-    weights : List[nib.Nifti1Image]
-        weights for regression model
-    frames : List[int]
-        list of frames that are being processed
-    t : int
-        current frame index
-    frame_idx : int
-        current frame index
-    rd_threshold : float
-        relative displacement threshold. By default 0.5
-
-    Returns
-    -------
-    npt.NDArray
-        fixed unwrapped phase data
-    """
-
-    logging.info(f"Computing temporal consistency check for frame: {t}")
-    # compute the relative displacements to the current frame
-    # first get the motion parameters for the current frame
-    current_frame_motion_params = motion_params[t][np.newaxis, :]
-
-    # now get the difference of each motion params to this frame
-    motion_params_diff = motion_params - current_frame_motion_params
-
-    # now compute the relative displacement by sum of the absolute values
-    RD = np.sum(np.abs(motion_params_diff), axis=1)
-
-    # threhold the RD
-    tmask = RD < rd_threshold
-
-    # get indices of mask
-    indices = np.where(tmask)[0]
-
-    # for each frame compute the mean value along the time axis
-    mean_voxels = np.mean(unwrapped_echo_1[..., indices], axis=-1)
-
-    # for this frame figure out the integer multiple that minimizes the value to the mean voxel
-    int_map = np.round((mean_voxels - unwrapped_echo_1[..., t]) / (2 * np.pi)).astype(int)
-
-    # correct the data using the integer map
-    unwrapped_data[..., 0, t] += 2 * np.pi * int_map
-
-    # format weight matrix
-    weights_mat = (
-        np.stack([m.dataobj[..., frame_idx] for m in weights], axis=-1).astype(np.float32).reshape(-1, TEs.shape[0]).T
-    )
-
-    # form design matrix
-    X = TEs[:, np.newaxis]
-
-    # fit subsequent echos to the weighted linear regression from the first echo
-    for echo in range(1, unwrapped_data.shape[-2]):
-        # form response matrix
-        Y = unwrapped_data[..., :echo, t].reshape(-1, echo).T
-
-        # fit model to data
-        coefficients, _ = weighted_regression(X[:echo], Y, weights_mat[:echo])
-
-        # get the predicted values for this echo
-        Y_pred = coefficients * TEs[echo]
-
-        # compute the difference and get the integer multiple map
-        int_map = (
-            np.round((Y_pred - unwrapped_data[..., echo, t].reshape(-1).T) / (2 * np.pi))
-            .astype(int)
-            .T.reshape(*unwrapped_data.shape[:3])
-        )
-
-        # correct the data using the integer map
-        unwrapped_data[..., echo, t] += 2 * np.pi * int_map
-    # return the fixed data
-    return unwrapped_data
-
-
 def check_temporal_consistency_corr(
     unwrapped_data: npt.NDArray,
     unwrapped_echo_1: npt.NDArray,
@@ -384,7 +280,7 @@ def check_temporal_consistency_corr(
     frame_idx,
     masks: npt.NDArray,
     threshold: float = 0.98,
-) -> npt.NDArray:
+):
     """Ensures phase unwrapping solutions are temporally consistent
 
     This uses correlation as a similarity metric between frames to enforce temporal consistency.
@@ -401,11 +297,6 @@ def check_temporal_consistency_corr(
         list of frames that are being processed
     threshold : float
         threshold for correlation similarity. By default 0.98
-
-    Returns
-    -------
-    npt.NDArray
-        fixed unwrapped phase data
     """
 
     logging.info(f"Computing temporal consistency check for frame: {t}")
@@ -462,19 +353,15 @@ def check_temporal_consistency_corr(
         # correct the data using the integer map
         unwrapped_data[mask, echo, t] += 2 * np.pi * int_map
 
-    # return the fixed data
-    return unwrapped_data
-
 
 def start_temporal_consistency(
     unwrapped: npt.NDArray,
     TEs: npt.NDArray,
     mag: List[nib.Nifti1Image],
     frames: List[int],
-    motion_params: Union[npt.NDArray, None] = None,
     masks: Union[npt.NDArray, None] = None,
     n_cpus: int = 4,
-    threshold: float = 0.5,
+    threshold: float = 0.98,
 ):
     """Starts processes to ensure temporal consistency of phase unwrapping solutions.
 
@@ -488,20 +375,12 @@ def start_temporal_consistency(
         magnitude images
     frames : List[int]
         list of frames that are being processed
-    motion_params : npt.NDArray
-        motion parameters, ordered as x, y, z, rot_x, rot_y, rot_z, note that rotations should be preconverted
-        to mm
     masks : npt.NDArray
         masks for each frame
     n_cpus : int
         number of cpus to use
     threshold : float
-        threshold for correlation similarity. By default 0.5
-
-    Returns
-    -------
-    npt.NDArray
-        fixed unwrapped phase data
+        threshold for correlation similarity. By default 0.98
     """
 
     # Make a copy of the first echo data
@@ -510,57 +389,33 @@ def start_temporal_consistency(
     # if multiprocessing is not enabled, just run the function in a single thread
     if n_cpus == 1:
         logging.info("Computing temporal consistency serially")
-        unwrapped_echo_1 = unwrapped[..., 0, :].copy()
         for t, frame_idx in enumerate(frames):
-            if motion_params is not None:
-                check_temporal_consistency(
-                    unwrapped, unwrapped_echo_1, TEs, motion_params, mag, t, frame_idx, threshold
-                )
-            else:
-                check_temporal_consistency_corr(
-                    unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks)
-                )
+            check_temporal_consistency_corr(
+                unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks), threshold,
+            )
     # If multiprocessing is enabled, run the temporal consistency in parallel
     else:
         logging.info("Computing temporal consistency in parallel threads")
-
         threaded_futures = dict()
-
         with ThreadPoolExecutor(max_workers=n_cpus) as executor:
             for t, frame_idx in enumerate(frames):
-                if motion_params is not None:
-                    threaded_futures[
-                        executor.submit(
-                            check_temporal_consistency,
-                            unwrapped,
-                            unwrapped_echo_1,
-                            TEs,
-                            motion_params,
-                            mag,
-                            t,
-                            frame_idx,
-                            threshold,
-                        )
-                    ] = frame_idx
-                else:
-                    threaded_futures[
-                        executor.submit(
-                            check_temporal_consistency_corr,
-                            unwrapped,
-                            unwrapped_echo_1,
-                            TEs,
-                            mag,
-                            t,
-                            frame_idx,
-                            cast(npt.NDArray, masks),
-                        )
-                    ] = frame_idx
+                threaded_futures[
+                    executor.submit(
+                        check_temporal_consistency_corr,
+                        unwrapped,
+                        unwrapped_echo_1,
+                        TEs,
+                        mag,
+                        t,
+                        frame_idx,
+                        cast(npt.NDArray, masks),
+                        threshold,
+                    )
+                ] = frame_idx
 
             for threaded_future in as_completed(threaded_futures):
                 frame_idx = threaded_futures[threaded_future]
                 logging.info(f"Temporal consistency check for frame {frame_idx} complete")
-
-    return unwrapped
 
 
 def start_unwrap_process(
@@ -577,6 +432,8 @@ def start_unwrap_process(
     residual_offset: bool = False,
 ) -> Tuple[npt.NDArray, npt.NDArray]:
     """Starts unwrapping processes to unwrap phase data.
+
+    Note that the unwrapped data is not returned, but rather stored in the unwrapped array.
 
     Parameters
     ----------
@@ -606,9 +463,7 @@ def start_unwrap_process(
     Returns
     -------
     npt.NDArray
-        Unwrapped phase data
-    npt.NDArray
-        Mask data
+        Mask data for the unwrapped data
     """
 
     # note that I separate out idx and frame_idx for the case when the user wants to process a subset of
@@ -718,8 +573,8 @@ def start_unwrap_process(
             else:
                 executor.shutdown()
 
-    # return the unwrapped data
-    return unwrapped, new_mask_data
+    # return the nask data
+    return new_mask_data
 
 
 def start_fieldmap_process(
@@ -746,11 +601,6 @@ def start_fieldmap_process(
         Echo times associated with each phase (in ms)
     n_cpus : int, optional
         Number of CPUs to use, by default 4
-
-    Returns
-    -------
-    npt.NDArray
-        Array of field maps
     """
     # convert TEs to a matrix
     TEs_mat = TEs[:, np.newaxis]
@@ -765,9 +615,6 @@ def start_fieldmap_process(
     # If multiprocessing is enabled, run in parallel using a process pool
     else:
         logging.info(f"Running field map computation in parallel with {n_cpus} processes")
-
-        # shared_mag_array = mp.RawArray('i', mag)
-
         with ThreadPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
             # collect futures in a dictionary, where the value is the frame index
             fieldmap_futures = dict()
@@ -786,9 +633,6 @@ def start_fieldmap_process(
                 logging.info(f"Loading frame: {frame_num}")
                 field_maps[..., frame_num] = fieldmap_future.result()
 
-    # return the field maps
-    return field_maps
-
 
 def unwrap_and_compute_field_maps(
     phase: List[nib.Nifti1Image],
@@ -801,7 +645,6 @@ def unwrap_and_compute_field_maps(
     svd_filt: int = 30,
     correct_global: bool = True,
     frames: Union[List[int], None] = None,
-    motion_params: Union[npt.NDArray, None] = None,
     n_cpus: int = 4,
     debug: bool = False,
 ) -> nib.Nifti1Image:
@@ -834,6 +677,8 @@ def unwrap_and_compute_field_maps(
         Corrects global n2π offsets, by default True
     frames : List[int], optional
         Only process these frame indices, by default None (which means all frames)
+    temporal_check : bool, optional
+        Ensures temporal consistency of phase unwrapping solutions, by default True
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional
@@ -894,11 +739,11 @@ def unwrap_and_compute_field_maps(
     field_maps = np.zeros((*phase[0].shape[:3], n_frames), dtype=np.float32)
     unwrapped = np.zeros((*phase[0].shape[:3], len(TEs), n_frames), dtype=np.float32)
 
-    # DEBUG
-    global affine
-    affine = phase[0].affine
-    global header
-    header = phase[0].header
+    # FOR DEBUGGING
+    # global affine
+    # affine = phase[0].affine
+    # global header
+    # header = phase[0].header
 
     # allocate mask if needed
     if not mask:
@@ -909,27 +754,14 @@ def unwrap_and_compute_field_maps(
             mask.dataobj = np.ones(phase[0].shape)
 
     # load in unwrapped image
-    unwrapped, new_masks = start_unwrap_process(
+    new_masks = start_unwrap_process(
         unwrapped, phase, mag, TEs, mask, frames, automask, border_size, correct_global, n_cpus
     )
 
     # check temporal consistency to unwrapped phase
-    # if motion parameters passed in
-    if motion_params is not None:
-        unwrapped = start_temporal_consistency(
-            unwrapped=unwrapped,
-            TEs=TEs,
-            mag=mag,
-            frames=frames,
-            motion_params=motion_params[frames],
-            masks=None,
-            n_cpus=n_cpus,
-            threshold=0.5,
-        )
-    else:
-        unwrapped = start_temporal_consistency(
-            unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, motion_params=None, masks=new_masks, n_cpus=n_cpus
-        )
+    start_temporal_consistency(
+        unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, masks=new_masks, n_cpus=n_cpus
+    )
 
     # Save out unwrapped phase for debugging
     if debug:
@@ -940,7 +772,7 @@ def unwrap_and_compute_field_maps(
         nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii.gz")
 
     # compute field maps on temporally consistent unwrapped phase
-    field_maps = start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=n_cpus)
+    start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=n_cpus)
 
     # if border voxels defined, use that information to stabilize border regions using SVD filtering
     # this will probably kill any respiration signals in these voxels but improve the
