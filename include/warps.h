@@ -527,7 +527,7 @@ T compute_hausdorff_distance(
             image2_direction_type[i][j] = image2_direction.at(i, j);
         }
     }
-    typename ImageType::SpacingType image1_spacing_type(
+    typename ImageType::SpacingType image2_spacing_type(
         {image2_spacing.at(0), image2_spacing.at(1), image2_spacing.at(2)});
     input_import_filter2->SetRegion(image2_region);
     input_import_filter2->SetOrigin(image2_origin_point);

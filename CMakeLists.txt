@@ -53,12 +53,12 @@ set(ZLIBNG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     ITK
     GIT_REPOSITORY https://github.com/InsightSoftwareConsortium/ITK.git
-    GIT_TAG v5.3.0
+    GIT_TAG cce48b3cfa5c8f41be0bf7393183132ab34f1a06
 )
 FetchContent_MakeAvailable(ITK)
 FetchContent_GetProperties(ITK)
 set(ITK_DIR ${itk_BINARY_DIR})
-find_package(ITK REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementField)
+find_package(ITK REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementField ITKDistanceMap)
 
 # display all warnings
 add_compile_options(-Wall -O3 -march=skylake)
