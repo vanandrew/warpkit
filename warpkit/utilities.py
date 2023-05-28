@@ -9,6 +9,7 @@ from . import (
     invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
     invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
     resample as resample_cpp,  # type: ignore
+    compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
 )
 
 
@@ -512,7 +513,9 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
 
 
 def build_low_pass_filter(
-    TR_in_sec: float, critical_freq: float = 0.01, filter_order: int = 6,
+    TR_in_sec: float,
+    critical_freq: float = 0.01,
+    filter_order: int = 6,
 ) -> Tuple[npt.NDArray, npt.NDArray]:
     """Function for calculating filter parameters for low pass filter
 
@@ -534,5 +537,51 @@ def build_low_pass_filter(
     fs = 1.0 / TR_in_sec  # Sampling frequency (Hz)
     fn = fs / 2.0  # Nyquist frequency (Hz)
     w0_cutoff = critical_freq / fn  # Normalized cutoff frequency
-    b, a = signal.iirfilter(filter_order, w0_cutoff, btype='lowpass', output='ba', ftype='butter')
+    b, a = signal.iirfilter(filter_order, w0_cutoff, btype="lowpass", output="ba", ftype="butter")
     return b, a
+
+
+def compute_hausdorff_distance(image1: nib.Nifti1Image, image2: nib.Nifti1Image) -> float:
+    """Compute the Hausdorff distance between two images
+
+    Parameters
+    ----------
+    image1 : nib.Nifti1Image
+        First image
+    image2 : nib.Nifti1Image
+        Second image
+
+    Returns
+    -------
+    float
+        Hausdorff distance
+    """
+    # get all data in RAS orientation
+    to_canonical, from_canonical = get_ras_orient_transform(image1)
+
+    # get to RAS orientation
+    image1_ras = image1.as_reoriented(to_canonical)
+    image2_ras = image2.as_reoriented(to_canonical)
+
+    # get data
+    image1_data = image1_ras.get_fdata()
+    image2_data = image2_ras.get_fdata()
+
+    # split affine into components
+    image1_origin, image1_rotations, image1_zooms, _ = decompose44(image1_ras.affine)
+    image2_origin, image2_rotations, image2_zooms, _ = decompose44(image2_ras.affine)
+
+    # compute hausdorff distance
+    hausdorff_distance = compute_hausdorff_distance_cpp(
+        image1_data,
+        image1_origin,
+        image1_rotations,
+        image1_zooms,
+        image2_data,
+        image2_origin,
+        image2_rotations,
+        image2_zooms,
+    )
+
+    # return hausdorff distance
+    return hausdorff_distance
