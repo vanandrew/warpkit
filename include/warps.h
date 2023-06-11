@@ -544,7 +544,7 @@ T compute_hausdorff_distance(
 
     // Get the hausdorff distance
     hausdorff_filter->Update();
-    T hausdorff_distance = hausdorff_filter->GetHausdorffDistance();
+    T hausdorff_distance = hausdorff_filter->GetAverageHausdorffDistance();
     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
     // Return the hausdorff distance

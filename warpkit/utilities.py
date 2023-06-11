@@ -10,6 +10,7 @@ from . import (
     invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
     resample as resample_cpp,  # type: ignore
     compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
+    compute_jacobian_determinant as compute_jacobian_determinant_cpp,  # type: ignore
 )
 
 
