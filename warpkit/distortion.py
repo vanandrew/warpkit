@@ -22,7 +22,7 @@ def medic(
     border_size: int = 5,
     border_filt: Tuple[int, int] = (1, 5),
     svd_filt: int = 5,
-    critical_freq: Optional[float] = 0.01,
+    critical_freq: Optional[float] = None,
     filter_order: int = 6,
     n_cpus: int = 4,
     debug: bool = False,
@@ -58,7 +58,7 @@ def medic(
     svd_filt : int, optional
         Number of SVD components to use for filtering of field maps, by default 5
     critical_freq: float, optional
-        Critical frequency for low pass filter, by default 0.01, if set to None will disable the filter
+        Critical frequency for low pass filter, by default None, if set to None will disable the filter
     filter_order : int, optional
         Order of the low pass filter, by default 6
     n_cpus : int, optional
