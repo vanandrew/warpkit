@@ -1,17 +1,23 @@
 # warpkit
 A python library for neuroimaging transforms
 
-If you've landed here, you're probably interested in the Multi-Echo DIstortion Correction (MEDIC) algorithm, which this
-library implements.
+If you've landed here, you're probably interested in the Multi-Echo DIstortion Correction (MEDIC) algorithm, which this library implements.
 
 See below for usage details.
 
 ## Installation
-To install, clone this repo and run the following in the repo directory:
+To install, clone this repo and run the following in the repo directory. Due to the current developmental nature of this
+package, I recommend installing it in editable mode:
+
 ```
-pip install ./ -v
+pip install -e ./[dev] -v --config-settings editable_mode=strict
 ```
-> :warning: You need Julia pre-installed on your system. The installer will raise an error if it is not found.
+You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. For the Julia install,
+ensure that you have the `julia` executable in your path, and the `julia` libraries correctly setup in your
+`ld.so.conf`.
+
+The build process uses CMake to build the C++/Python Extension. If you encounter an error during the build process,
+please report the full logs of the build process using the `-v` flag to the `pip` command above. 
 
 ## What is MEDIC?
 
@@ -26,8 +32,7 @@ to this:
 for each frame of your data. You can then use these field maps to distortion correct your data.
 
 ## MEDIC Usage
-The `warpkit` library is meant for integration into a larger python pipeline/package. ~~If you're looking for a script to
-run MEDIC, see the [omni](https://gitlab.com/vanandrew/omni) library~~ (NOT YET IMPLEMENTED).
+The `warpkit` library is meant for integration into a larger python pipeline/package.
 
 An example of how to call MEDIC from python is provided below:
 ```python
