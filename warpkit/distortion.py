@@ -1,14 +1,11 @@
 from typing import List, Tuple, Optional, Union
 import nibabel as nib
 import numpy as np
-import numpy.typing as npt
-from scipy import signal
 from warpkit.unwrap import unwrap_and_compute_field_maps
 from warpkit.utilities import (
     field_maps_to_displacement_maps,
     invert_displacement_maps,
     displacement_maps_to_field_maps,
-    build_low_pass_filter,
 )
 
 
@@ -21,9 +18,7 @@ def medic(
     frames: Optional[List[int]] = None,
     border_size: int = 5,
     border_filt: Tuple[int, int] = (1, 5),
-    svd_filt: int = 5,
-    critical_freq: Optional[float] = None,
-    filter_order: int = 6,
+    svd_filt: int = 10,
     n_cpus: int = 4,
     debug: bool = False,
 ) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
@@ -44,7 +39,7 @@ def medic(
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
     TEs : Union[List[float], Tuple[float]]
-        Echo times associated with each phase (in miiiseconds)
+        Echo times associated with each phase (in milliseconds)
     total_readout_time : float
         Total readout time (in seconds)
     phase_encoding_direction : str
@@ -56,11 +51,7 @@ def medic(
     border_filt : Tuple[int, int], optional
         Number of SVD components for each step of border filtering, by default (1, 5)
     svd_filt : int, optional
-        Number of SVD components to use for filtering of field maps, by default 5
-    critical_freq: float, optional
-        Critical frequency for low pass filter, by default None, if set to None will disable the filter
-    filter_order : int, optional
-        Order of the low pass filter, by default 6
+        Number of SVD components to use for filtering of field maps, by default 10
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional
@@ -99,17 +90,6 @@ def medic(
         debug=debug,
     )
 
-    # low pass filter field maps if set
-    if critical_freq is not None:
-        # filter out higher frequencies
-        # get the TR from the first mag image
-        TR = mag[0].header.get_zooms()[3]
-        b, a = build_low_pass_filter(TR, critical_freq, filter_order)
-        fmap_data = field_maps_native.get_fdata()
-        # apply low pass filter to field maps
-        fmap_data = signal.filtfilt(b, a, fmap_data, axis=3)
-        field_maps_native = nib.Nifti1Image(fmap_data, field_maps_native.affine, field_maps_native.header)
-
     # convert to displacement maps (these are in distorted space)
     inv_displacement_maps = field_maps_to_displacement_maps(
         field_maps_native, total_readout_time, phase_encoding_direction
@@ -122,6 +102,12 @@ def medic(
     field_maps = displacement_maps_to_field_maps(
         displacement_maps, total_readout_time, phase_encoding_direction, flip_sign=True
     )
+
+    # check if we need to flip sign of field maps (this is done by comparing sign of correlation between
+    # native and undistorted field maps)
+    if np.corrcoef(field_maps.dataobj[..., 0].ravel(), field_maps_native.dataobj[..., 0].ravel())[0, 1] < 0:
+        field_map_data = field_maps.get_fdata() * -1
+        field_maps = nib.Nifti1Image(field_map_data, field_maps.affine, field_maps.header)
 
     # return correction maps
     return field_maps_native, displacement_maps, field_maps

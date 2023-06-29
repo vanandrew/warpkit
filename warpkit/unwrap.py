@@ -1,15 +1,11 @@
-import sys
-import signal
 import logging
-import traceback
 from types import SimpleNamespace
 from typing import cast, List, Tuple, Union
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
+from scipy.stats import mode
 from skimage.filters import threshold_otsu  # type: ignore
-from skimage.measure import label, regionprops
 from scipy.ndimage import (
     generate_binary_structure,
     binary_erosion,
@@ -17,105 +13,25 @@ from scipy.ndimage import (
     binary_fill_holes,
     gaussian_filter,
 )
-from scipy.stats import mode
-from warpkit.model import weighted_regression
-from .utilities import rescale_phase, corr2_coeff
-from . import JuliaContext as _JuliaContext  # type: ignore
-
-
-def initialize_julia_context():
-    """Initialize a Julia context in the global variable JULIA."""
-    # TODO: Is there a way to make this a singleton? We generally only want to spawn one Julia interpreter per process.
-
-    # This should only be initialized once
-    global JULIA
-    JULIA = _JuliaContext()
-
-    # Set the process's signal handler to ignore SIGINT
-    signal.pthread_sigmask(signal.SIG_BLOCK, [signal.SIGINT])
-
-
-def get_largest_connected_component(mask_data: npt.NDArray[np.bool8]) -> npt.NDArray[np.bool8]:
-    """Get the largest connected component of a mask
-
-    Parameters
-    ----------
-    mask_data : npt.NDArray[np.bool8]
-        Mask to get the largest connected component of
-
-    Returns
-    -------
-    npt.NDArray[np.bool8]
-        Mask with only the largest connected component
-    """
-    # get the largest connected component
-    labelled_mask = label(mask_data)
-    props = regionprops(labelled_mask)
-    sorted_props = sorted(props, key=lambda x: x.area, reverse=True)
-    mask_data = labelled_mask == sorted_props[0].label
-
-    # return the mask
-    return mask_data
-
-
-def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int = 0) -> npt.NDArray[np.bool8]:
-    """Create a quick brain mask for a single frame.
-
-    Parameters
-    ----------
-    mag_shortest : npt.NDArray[np.float32]
-        Magnitude data with the shortest echo time
-    extra_dilation : int
-        Number of extra dilations (or erosions if negative) to perform, by default 0
-
-    Returns
-    -------
-    npt.NDArray[np.bool8]
-        Mask of voxels to use for unwrapping
-    """
-    # create structuring element
-    strel = generate_binary_structure(3, 2)
-
-    # get the otsu threshold
-    threshold = threshold_otsu(mag_shortest)
-    mask_data = mag_shortest > threshold
-    mask_data = cast(npt.NDArray[np.float32], binary_fill_holes(mask_data, strel))
-
-    # erode mask
-    mask_data = cast(npt.NDArray[np.bool8], binary_erosion(mask_data, structure=strel, iterations=2, border_value=1))
-
-    # get largest connected component
-    mask_data = get_largest_connected_component(mask_data)
-
-    # dilate the mask
-    mask_data = binary_dilation(mask_data, structure=strel, iterations=2)
-
-    # extra dilation to get areas on the edge of the brain
-    if extra_dilation > 0:
-        mask_data = binary_dilation(mask_data, structure=strel, iterations=extra_dilation)
-    # if negative, erode instead
-    if extra_dilation < 0:
-        mask_data = binary_erosion(mask_data, structure=strel, iterations=abs(extra_dilation))
-
-    # since we can't have a completely empty mask, set all zeros to ones
-    # if the mask is all empty
-    if np.all(np.isclose(mask_data, 0)):
-        mask_data = np.ones(mask_data.shape)
-
-    # return the mask
-    return mask_data.astype(np.bool8)
+from .model import weighted_regression
+from .utilities import (
+    rescale_phase,
+    corr2_coeff,
+    create_brain_mask,
+    get_largest_connected_component,
+)
+from .julia import JuliaContext
+from .concurrency import run_executor
 
 
 def unwrap_phase(
     phase_data: npt.NDArray[np.float32],
     mag_data: npt.NDArray[np.float32],
     TEs: npt.NDArray[np.float32],
-    mask_data: npt.NDArray[np.bool8],
+    mask_data: npt.NDArray[np.bool_],
     automask: bool = True,
     automask_dilation: int = 3,
-    correct_global: bool = True,
     idx: Union[int, None] = None,
-    residual_offset: bool = False,
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int8]]:
     """Unwraps the phase for a single frame of ME-EPI
 
@@ -127,18 +43,14 @@ def unwrap_phase(
         Single frame of magnitude data with shape (x, y, z, echo)
     TEs : npt.NDArray[np.float32]
         Echo times associated with each phase
-    mask_data : npt.NDArray[np.bool8]
+    mask_data : npt.NDArray[np.bool_]
         Mask of voxels to use for unwrapping
     automask : bool, optional
         Automatically compute a mask, by default True
     automask_dilation : int, optional
         Number of extra dilations (or erosions if negative) to perform, by default 3
-    correct_global : bool, optional
-        Corrects global n2π offset, by default True
     idx : int, optional
         Index of the frame being processed for verbosity, by default None
-    residual_offset: bool, optional
-        Computes offset using residuals, by default False
 
     Returns
     -------
@@ -147,8 +59,8 @@ def unwrap_phase(
     npt.NDArray[np.int8]
         mask
     """
-    # use global Julia Context
-    global JULIA
+    # get Julia Context
+    JULIA = JuliaContext()
 
     if idx is not None:
         logging.info(f"Processing frame: {idx}")
@@ -164,7 +76,7 @@ def unwrap_phase(
         vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
-        vq_mask = cast(npt.NDArray[np.bool8], binary_fill_holes(vq_mask, strel))
+        vq_mask = cast(npt.NDArray[np.bool_], binary_fill_holes(vq_mask, strel))
         # get largest connected component
         vq_mask = get_largest_connected_component(vq_mask)
 
@@ -176,13 +88,13 @@ def unwrap_phase(
         combined_mask = get_largest_connected_component(combined_mask)
 
         # erode then dilate
-        combined_mask = cast(npt.NDArray[np.bool8], binary_erosion(combined_mask, strel, iterations=2))
+        combined_mask = cast(npt.NDArray[np.bool_], binary_erosion(combined_mask, strel, iterations=2))
         combined_mask = get_largest_connected_component(combined_mask)
-        combined_mask = cast(npt.NDArray[np.bool8], binary_dilation(combined_mask, strel, iterations=2))
+        combined_mask = cast(npt.NDArray[np.bool_], binary_dilation(combined_mask, strel, iterations=2))
 
         # get a dilated verision of the mask
         combined_mask_dilated = cast(
-            npt.NDArray[np.bool8], binary_dilation(combined_mask, strel, iterations=automask_dilation)
+            npt.NDArray[np.bool_], binary_dilation(combined_mask, strel, iterations=automask_dilation)
         )
 
         # get sum of masks (we can select dilated vs original version by indexing)
@@ -222,41 +134,35 @@ def unwrap_phase(
     # global mode correction
     # this computes the global mode offset for the first echo then tries to find the offset
     # that minimizes the residuals for each subsequent echo
-    # this seems to be more robust than romeo's global offset correction
-    if correct_global:
-        # use auto mask to get brain mask
-        echo_idx = np.argmin(TEs)
-        mag_shortest = mag_data[..., echo_idx]
-        brain_mask = create_brain_mask(mag_shortest)
+    # use auto mask to get brain mask
+    echo_idx = np.argmin(TEs)
+    mag_shortest = mag_data[..., echo_idx]
+    brain_mask = create_brain_mask(mag_shortest)
 
-        # global mode offset the first echo
-        unwrapped -= (
-            mode(np.round(unwrapped[brain_mask, 0] / (2 * np.pi)).astype(int), axis=0, keepdims=False).mode * 2 * np.pi
-        )
+    # global mode offset the first echo
+    unwrapped -= (
+        mode(np.round(unwrapped[brain_mask, 0] / (2 * np.pi)).astype(int), axis=0, keepdims=False).mode * 2 * np.pi
+    )
 
-        # subsequent echoes are corrected by minimizing fit to linear model from 1st echo
+    # subsequent echoes are corrected by minimizing fit to linear model from 1st echo
 
-        # for each of these matrices TEs are on rows, voxels are columns
-        # get design matrix
-        X = TEs[:, np.newaxis]
+    # for each of these matrices TEs are on rows, voxels are columns
+    # get design matrix
+    X = TEs[:, np.newaxis]
 
-        # get magnitude weight matrix
-        W = mag_data[brain_mask, :].T
+    # get magnitude weight matrix
+    W = mag_data[brain_mask, :].T
 
-        # loop over each index past 2nd echo
-        for i in range(1, TEs.shape[0]):
-            # get matrix with the masked unwrapped data (weighted by magnitude)
-            Y = unwrapped[brain_mask, :].T
+    # loop over each index past 2nd echo
+    for i in range(1, TEs.shape[0]):
+        # get matrix with the masked unwrapped data (weighted by magnitude)
+        Y = unwrapped[brain_mask, :].T
 
-            # Compute offset by method that minimizes residuals
-            if residual_offset:
-                best_offset = compute_offset_residual(i, W, X, Y)
-            else:
-                # Compute offset through linear regression method
-                best_offset = compute_offset(i, W, X, Y)
+        # Compute offset through linear regression method
+        best_offset = compute_offset(i, W, X, Y)
 
-            # apply the offset
-            unwrapped[brain_mask, i] += 2 * np.pi * best_offset
+        # apply the offset
+        unwrapped[brain_mask, i] += 2 * np.pi * best_offset
 
     # set anything outside of mask_data to 0
     unwrapped[~mask_data] = 0
@@ -354,284 +260,129 @@ def check_temporal_consistency_corr(
         unwrapped_data[mask, echo, t] += 2 * np.pi * int_map
 
 
-def start_temporal_consistency(
-    unwrapped: npt.NDArray,
-    TEs: npt.NDArray,
+def compute_field_map(
+    unwrapped_mat: npt.NDArray,
     mag: List[nib.Nifti1Image],
-    frames: List[int],
-    masks: Union[npt.NDArray, None] = None,
-    n_cpus: int = 4,
-    threshold: float = 0.98,
-):
-    """Starts processes to ensure temporal consistency of phase unwrapping solutions.
+    num_echos: int,
+    TEs_mat: npt.NDArray,
+    frame_num: int,
+) -> npt.NDArray:
+    """Function for computing field map for a given frame
 
     Parameters
     ----------
-    unwrapped : npt.NDArray
-        unwrapped phase data, where last column is time, and second to last column are the echoes
-    TEs : npt.NDArray
-        echo times
-    mag : List[nib.Nifti1Image]
-        magnitude images
-    frames : List[int]
-        list of frames that are being processed
-    masks : npt.NDArray
-        masks for each frame
-    n_cpus : int
-        number of cpus to use
-    threshold : float
-        threshold for correlation similarity. By default 0.98
-    """
-
-    # Make a copy of the first echo data
-    unwrapped_echo_1 = unwrapped[..., 0, :].copy()
-
-    # if multiprocessing is not enabled, just run the function in a single thread
-    if n_cpus == 1:
-        logging.info("Computing temporal consistency serially")
-        for t, frame_idx in enumerate(frames):
-            check_temporal_consistency_corr(
-                unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks), threshold,
-            )
-    # If multiprocessing is enabled, run the temporal consistency in parallel
-    else:
-        logging.info("Computing temporal consistency in parallel threads")
-        threaded_futures = dict()
-        with ThreadPoolExecutor(max_workers=n_cpus) as executor:
-            for t, frame_idx in enumerate(frames):
-                threaded_futures[
-                    executor.submit(
-                        check_temporal_consistency_corr,
-                        unwrapped,
-                        unwrapped_echo_1,
-                        TEs,
-                        mag,
-                        t,
-                        frame_idx,
-                        cast(npt.NDArray, masks),
-                        threshold,
-                    )
-                ] = frame_idx
-
-            for threaded_future in as_completed(threaded_futures):
-                frame_idx = threaded_futures[threaded_future]
-                logging.info(f"Temporal consistency check for frame {frame_idx} complete")
-
-
-def start_unwrap_process(
-    unwrapped: npt.NDArray,
-    phase: List[nib.Nifti1Image],
-    mag: List[nib.Nifti1Image],
-    TEs: npt.NDArray[np.float32],
-    mask: Union[nib.Nifti1Image, SimpleNamespace],
-    frames: List[int],
-    automask: bool = True,
-    automask_dilation: int = 3,
-    correct_global: bool = True,
-    n_cpus: int = 4,
-    residual_offset: bool = False,
-) -> Tuple[npt.NDArray, npt.NDArray]:
-    """Starts unwrapping processes to unwrap phase data.
-
-    Note that the unwrapped data is not returned, but rather stored in the unwrapped array.
-
-    Parameters
-    ----------
-    unwrapped: npt.NDArray
-        Array to store unwrapped data
-    phase : List[nib.Nifti1Image]
-        Phases to unwrap
-    mag : List[nib.Nifti1Image]
-        Magnitudes associated with each phase
-    TEs : npt.NDArray[np.float32]
-        Echo times associated with each phase (in ms)
-    mask : Union[nib.Nifti1Image, SimpleNamespace]
-        Boolean mask, by default None
-    frames : List[int]
-        Only process these frame indices, by default None (which means all frames)
-    automask : bool, optional
-        Automatically generate a mask (ignore mask option), by default True
-    automask_dilation : int, optional
-        Number of voxels to dilate the automask, by default 3
-    correct_global : bool, optional
-        Corrects global n2π offsets, by default True
-    n_cpus : int, optional
-        Number of CPUs to use, by default 4
-    residual_offset : bool, optional
-        Computes best offset using residuals, by default False
+    unwrapped_mat: np.ndarray
+        Array of unwrapped phase data for a given frame
+    mag: List[nib.NiftiImage]
+        List of magnitudes
+    num_echos: int
+        Number of echos
+    TEs_mat: npt.NDArray
+        Echo times in a 2d matrix
+    frame_num: int
+        Frame number
 
     Returns
     -------
-    npt.NDArray
-        Mask data for the unwrapped data
+    B0: np.ndarray
     """
-
-    # note that I separate out idx and frame_idx for the case when the user wants to process a subset of
-    # non-contiguous frames
-    # this function will always reindex the frames to be contiguous however
-    # e.g. if the user passes in frames [3, 5, 13] it will be reindexed to [0, 1, 2]
-
-    # array for storing auto-generated masks
-    new_mask_data = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
-
-    # estimate the min and max phase values, we assume the phase ranges from -pi to pi
-    min_phases = []
-    max_phases = []
-    for phase_echo in phase:
-        # only look at the first frame
-        phase_data = phase_echo.dataobj[..., frames[0]]
-        # get the min and max phase value
-        min_phases.append(phase_data.min())
-        max_phases.append(phase_data.max())
-    min_phase = mode(min_phases, keepdims=False).mode
-    max_phase = mode(max_phases, keepdims=False).mode
-    logging.info("Estimated min phase: %f", min_phase)
-    logging.info("Estimated max phase: %f", max_phase)
-
-    # if multiprocessing is not enabled, run serially
-    if n_cpus == 1:
-        logging.info("Running unwrap phase serially")
-        initialize_julia_context()
-        for idx, frame_idx in enumerate(frames):
-            # get the phase and magnitude data from each echo
-            phase_data: npt.NDArray[np.float32] = rescale_phase(
-                np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1), min=min_phase, max=max_phase,
-            ).astype(np.float32)
-            mag_data: npt.NDArray[np.float32] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
-                np.float32
-            )
-            mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
-            TEs = TEs.astype(np.float32)
-
-            unwrapped[..., idx], new_mask_data[..., idx] = unwrap_phase(
-                phase_data, mag_data, TEs, mask_data, automask, automask_dilation, correct_global, idx, residual_offset
-            )
-    # if multiprocessing is enabled, run in parallel using a process pool
-    else:
-        # use a process pool to speed up the computation
-        executor = ProcessPoolExecutor(max_workers=n_cpus, initializer=initialize_julia_context)
-
-        # set error flag for process pool
-        PROCESS_POOL_ERROR = False
-
-        try:
-            logging.info(f"Running unwrap phase in parallel with {n_cpus} processes")
-
-            # collect futures in a dictionary, where the value is the frame index
-            futures = dict()
-            # loop over the total number of frames
-            for idx, frame_idx in enumerate(frames):
-                # get the phase and magnitude data from each echo
-
-                phase_data: npt.NDArray[np.float32] = rescale_phase(
-                    np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1), min=min_phase, max=max_phase,
-                ).astype(np.float32)
-                mag_data: npt.NDArray[np.float32] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
-                    np.float32
-                )
-                mask_data = cast(npt.NDArray[np.bool8], mask.dataobj[..., frame_idx].astype(bool))
-                TEs = TEs.astype(np.float32)
-
-                # submit field map computation to the process pool
-                futures[
-                    executor.submit(
-                        unwrap_phase,
-                        phase_data,
-                        mag_data,
-                        TEs,
-                        mask_data,
-                        automask,
-                        automask_dilation,
-                        correct_global,
-                        idx,
-                        residual_offset,
-                    )
-                ] = idx
-
-            # loop over the futures
-            for future in as_completed(futures):
-                # get the frame index
-                idx = futures[future]
-                # get the unwrapped image
-                logging.info(f"Collecting frame: {idx}")
-                unwrapped[..., idx], new_mask_data[..., idx] = future.result()
-        # we do some hacky stuff to kill the process pool on keyboard interrupt since Julia doesn't play nice...
-        except KeyboardInterrupt:
-            # on keyboard interrupt, just kill all processes in the executor pool
-            for proc in executor._processes.values():
-                proc.kill()
-            # set global error flag
-            PROCESS_POOL_ERROR = True
-        except Exception:
-            traceback.print_exc()
-            # set global error flag
-            PROCESS_POOL_ERROR = True
-        finally:
-            if PROCESS_POOL_ERROR:
-                sys.exit(1)
-            # close the executor
-            else:
-                executor.shutdown()
-
-    # return the nask data
-    return new_mask_data
+    logging.info(f"Computing field map for frame: {frame_num}")
+    unwrapped_mat = unwrapped_mat.reshape(-1, num_echos).T
+    mag_data = np.stack([m.dataobj[..., frame_num] for m in mag], axis=-1).astype(np.float32)
+    weights = mag_data.reshape(-1, num_echos).T
+    B0 = weighted_regression(TEs_mat, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
+    B0 *= 1000 / (2 * np.pi)
+    return B0
 
 
-def start_fieldmap_process(
-    field_maps: npt.NDArray,
-    unwrapped: npt.NDArray,
-    mag: List[nib.Nifti1Image],
-    TEs: npt.NDArray[np.float32],
-    n_cpus: int = 4,
-) -> npt.NDArray:
-    """Start the field map computation process.
-
-    Does a weighted linear regression across the unwrapped phase data to compute the field map, where
-    the weights are the associated echo's magnitude data.
+def compute_offset(echo_ind: int, W: npt.NDArray, X: npt.NDArray, Y: npt.NDArray) -> int:
+    """Method for computing the global mode offset for echoes > 1
 
     Parameters
     ----------
-    field_maps : npt.NDArray
-        Array to store field maps
-    unwrapped : npt.NDArray
-        Array of unwrapped phase data
-    mag : List[nib.Nifti1Image]
-        Magnitudes associated with each phase
-    TEs : npt.NDArray[np.float32]
-        Echo times associated with each phase (in ms)
-    n_cpus : int, optional
-        Number of CPUs to use, by default 4
+    echo_ind: int
+        Echo index
+    W: npt.NDArray
+        Weights
+    X: npt.NDArray
+        TEs in 2d matrix
+    Y: npt.NDArray
+        Masked unwrapped data weighted by magnitude
+
+    Returns
+    -------
+    best_offset: int
     """
-    # convert TEs to a matrix
-    TEs_mat = TEs[:, np.newaxis]
+    # fit the model to the up to previous echo
+    coefficients, _ = weighted_regression(X[:echo_ind], Y[:echo_ind], W[:echo_ind])
 
-    # If multiprocessing is not enabled, run serially
-    if n_cpus == 1:
-        logging.info("Running field map computation serially")
-        for frame_num in range(unwrapped.shape[-1]):
-            field_maps[..., frame_num] = compute_field_map(
-                unwrapped[..., frame_num], mag, TEs.shape[0], TEs_mat, frame_num
-            )
-    # If multiprocessing is enabled, run in parallel using a process pool
-    else:
-        logging.info(f"Running field map computation in parallel with {n_cpus} processes")
-        with ThreadPoolExecutor(max_workers=n_cpus) as fieldmap_executor:
-            # collect futures in a dictionary, where the value is the frame index
-            fieldmap_futures = dict()
-            # loop over the total number of frames
-            for frame_num in range(unwrapped.shape[-1]):
-                fieldmap_futures[
-                    fieldmap_executor.submit(
-                        compute_field_map, unwrapped[..., frame_num], mag, TEs.shape[0], TEs_mat, frame_num
-                    )
-                ] = frame_num
+    # compute the predicted phase for the current echo
+    Y_pred = X[echo_ind] * coefficients
 
-            # loop over the futures
-            for fieldmap_future in as_completed(fieldmap_futures):
-                # get the frame index
-                frame_num = fieldmap_futures[fieldmap_future]
-                logging.info(f"Loading frame: {frame_num}")
-                field_maps[..., frame_num] = fieldmap_future.result()
+    # compute the difference between the predicted phase and the unwrapped phase
+    Y_diff = Y_pred - Y[echo_ind]
+
+    # compute closest multiple of 2pi to the difference
+    int_map = np.round(Y_diff / (2 * np.pi)).astype(int)
+
+    # compute the most often occuring multiple
+    best_offset = mode(int_map, axis=0, keepdims=False).mode
+    best_offset = cast(int, best_offset)
+
+    return best_offset
+
+
+def svd_filtering(
+    field_maps: npt.NDArray,
+    new_masks: npt.NDArray,
+    voxel_size: float,
+    n_frames: int,
+    border_filt: Tuple[int, int],
+    svd_filt: int,
+):
+    if new_masks.max() == 2 and n_frames >= np.max(border_filt):
+        logging.info("Performing spatial/temporal filtering of border voxels...")
+        smoothed_field_maps = np.zeros(field_maps.shape, dtype=np.float32)
+        # smooth by 4 mm kernel
+        sigma = (4 / voxel_size) / 2.355
+        for i in range(field_maps.shape[-1]):
+            smoothed_field_maps[..., i] = gaussian_filter(field_maps[..., i], sigma=sigma)
+        # compute the union of all the masks
+        union_mask = np.sum(new_masks, axis=-1) > 0
+        # do temporal filtering of border voxels with SVD
+        U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
+        # first pass of SVD filtering
+        recon = np.dot(U[:, : border_filt[0]] * S[: border_filt[0]], VT[: border_filt[0], :])
+        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
+        recon_img[union_mask] = recon
+        # set the border voxels in the field map to the recon values
+        for i in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
+        # do second SVD filtering pass
+        U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
+        # second pass of SVD filtering
+        recon = np.dot(U[:, : border_filt[1]] * S[: border_filt[1]], VT[: border_filt[1], :])
+        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
+        recon_img[union_mask] = recon
+        # set the border voxels in the field map to the recon values
+        for i in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
+
+    # use svd filter to denoise the field maps
+    if n_frames >= svd_filt:
+        logging.info("Denoising field maps with SVD...")
+        logging.info(f"Keeping {svd_filt} components...")
+        # compute the union of all the masks
+        union_mask = np.sum(new_masks, axis=-1) > 0
+        # compute SVD
+        U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
+        # only keep the first n_components components
+        recon = np.dot(U[:, :svd_filt] * S[:svd_filt], VT[:svd_filt, :])
+        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
+        recon_img[union_mask] = recon
+        # set the voxel values in the mask to the recon values
+        for i in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i] > 0, i] = recon_img[new_masks[..., i] > 0, i]
 
 
 def unwrap_and_compute_field_maps(
@@ -642,8 +393,7 @@ def unwrap_and_compute_field_maps(
     automask: bool = True,
     border_size: int = 5,
     border_filt: Tuple[int, int] = (1, 5),
-    svd_filt: int = 30,
-    correct_global: bool = True,
+    svd_filt: int = 10,
     frames: Union[List[int], None] = None,
     n_cpus: int = 4,
     debug: bool = False,
@@ -673,12 +423,8 @@ def unwrap_and_compute_field_maps(
         Number of SVD components for each step of border filtering, by default (1, 5)
     svd_filt : int, optional
         Number of SVD components to use for filtering of field maps, by default 30
-    correct_global : bool, optional
-        Corrects global n2π offsets, by default True
     frames : List[int], optional
         Only process these frame indices, by default None (which means all frames)
-    temporal_check : bool, optional
-        Ensures temporal consistency of phase unwrapping solutions, by default True
     n_cpus : int, optional
         Number of CPUs to use, by default 4
     debug : bool, optional
@@ -738,6 +484,8 @@ def unwrap_and_compute_field_maps(
     # allocate space for field maps and unwrapped
     field_maps = np.zeros((*phase[0].shape[:3], n_frames), dtype=np.float32)
     unwrapped = np.zeros((*phase[0].shape[:3], len(TEs), n_frames), dtype=np.float32)
+    # array for storing auto-generated masks
+    new_masks = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
 
     # FOR DEBUGGING
     # global affine
@@ -753,14 +501,73 @@ def unwrap_and_compute_field_maps(
         else:
             mask.dataobj = np.ones(phase[0].shape)
 
-    # load in unwrapped image
-    new_masks = start_unwrap_process(
-        unwrapped, phase, mag, TEs, mask, frames, automask, border_size, correct_global, n_cpus
+    # write a function to iterate over each frame for phase unwrapping
+    def phase_iterator(phase, mag, TEs, mask, frames, automask, automask_dilation):
+        # note that I separate out idx and frame_idx for the case when the user wants to process a subset of
+        # non-contiguous frames
+        # this will always reindex the frames to be contiguous however
+        # e.g. if the user passes in frames [3, 5, 13] it will be reindexed to [0, 1, 2]
+
+        # estimate the min and max phase values, we assume the phase ranges from -pi to pi
+        min_phases = []
+        max_phases = []
+        for phase_echo in phase:
+            # only look at the first frame
+            phase_data = phase_echo.dataobj[..., frames[0]]
+            # get the min and max phase value
+            min_phases.append(phase_data.min())
+            max_phases.append(phase_data.max())
+        min_phase = mode(min_phases, keepdims=False).mode
+        max_phase = mode(max_phases, keepdims=False).mode
+        logging.info("Estimated min phase: %f", min_phase)
+        logging.info("Estimated max phase: %f", max_phase)
+
+        for idx, frame_idx in enumerate(frames):
+            # get the phase and magnitude data from each echo
+            phase_data: npt.NDArray[np.float32] = rescale_phase(
+                np.stack([p.dataobj[..., frame_idx] for p in phase], axis=-1),
+                min=min_phase,
+                max=max_phase,
+            ).astype(np.float32)
+            mag_data: npt.NDArray[np.float32] = np.stack([m.dataobj[..., frame_idx] for m in mag], axis=-1).astype(
+                np.float32
+            )
+            mask_data = cast(npt.NDArray[np.bool_], mask.dataobj[..., frame_idx].astype(bool))
+            TEs = TEs.astype(np.float32)
+            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx)
+
+    def save_unwrapped_and_mask(idx, result):
+        # get the unwrapped image
+        logging.info(f"Collecting frame: {idx}")
+        # store in the captured unwrapped and new_mask_data arrays
+        unwrapped[..., idx], new_masks[..., idx] = result
+
+    # unwrap the phase of each frame
+    run_executor(
+        ncpus=n_cpus,
+        type="process",
+        fn=unwrap_phase,
+        iterator=phase_iterator(phase, mag, TEs, mask, frames, automask, border_size),
+        post_fn=save_unwrapped_and_mask,
     )
 
-    # check temporal consistency to unwrapped phase
-    start_temporal_consistency(
-        unwrapped=unwrapped, TEs=TEs, mag=mag, frames=frames, masks=new_masks, n_cpus=n_cpus
+    def temporal_consistency_iterator(unwrapped, TEs, mag, frames, masks):
+        # Make a copy of the first echo data
+        unwrapped_echo_1 = unwrapped[..., 0, :].copy()
+
+        logging.info("Computing temporal consistency...")
+        for t, frame_idx in enumerate(frames):
+            yield (unwrapped, unwrapped_echo_1, TEs, mag, t, frame_idx, cast(npt.NDArray, masks))
+
+    def post_temporal_consistency_check(idx, result):
+        logging.info(f"Temporal consistency check for frame {idx} complete.")
+
+    run_executor(
+        ncpus=n_cpus,
+        type="thread",
+        fn=check_temporal_consistency_corr,
+        iterator=temporal_consistency_iterator(unwrapped, TEs, mag, frames, new_masks),
+        post_fn=post_temporal_consistency_check,
     )
 
     # Save out unwrapped phase for debugging
@@ -772,175 +579,30 @@ def unwrap_and_compute_field_maps(
         nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii.gz")
 
     # compute field maps on temporally consistent unwrapped phase
-    start_fieldmap_process(field_maps, unwrapped, mag, TEs, n_cpus=n_cpus)
+    def field_map_iterator(field_maps, unwrapped, mag, TEs):
+        logging.info(f"Running field map computation...")
+        # convert TEs to a matrix
+        TEs_mat = TEs[:, np.newaxis]
+        for frame_num in range(unwrapped.shape[-1]):
+            yield (unwrapped[..., frame_num], mag, TEs.shape[0], TEs_mat, frame_num)
+
+    def post_field_map(idx, result):
+        logging.info(f"Field map computation for frame {idx} complete.")
+        field_maps[..., idx] = result
+
+    run_executor(
+        ncpus=n_cpus,
+        type="thread",
+        fn=compute_field_map,
+        iterator=field_map_iterator(field_maps, unwrapped, mag, TEs),
+        post_fn=post_field_map,
+    )
 
     # if border voxels defined, use that information to stabilize border regions using SVD filtering
     # this will probably kill any respiration signals in these voxels but improve the
     # temporal stability of the field maps in these regions (and could we really resolve
     # respiration in those voxels any way? probably not...)
-    if new_masks.max() == 2 and n_frames >= np.max(border_filt):
-        logging.info("Performing spatial/temporal filtering of border voxels...")
-        smoothed_field_maps = np.zeros(field_maps.shape, dtype=np.float32)
-        voxel_size = phase[0].header.get_zooms()[0]  # type: ignore
-        # smooth by 4 mm kernel
-        sigma = (4 / voxel_size) / 2.355
-        for i in range(field_maps.shape[-1]):
-            smoothed_field_maps[..., i] = gaussian_filter(field_maps[..., i], sigma=sigma)
-        # compute the union of all the masks
-        union_mask = np.sum(new_masks, axis=-1) > 0
-        # do temporal filtering of border voxels with SVD
-        U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
-        # first pass of SVD filtering
-        recon = np.dot(U[:, : border_filt[0]] * S[: border_filt[0]], VT[: border_filt[0], :])
-        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
-        recon_img[union_mask] = recon
-        # set the border voxels in the field map to the recon values
-        for i in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
-        # do second SVD filtering pass
-        U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
-        # second pass of SVD filtering
-        recon = np.dot(U[:, : border_filt[1]] * S[: border_filt[1]], VT[: border_filt[1], :])
-        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
-        recon_img[union_mask] = recon
-        # set the border voxels in the field map to the recon values
-        for i in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
-
-    # use svd filter to denoise the field maps
-    if n_frames >= svd_filt:
-        logging.info("Denoising field maps with SVD...")
-        logging.info(f"Keeping {svd_filt} components...")
-        # compute the union of all the masks
-        union_mask = np.sum(new_masks, axis=-1) > 0
-        # compute SVD
-        U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
-        # only keep the first n_components components
-        recon = np.dot(U[:, :svd_filt] * S[:svd_filt], VT[:svd_filt, :])
-        recon_img = np.zeros(field_maps.shape, dtype=np.float32)
-        recon_img[union_mask] = recon
-        # set the voxel values in the mask to the recon values
-        for i in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i] > 0, i] = recon_img[new_masks[..., i] > 0, i]
+    svd_filtering(field_maps, new_masks, phase[0].header.get_zooms()[0], n_frames, border_filt, svd_filt)
 
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)
-
-
-def compute_field_map(
-    unwrapped_mat: npt.NDArray,
-    mag: List[nib.Nifti1Image],
-    num_echos: int,
-    TEs_mat: npt.NDArray,
-    frame_num: int,
-) -> npt.NDArray:
-    """Function for computing field map for a given frame
-
-    Parameters
-    ----------
-    unwrapped_mat: np.ndarray
-        Array of unwrapped phase data for a given frame
-    mag: List[nib.NiftiImage]
-        List of magnitudes
-    num_echos: int
-        Number of echos
-    TEs_mat: npt.NDArray
-        Echo times in a 2d matrix
-    frame_num: int
-        Frame number
-
-    Returns
-    -------
-    B0: np.ndarray
-    """
-    logging.info(f"Computing field map for frame: {frame_num}")
-    unwrapped_mat = unwrapped_mat.reshape(-1, num_echos).T
-    mag_data = np.stack([m.dataobj[..., frame_num] for m in mag], axis=-1).astype(np.float32)
-    weights = mag_data.reshape(-1, num_echos).T
-    B0 = weighted_regression(TEs_mat, unwrapped_mat, weights)[0].T.reshape(*mag_data.shape[:3])
-    B0 *= 1000 / (2 * np.pi)
-    return B0
-
-
-def compute_offset(echo_ind: int, W: npt.NDArray, X: npt.NDArray, Y: npt.NDArray) -> int:
-    """Method for computing the global mode offset without looping
-
-    Parameters
-    ----------
-    echo_ind: int
-        Echo index
-    W: npt.NDArray
-        Weights
-    X: npt.NDArray
-        TEs in 2d matrix
-    Y: npt.NDArray
-        Masked unwrapped data weighted by magnitude
-
-    Returns
-    -------
-    best_offset: int
-    """
-    # fit the model to the up to previous echo
-    coefficients, _ = weighted_regression(X[:echo_ind], Y[:echo_ind], W[:echo_ind])
-
-    # compute the predicted phase for the current echo
-    Y_pred = X[echo_ind] * coefficients
-
-    # compute the difference between the predicted phase and the unwrapped phase
-    Y_diff = Y_pred - Y[echo_ind]
-
-    # compute closest multiple of 2pi to the difference
-    int_map = np.round(Y_diff / (2 * np.pi)).astype(int)
-
-    # compute the most often occuring multiple
-    best_offset = mode(int_map, axis=0, keepdims=False).mode
-    best_offset = cast(int, best_offset)
-
-    return best_offset
-
-
-def compute_offset_residual(echo_ind: int, W: npt.NDArray, X: npt.NDArray, Y: npt.NDArray) -> int:
-    """Method for computing the offset by minimizing the residual
-
-    Parameters
-    ----------
-    echo_ind: int
-        Echo index
-    W: npt.NDArray
-        Weights
-    X: npt.NDArray
-        TEs in 2d matrix
-    Y: npt.NDArray
-        Masked unwrapped data weighted by magnitude
-
-    Returns
-    -------
-    best_offset: int
-    """
-    offsets = list(range(-10, 11))
-    # create variables to store best residual and best offset
-    best_residual = None
-    best_offset = None
-    for multiple in offsets:
-        # get the ordinate matrix for these echoes
-        Y_copy = Y.copy()[: echo_ind + 1, :]
-        # add offset
-        Y_copy[echo_ind, :] += 2 * np.pi * multiple
-
-        # fit model and compute residuals
-        _, residuals = weighted_regression(X[: echo_ind + 1], Y_copy, W[: echo_ind + 1])
-
-        # get summary stat of residuals
-        summary_residual = residuals.mean()
-
-        # if no best residual, then just initialize it here
-        if best_residual is None:
-            best_residual = summary_residual
-            best_offset = multiple
-        else:  # else we store the residual + offset if it is better
-            if summary_residual < best_residual:
-                best_residual = summary_residual
-                best_offset = multiple
-    best_offset = cast(int, best_offset)
-
-    return best_offset

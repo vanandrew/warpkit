@@ -37,7 +37,7 @@ include(FetchContent)
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11
-    GIT_TAG v2.10.1
+    GIT_TAG v2.10.4
 )
 FetchContent_MakeAvailable(pybind11)
 
@@ -61,7 +61,7 @@ set(ITK_DIR ${itk_BINARY_DIR})
 find_package(ITK REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementField ITKDistanceMap)
 
 # display all warnings
-add_compile_options(-Wall -O3 -march=skylake)
+add_compile_options(-Wall -O3 -march=native)
 
 # compile pybind11 interface
 pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)

@@ -5,6 +5,14 @@ import nibabel as nib
 from transforms3d.affines import decompose44
 from scipy import signal
 from typing import Any, cast, Tuple
+from skimage.filters import threshold_otsu  # type: ignore
+from skimage.measure import label, regionprops
+from scipy.ndimage import (
+    generate_binary_structure,
+    binary_erosion,
+    binary_dilation,
+    binary_fill_holes,
+)
 from . import (
     invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
     invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
@@ -94,6 +102,77 @@ def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> 
         rescaled phase data
     """
     return (data - min) / (max - min) * 2 * np.pi - np.pi
+
+
+def get_largest_connected_component(mask_data: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
+    """Get the largest connected component of a mask
+
+    Parameters
+    ----------
+    mask_data : npt.NDArray[np.bool_]
+        Mask to get the largest connected component of
+
+    Returns
+    -------
+    npt.NDArray[np.bool_]
+        Mask with only the largest connected component
+    """
+    # get the largest connected component
+    labelled_mask = label(mask_data)
+    props = regionprops(labelled_mask)
+    sorted_props = sorted(props, key=lambda x: x.area, reverse=True)
+    mask_data = labelled_mask == sorted_props[0].label
+
+    # return the mask
+    return mask_data
+
+
+def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int = 0) -> npt.NDArray[np.bool_]:
+    """Create a quick brain mask for a single frame.
+
+    Parameters
+    ----------
+    mag_shortest : npt.NDArray[np.float32]
+        Magnitude data with the shortest echo time
+    extra_dilation : int
+        Number of extra dilations (or erosions if negative) to perform, by default 0
+
+    Returns
+    -------
+    npt.NDArray[np.bool_]
+        Mask of voxels to use for unwrapping
+    """
+    # create structuring element
+    strel = generate_binary_structure(3, 2)
+
+    # get the otsu threshold
+    threshold = threshold_otsu(mag_shortest)
+    mask_data = mag_shortest > threshold
+    mask_data = cast(npt.NDArray[np.float32], binary_fill_holes(mask_data, strel))
+
+    # erode mask
+    mask_data = cast(npt.NDArray[np.bool_], binary_erosion(mask_data, structure=strel, iterations=2, border_value=1))
+
+    # get largest connected component
+    mask_data = get_largest_connected_component(mask_data)
+
+    # dilate the mask
+    mask_data = binary_dilation(mask_data, structure=strel, iterations=2)
+
+    # extra dilation to get areas on the edge of the brain
+    if extra_dilation > 0:
+        mask_data = binary_dilation(mask_data, structure=strel, iterations=extra_dilation)
+    # if negative, erode instead
+    if extra_dilation < 0:
+        mask_data = binary_erosion(mask_data, structure=strel, iterations=abs(extra_dilation))
+
+    # since we can't have a completely empty mask, set all zeros to ones
+    # if the mask is all empty
+    if np.all(np.isclose(mask_data, 0)):
+        mask_data = np.ones(mask_data.shape)
+
+    # return the mask
+    return mask_data.astype(np.bool_)
 
 
 def field_maps_to_displacement_maps(
