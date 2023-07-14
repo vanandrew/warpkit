@@ -54,7 +54,7 @@ class JuliaContext {
 
         // initialize modules
         jl_eval_string("using ROMEO;");
-        // jl_eval_string("using MriResearchTools;");
+        jl_eval_string("using MriResearchTools;");
 
         // get functions from modules
         // wrap them in lambdas so we can call arguments positionally
@@ -72,12 +72,8 @@ class JuliaContext {
                            "maxseeds, merge_regions, correct_regions) = unwrap(phase, TEs=TEs, "
                            "weights=weights, mag=mag, mask=mask, correctglobal=correctglobal, maxseeds=maxseeds, "
                            "merge_regions=merge_regions, correct_regions=correct_regions);"));
-        // jl_mcpc3ds = static_cast<jl_function_t*>(
-        //     jl_eval_string("mcpc3ds_wrapper(phase, mag, TEs, sigma) = "
-        //                    "replace!(mcpc3ds(phase, mag; TEs=TEs, bipolar_correction=false, "
-        //                    "sigma=sigma).phase, NaN=>0);"));
         // jl_robustmask = static_cast<jl_function_t*>(
-        //     jl_eval_string("robustmask_wrapper(weight, factor) = Float64.(robustmask(weight; factor=factor));"));
+        //     jl_eval_string("robustmask_wrapper(weight, factor) = Float32.(robustmask(weight; factor=factor));"));
     }
 
     /**
@@ -192,62 +188,6 @@ class JuliaContext {
 
     //     // return python array
     //     return as_pyarray(std::move(mask_vec), {weight.shape(0), weight.shape(1), weight.shape(2)});
-    // }
-
-    // /**
-    //  * @brief Wrapper for MriResearchTools mcpc3ds function
-    //  *
-    //  * @param phase
-    //  * @param mag
-    //  * @param TEs
-    //  * @param sigma
-    //  * @return py::array_t<T, py::array::f_style>
-    //  */
-    // py::array_t<T, py::array::f_style> mri_mcpc3ds(py::array_t<T, py::array::f_style> phase,
-    //                                                py::array_t<T, py::array::f_style> mag,
-    //                                                py::array_t<T, py::array::f_style> TEs,
-    //                                                py::array_t<T, py::array::f_style> sigma) {
-    //     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
-
-    //     // setup variables
-    //     jl_ntuple4_t* phase_dims = reinterpret_cast<jl_ntuple4_t*>(jl_new_struct_uninit(jl_ntuple4));
-    //     jl_ntuple4_t* mag_dims = reinterpret_cast<jl_ntuple4_t*>(jl_new_struct_uninit(jl_ntuple4));
-    //     jl_array_t* jl_phase;
-    //     jl_array_t* jl_mag;
-    //     jl_array_t* jl_TEs;
-    //     jl_array_t* jl_sigma;
-
-    //     // Push to GC
-    //     JL_GC_PUSH6(&phase_dims, &mag_dims, &jl_phase, &jl_mag, &jl_TEs, &jl_sigma);
-    //     phase_dims->a = phase.shape(0);
-    //     phase_dims->b = phase.shape(1);
-    //     phase_dims->c = phase.shape(2);
-    //     phase_dims->d = phase.shape(3);
-    //     mag_dims->a = mag.shape(0);
-    //     mag_dims->b = mag.shape(1);
-    //     mag_dims->c = mag.shape(2);
-    //     mag_dims->d = mag.shape(3);
-    //     jl_phase =
-    //         jl_ptr_to_array(jl_array4d, const_cast<T*>(phase.data()), reinterpret_cast<jl_value_t*>(phase_dims), 0);
-    //     jl_mag = jl_ptr_to_array(jl_array4d, const_cast<T*>(mag.data()), reinterpret_cast<jl_value_t*>(mag_dims), 0);
-    //     jl_TEs = jl_ptr_to_array_1d(jl_vector, const_cast<T*>(TEs.data()), TEs.size(), 0);
-    //     jl_sigma = jl_ptr_to_array_1d(jl_vector, const_cast<T*>(sigma.data()), sigma.size(), 0);
-
-    //     // Call mcpc3ds
-    //     jl_value_t* args[4] = {reinterpret_cast<jl_value_t*>(jl_phase), reinterpret_cast<jl_value_t*>(jl_mag),
-    //                            reinterpret_cast<jl_value_t*>(jl_TEs), reinterpret_cast<jl_value_t*>(jl_sigma)};
-    //     jl_value_t* jl_corrected_phase = jl_call(jl_mcpc3ds, args, 4);
-    //     auto corrected_phase_ptr = static_cast<T*>(jl_array_data(jl_corrected_phase));
-
-    //     // copy julia array to c++ vector
-    //     std::vector<T> corrected_phase_vec(corrected_phase_ptr, corrected_phase_ptr + phase.size());
-
-    //     // Pop from GC
-    //     JL_GC_POP();
-    //     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
-    //     // return
-    //     return as_pyarray(std::move(corrected_phase_vec),
-    //                       {phase.shape(0), phase.shape(1), phase.shape(2), phase.shape(3)});
     // }
 
     /**
@@ -433,7 +373,6 @@ class JuliaContext {
     jl_function_t* jl_voxelquality;
     jl_function_t* jl_unwrap3D;
     jl_function_t* jl_unwrap4D;
-    // jl_function_t* jl_mcpc3ds;
     // jl_function_t* jl_robustmask;
     jl_tupletype_t* jl_ntuple3;
     jl_tupletype_t* jl_ntuple4;

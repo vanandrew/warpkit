@@ -70,11 +70,17 @@ def medic(
     for p1, m1 in zip(phase, mag):
         for p2, m2 in zip(phase, mag):
             if not (
-                np.allclose(p1.affine, p2.affine)
-                and np.allclose(m1.affine, m2.affine)
+                np.allclose(p1.affine, p2.affine, rtol=1e-3, atol=1e-3)
+                and np.allclose(m1.affine, m2.affine, rtol=1e-3, atol=1e-3)
                 and p1.shape == p2.shape
                 and m1.shape == m2.shape
             ):
+                print(p1.affine, p2.affine)
+                print(p1.affine - p2.affine)
+                print(p1.shape, p2.shape)
+                print(m1.affine, m2.affine)
+                print(m1.affine - m2.affine)
+                print(m1.shape, m2.shape)
                 raise ValueError("Affines and shapes must match")
 
     # unwrap phase and compute field maps

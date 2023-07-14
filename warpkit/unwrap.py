@@ -1,6 +1,6 @@
 import logging
 from types import SimpleNamespace
-from typing import cast, List, Tuple, Union
+from typing import cast, List, Tuple, Optional, Union
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
@@ -22,6 +22,43 @@ from .utilities import (
 )
 from .julia import JuliaContext
 from .concurrency import run_executor
+
+
+def mcpc_3d_s(
+    mag0: npt.NDArray[np.float32],
+    mag1: npt.NDArray[np.float32],
+    phase0: npt.NDArray[np.float32],
+    phase1: npt.NDArray[np.float32],
+    TE0: npt.NDArray[np.float32],
+    TE1: npt.NDArray[np.float32],
+    mask: npt.NDArray[np.bool_],
+    ref: Optional[npt.NDArray[np.float32]] = None,
+    ref_mask: Optional[npt.NDArray[np.bool_]] = None,
+):
+    JULIA = JuliaContext()
+    signal_diff = mag0 * mag1 * np.exp(1j * (phase1 - phase0))
+    mag_diff = np.abs(signal_diff)
+    phase_diff = np.angle(signal_diff)
+    unwrapped_diff = JULIA.romeo_unwrap3D(
+        phase=phase_diff,
+        weights="romeo",
+        mag=mag_diff,
+        mask=mask,
+        correct_global=True,
+    )
+    if ref is not None and ref_mask is not None:
+        best_offset = None
+        best_error = None
+        for offset in range(-2, 3):
+            udiff = unwrapped_diff.copy()
+            udiff[ref_mask] += offset * 2 * np.pi
+            error = ((ref[ref_mask] - udiff[ref_mask]) ** 2).sum()
+            if best_offset is None or error < best_error:
+                best_error = error
+                best_offset = offset
+        unwrapped_diff[mask] += best_offset * 2 * np.pi
+    # compute the phase offset
+    return np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0))))), unwrapped_diff
 
 
 def unwrap_phase(
@@ -104,17 +141,28 @@ def unwrap_phase(
         mask_data = mask_data_select > 0
 
     # Do MCPC-3D-S algo to compute phase offset
-    signal_diff = mag_data[..., 0] * mag_data[..., 1] * np.exp(1j * (phase_data[..., 1] - phase_data[..., 0]))
-    mag_diff = np.abs(signal_diff)
-    phase_diff = np.angle(signal_diff)
-    unwrapped_diff = JULIA.romeo_unwrap3D(
-        phase=phase_diff,
-        weights="romeo",
-        mag=mag_diff,
-        mask=mask_data,
+    # first pass is used to get a reference unwrapping to make sure the phase offset is in the correct domain
+    ref_mask = create_brain_mask(mag_data[..., 0], -2).astype(bool)
+    _, unwrapped_phase_ref = mcpc_3d_s(
+        mag_data[..., 0],
+        mag_data[..., 1],
+        phase_data[..., 0],
+        phase_data[..., 1],
+        TEs[0],
+        TEs[1],
+        ref_mask,
     )
-    # compute the phase offset
-    phase_offset = np.angle(np.exp(1j * (phase_data[..., 0] - ((TEs[0] * unwrapped_diff) / (TEs[1] - TEs[0])))))
+    phase_offset, unwrapped_test = mcpc_3d_s(
+        mag_data[..., 0],
+        mag_data[..., 1],
+        phase_data[..., 0],
+        phase_data[..., 1],
+        TEs[0],
+        TEs[1],
+        mask_data,
+        unwrapped_phase_ref,
+        ref_mask,
+    )
     # remove phase offset from data
     phase_data -= phase_offset[..., np.newaxis]
 
