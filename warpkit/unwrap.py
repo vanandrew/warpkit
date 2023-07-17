@@ -57,6 +57,10 @@ def mcpc_3d_s(
                 best_error = error
                 best_offset = offset
         unwrapped_diff[mask] += best_offset * 2 * np.pi
+    else:
+        # check if we are neg or pos domain (move to pos domain)
+        if unwrapped_diff[mask].mean() < 0:
+            unwrapped_diff[mask] += 2 * np.pi
     # compute the phase offset
     return np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0))))), unwrapped_diff
 
@@ -142,17 +146,19 @@ def unwrap_phase(
 
     # Do MCPC-3D-S algo to compute phase offset
     # first pass is used to get a reference unwrapping to make sure the phase offset is in the correct domain
-    ref_mask = create_brain_mask(mag_data[..., 0], -2).astype(bool)
+    ref_mask = create_brain_mask(mag_data[..., 0], -10).astype(bool)
     _, unwrapped_phase_ref = mcpc_3d_s(
-        mag_data[..., 0],
-        mag_data[..., 1],
-        phase_data[..., 0],
-        phase_data[..., 1],
+        mag_data[..., 0] * ref_mask,
+        mag_data[..., 1] * ref_mask,
+        phase_data[..., 0] * ref_mask,
+        phase_data[..., 1] * ref_mask,
         TEs[0],
         TEs[1],
         ref_mask,
     )
-    phase_offset, unwrapped_test = mcpc_3d_s(
+    # nib.Nifti1Image(unwrapped_phase_ref, np.eye(4)).to_filename(f"unwrapped_ref{idx}.nii")
+    # nib.Nifti1Image(ref_mask.astype('f8'), np.eye(4)).to_filename(f"ref_mask{idx}.nii")
+    phase_offset, _ = mcpc_3d_s(
         mag_data[..., 0],
         mag_data[..., 1],
         phase_data[..., 0],
@@ -536,10 +542,11 @@ def unwrap_and_compute_field_maps(
     new_masks = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
 
     # FOR DEBUGGING
-    # global affine
-    # affine = phase[0].affine
-    # global header
-    # header = phase[0].header
+    if debug:
+        global affine
+        affine = phase[0].affine
+        global header
+        header = phase[0].header
 
     # allocate mask if needed
     if not mask:
@@ -610,13 +617,14 @@ def unwrap_and_compute_field_maps(
     def post_temporal_consistency_check(idx, result):
         logging.info(f"Temporal consistency check for frame {idx} complete.")
 
-    run_executor(
-        ncpus=n_cpus,
-        type="thread",
-        fn=check_temporal_consistency_corr,
-        iterator=temporal_consistency_iterator(unwrapped, TEs, mag, frames, new_masks),
-        post_fn=post_temporal_consistency_check,
-    )
+    if not debug:
+        run_executor(
+            ncpus=n_cpus,
+            type="thread",
+            fn=check_temporal_consistency_corr,
+            iterator=temporal_consistency_iterator(unwrapped, TEs, mag, frames, new_masks),
+            post_fn=post_temporal_consistency_check,
+        )
 
     # Save out unwrapped phase for debugging
     if debug:
