@@ -39,7 +39,7 @@ def mcpc_3d_s(
     signal_diff = mag0 * mag1 * np.exp(1j * (phase1 - phase0))
     mag_diff = np.abs(signal_diff)
     phase_diff = np.angle(signal_diff)
-    unwrapped_diff = JULIA.romeo_unwrap3D(
+    unwrapped_diff = JULIA.romeo_unwrap3D(  # type: ignore
         phase=phase_diff,
         weights="romeo",
         mag=mag_diff,
@@ -56,7 +56,7 @@ def mcpc_3d_s(
             if best_offset is None or error < best_error:
                 best_error = error
                 best_offset = offset
-        unwrapped_diff[mask] += best_offset * 2 * np.pi
+        unwrapped_diff[mask] += cast(int, best_offset) * 2 * np.pi
     else:
         # check if we are neg or pos domain (move to pos domain)
         # set at -1.5 for some tolerance
@@ -115,7 +115,7 @@ def unwrap_phase(
         # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
-        vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))
+        vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))  # type: ignore
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
         vq_mask = cast(npt.NDArray[np.bool_], binary_fill_holes(vq_mask, strel))
@@ -174,7 +174,7 @@ def unwrap_phase(
     phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
-    unwrapped = JULIA.romeo_unwrap4D(
+    unwrapped = JULIA.romeo_unwrap4D(  # type: ignore
         phase=phase_data,
         TEs=TEs,
         weights="romeo",
@@ -659,7 +659,14 @@ def unwrap_and_compute_field_maps(
     # this will probably kill any respiration signals in these voxels but improve the
     # temporal stability of the field maps in these regions (and could we really resolve
     # respiration in those voxels any way? probably not...)
-    svd_filtering(field_maps, new_masks, phase[0].header.get_zooms()[0], n_frames, border_filt, svd_filt)
+    svd_filtering(
+        field_maps,
+        new_masks,
+        phase[0].header.get_zooms()[0],  # type: ignore
+        n_frames,
+        border_filt,
+        svd_filt,
+    )
 
     # return the field map as a nifti image
     return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)

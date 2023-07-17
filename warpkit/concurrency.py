@@ -6,7 +6,7 @@ from concurrent.futures import (
     as_completed,
 )
 from threading import Lock
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Optional
 
 
 class DummyExecutor(Executor):
@@ -14,7 +14,7 @@ class DummyExecutor(Executor):
         self._shutdown = False
         self._shutdownLock = Lock()
 
-    def submit(self, fn, *args, **kwargs):
+    def submit(self, fn: Callable, *args, **kwargs):
         with self._shutdownLock:
             if self._shutdown:
                 raise RuntimeError("cannot schedule new futures after shutdown")
@@ -35,7 +35,12 @@ class DummyExecutor(Executor):
 
 
 def run_executor(
-    ncpus: int, type: str, fn: Callable, iterator: Iterator, initializer: Callable = None, post_fn: Callable = None
+    ncpus: int,
+    type: str,
+    fn: Callable,
+    iterator: Iterator,
+    initializer: Optional[Callable] = None,
+    post_fn: Optional[Callable] = None,
 ):
     """Runs executor with given number of cpus and type of executor.
 

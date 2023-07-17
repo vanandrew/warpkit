@@ -1,6 +1,6 @@
 import logging
 import os
-from . import JuliaContext as _JuliaContext
+from . import JuliaContext as _JuliaContext  # type: ignore
 
 PID_MAP = {}
 
