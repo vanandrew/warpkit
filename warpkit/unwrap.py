@@ -59,7 +59,8 @@ def mcpc_3d_s(
         unwrapped_diff[mask] += best_offset * 2 * np.pi
     else:
         # check if we are neg or pos domain (move to pos domain)
-        if unwrapped_diff[mask].mean() < 0:
+        # set at -1.5 for some tolerance
+        if unwrapped_diff[mask].mean() < -1.5:
             unwrapped_diff[mask] += 2 * np.pi
     # compute the phase offset
     return np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0))))), unwrapped_diff
@@ -179,7 +180,7 @@ def unwrap_phase(
         weights="romeo",
         mag=mag_data,
         mask=mask_data,
-        correct_global=False,
+        correct_global=True,
         maxseeds=1,
         merge_regions=False,
         correct_regions=False,
