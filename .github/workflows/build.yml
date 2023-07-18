@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches:
-      - test_workflow
+      - main
 
 jobs:
   build:
@@ -22,4 +22,6 @@ jobs:
           python-version: 3.9
       - name: Install dependencies
         run: pip install -e ./ -v
+      - name: Run tests
+        run: pytest -s
 
