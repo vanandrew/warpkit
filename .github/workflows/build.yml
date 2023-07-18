@@ -4,20 +4,22 @@ on:
   push:
     branches:
       - test_workflow
-  build:
-    name: Build Warpkit
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - uses: actions/checkout@v1.0.0
-      - uses: julia-actions/setup-julia@v1
-        with:
-          version: 1.8.3
-      - name: Set up Python 3.6
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.6
-      - name: Install dependencies
-        run: pip install -e ./ -v --config-settings editable_mode=strict
+
+  jobs:
+    build:
+      name: Build Warpkit
+      runs-on: ubuntu-22.04
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v2
+        - uses: actions/checkout@v1.0.0
+        - uses: julia-actions/setup-julia@v1
+          with:
+            version: 1.8.3
+        - name: Set up Python 3.6
+          uses: actions/setup-python@v4
+          with:
+            python-version: 3.6
+        - name: Install dependencies
+          run: pip install -e ./ -v --config-settings editable_mode=strict
 
