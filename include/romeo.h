@@ -54,7 +54,7 @@ class JuliaContext {
 
         // initialize modules
         jl_eval_string("using ROMEO;");
-        jl_eval_string("using MriResearchTools;");
+        // jl_eval_string("using MriResearchTools;");
 
         // get functions from modules
         // wrap them in lambdas so we can call arguments positionally
