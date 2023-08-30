@@ -321,6 +321,28 @@ def displacement_map_to_field(
     return convert_warp(warp, in_type="itk", out_type=format)
 
 
+def get_x_orient_transform(img: nib.Nifti1Image, x: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Get the transform to x orientation and back
+
+    Parameters
+    ----------
+    img : nib.Nifti1Image
+        Image to convert to X orientation
+    x : str
+        X orientation to convert to
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        X transform and inverse x transform
+    """
+    img_orientation = nib.orientations.io_orientation(img.affine)
+    x_orientation = nib.orientations.axcodes2ornt(x)
+    to_canonical = nib.orientations.ornt_transform(img_orientation, x_orientation)
+    from_canonical = nib.orientations.ornt_transform(x_orientation, img_orientation)
+    return to_canonical, from_canonical
+
+
 def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarray]:
     """Get the transform to RAS orientation and back
 
@@ -342,11 +364,7 @@ def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarr
     Tuple[np.ndarray, np.ndarray]
         RAS transform and inverse RAS transform
     """
-    img_orientation = nib.orientations.io_orientation(img.affine)
-    ras_orientation = nib.orientations.axcodes2ornt("RAS")
-    to_canonical = nib.orientations.ornt_transform(img_orientation, ras_orientation)
-    from_canonical = nib.orientations.ornt_transform(ras_orientation, img_orientation)
-    return to_canonical, from_canonical
+    return get_x_orient_transform(img, "RAS")
 
 
 def invert_displacement_maps(
@@ -665,3 +683,40 @@ def compute_hausdorff_distance(image1: nib.Nifti1Image, image2: nib.Nifti1Image)
 
     # return hausdorff distance
     return hausdorff_distance
+
+
+def compute_jacobian_determinant(displacement_field: nib.Nifti1Image) -> nib.Nifti1Image:
+    """Compute the Jacobian determinant of a displacement field
+
+    Parameters
+    ----------
+    displacement_field : nib.Nifti1Image
+        Displacement field data in mm
+
+    Returns
+    -------
+    nib.Nifti1Image
+        Jacobian determinant of the displacement field
+    """
+    # get data in RAS orientation
+    to_canonical, from_canonical = get_ras_orient_transform(displacement_field)
+
+    # get to RAS orientation
+    displacement_field_ras = displacement_field.as_reoriented(to_canonical)
+
+    # get data
+    data = displacement_field_ras.get_fdata()
+
+    # split affine into components
+    origin, rotations, zooms, _ = decompose44(displacement_field_ras.affine)
+
+    # compute jacobian determinant
+    jacobian_determinant = compute_jacobian_determinant_cpp(data, origin, rotations, zooms)
+
+    # make new image
+    jacobian_determinant_image = nib.Nifti1Image(
+        jacobian_determinant, displacement_field_ras.affine, displacement_field_ras.header
+    ).as_reoriented(from_canonical)
+
+    # return jacobian determinant
+    return cast(nib.Nifti1Image, jacobian_determinant_image)
