@@ -61,7 +61,7 @@ set(ITK_DIR ${itk_BINARY_DIR})
 find_package(ITK REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementField ITKDistanceMap)
 
 # display all warnings
-add_compile_options(-Wall -O3 -march=haswell)
+add_compile_options(-Wall -O3 -march=x86-64-v3)
 
 # compile pybind11 interface
 pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)

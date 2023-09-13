@@ -79,116 +79,6 @@ def mcpc_3d_s(
         correct_global=True,
     )
     voxel_mask = create_brain_mask(mag0, -2)
-    # if ref is not None and ref_mask is not None:
-    #     best_offset = None
-    #     best_error = None
-    #     for offset in range(-2, 3):
-    #         udiff = unwrapped_diff.copy()
-    #         udiff[ref_mask] += offset * 2 * np.pi
-    #         error = ((ref[ref_mask] - udiff[ref_mask]) ** 2).sum()
-    #         if best_offset is None or error < best_error:
-    #             best_error = error
-    #             best_offset = offset
-    #     unwrapped_diff[mask] += cast(int, best_offset) * 2 * np.pi
-    # else:
-    #     # check if we are neg or pos domain (move to pos domain)
-    #     print(unwrapped_diff[mask].mean())
-    #     if unwrapped_diff[mask].mean() < 0:
-    #         unwrapped_diff[mask] +=  2 * np.pi
-    # brain_mask = create_brain_mask(mag0, -2)
-    # unwrapped_diff -= (
-    #     mode(
-    #         np.round(reject_outliers(unwrapped_diff[brain_mask]) / (2 * np.pi)).astype(int),
-    #         axis=0,
-    #         keepdims=False,
-    #     ).mode
-    #     * 2
-    #     * np.pi
-    # )
-    # second_echo_brain_mask = create_brain_mask(mag1, -10)
-    # voxel_mean = reject_outliers(unwrapped_diff[second_echo_brain_mask]).mean()
-    # voxel_prop = (
-    #     np.count_nonzero(unwrapped_diff[second_echo_brain_mask] > 0) / unwrapped_diff[second_echo_brain_mask].shape[0]
-    # )
-    # global DEBUG
-    # if DEBUG:
-    #     print(f"voxel mean: {voxel_mean}")
-    #     print(f"voxel_prop: {voxel_prop}")
-    # # if the mean for diff is negative, and the
-    # # proportion of negative voxels is < FMAP_PROPORTION_HEURISTIC, then add 2pi
-    # if voxel_mean < 0 and voxel_prop < FMAP_PROPORTION_HEURISTIC:
-    #     unwrapped_diff += 2 * np.pi
-
-    # # if the voxel prop is in ambiguous range, first look at the mean of the field map
-    # # if it's really negative (< -10 Hz), then add 2pi
-    # # do a second check looking at the phase offset
-    # # if it is < -1, tne add 2pi
-    # if voxel_mean < 0 and voxel_prop >= FMAP_PROPORTION_HEURISTIC and voxel_prop < FMAP_AMBIGUIOUS_HEURISTIC:
-    #     # compute initial field map
-    #     initial_fieldmap = (1000 / (2 * np.pi)) * unwrapped_diff / (TE1 - TE0)
-    #     fmap_mask = create_brain_mask(mag1, -1)
-    #     mean_voxel_diff = initial_fieldmap[fmap_mask].mean()
-    #     print(f"mean_voxel_diff: {mean_voxel_diff}")
-    #     if mean_voxel_diff < -10:
-    #         unwrapped_diff += 2 * np.pi
-    #     else:
-    #         # Last resort, requires an extra unwrapping step
-
-    #         # compute initial phase offset
-    #         initial_phase_offset = np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0)))))
-
-    #         # subtract from first and second echo phase
-    #         new_phase0 = phase0 - initial_phase_offset
-
-    #         new_unwrapped_phase0 = JULIA.romeo_unwrap3D(  # type: ignore
-    #             phase=new_phase0,
-    #             weights="romeo",
-    #             mag=mag0,
-    #             mask=mask,
-    #             correct_global=True,
-    #         )
-
-    #         # get common domain of voxels
-    #         common_domain = mode(
-    #             np.round(reject_outliers(new_unwrapped_phase0[brain_mask]) / (2 * np.pi)).astype(int),
-    #             axis=0,
-    #             keepdims=False,
-    #         ).mode
-    #         breakpoint()
-    #         print(f"common_domain: {common_domain}")
-
-    #         # compute mean of phase offset
-    #         mean_phase_offset = initial_phase_offset[brain_mask].mean()
-    #         print(f"mean_phase_offset: {mean_phase_offset}")
-
-    #         # if less than -1 then add 2pi
-    #         if mean_phase_offset < -1:
-    #             unwrapped_diff += 2 * np.pi
-
-    #         # do another field map check
-    #         initial_fieldmap = (1000 / (2 * np.pi)) * unwrapped_diff / (TE1 - TE0)
-    #         fmap_mask = create_brain_mask(mag1, -1)
-    #         mean_voxel_diff = initial_fieldmap[fmap_mask].mean()
-    #         print(f"mean_voxel_diff: {mean_voxel_diff}")
-
-    # if DEBUG:
-    #     voxel_mean = reject_outliers(unwrapped_diff[second_echo_brain_mask]).mean()
-    #     voxel_prop = (
-    #         np.unwrapped_diff(unwrapped_diff[second_echo_brain_mask] > 0)
-    #         / unwrapped_diff[second_echo_brain_mask].shape[0]
-    #     )
-    #     print(voxel_mean)
-    #     print(voxel_prop)
-
-    # unwrapped_diff -= (
-    #     mode(
-    #         np.round(reject_outliers(unwrapped_diff[voxel_mask]) / (2 * np.pi)).astype(int),
-    #         axis=0,
-    #         keepdims=False,
-    #     ).mode
-    #     * 2
-    #     * np.pi
-    # )
     phases = np.stack([phase0, phase1], axis=-1)
     mags = np.stack([mag0, mag1], axis=-1)
     TEs = np.array([TE0, TE1])
@@ -240,14 +130,14 @@ def mcpc_3d_s(
                     (np.zeros((*new_proposed_unwrapped_phases.shape[:-1], 1)), new_proposed_unwrapped_phases), axis=-1
                 )
                 _, residuals_2, _, _, _ = np.polyfit(all_TEs, new_phase_fits[voxel_mask, :].T, 1, full=True)
-                print(f"mean_proposed_fieldmap 1: {proposed_fieldmap[voxel_mask].mean()}")
-                print(f"voxel_prop 1 : {voxel_prop}")
-                print(f"mean_residuals 1: {residuals_1.mean()}")
-                print(f"mean_phase_offset 1: {mean_phase_offset}")
-                print(f"proposed_fieldmap 2: {new_proposed_fieldmap[voxel_mask].mean()}")
-                print(f"voxel_prop 2: {new_voxel_prop}")
-                print(f"mean_residuals 2: {residuals_2.mean()}")
-                print(f"mean_phase_offset 2: {new_proposed_offset.mean()}")
+                # print(f"mean_proposed_fieldmap 1: {proposed_fieldmap[voxel_mask].mean()}")
+                # print(f"voxel_prop 1 : {voxel_prop}")
+                # print(f"mean_residuals 1: {residuals_1.mean()}")
+                # print(f"mean_phase_offset 1: {mean_phase_offset}")
+                # print(f"proposed_fieldmap 2: {new_proposed_fieldmap[voxel_mask].mean()}")
+                # print(f"voxel_prop 2: {new_voxel_prop}")
+                # print(f"mean_residuals 2: {residuals_2.mean()}")
+                # print(f"mean_phase_offset 2: {new_proposed_offset.mean()}")
                 if (
                     np.isclose(residuals_1.mean(), residuals_2.mean(), atol=1e-3, rtol=1e-3)
                     and new_proposed_fieldmap[voxel_mask].mean() > 0
@@ -255,166 +145,6 @@ def mcpc_3d_s(
                     unwrapped_diff += 2 * np.pi
                 else:
                     unwrapped_diff -= 2 * np.pi
-                    # new_proposed_offset = np.angle(
-                    #     np.exp(1j * (phase0 - ((TE0 * (unwrapped_diff - 2 * np.pi)) / (TE1 - TE0))))
-                    # )
-                    # new_proposed_phases = phases - new_proposed_offset[..., np.newaxis]
-                    # new_proposed_fieldmap, new_proposed_unwrapped_phases = get_dual_echo_fieldmap(
-                    #     new_proposed_phases, TEs, mags, mask
-                    # )
-                    # new_voxel_prop = (
-                    #     np.count_nonzero(new_proposed_fieldmap[voxel_mask] > 0)
-                    #     / new_proposed_fieldmap[voxel_mask].shape[0]
-                    # )
-                    # # fit linear model to the proposed phases
-                    # new_phase_fits = np.concatenate(
-                    #     (np.zeros((*new_proposed_unwrapped_phases.shape[:-1], 1)), new_proposed_unwrapped_phases),
-                    #     axis=-1,
-                    # )
-                    # _, residuals_2, _, _, _ = np.polyfit(all_TEs, new_phase_fits[voxel_mask, :].T, 1, full=True)
-                    # print(f"proposed_fieldmap 3: {new_proposed_fieldmap[voxel_mask].mean()}")
-                    # print(f"voxel_prop 3: {new_voxel_prop}")
-                    # print(f"mean_residuals 3: {residuals_2.mean()}")
-                    # print(f"mean_phase_offset 3: {new_proposed_offset.mean()}")
-                    # if (
-                    #     np.isclose(residuals_1.mean(), residuals_2.mean(), atol=1e-3, rtol=1e-3)
-                    #     and new_proposed_fieldmap[voxel_mask].mean() > 0
-                    # ):
-                    #     unwrapped_diff -= 2 * np.pi
-
-                # if new_proposed_fieldmap.mean() > 0 and np.isclose(
-                #     residuals_2.mean(), residuals_1.mean(), atol=1e-3, rtol=1e-3
-                # ):
-                #     # print(f"proposed_fieldmap 2: {new_proposed_fieldmap.mean()}")
-                #     # print(f"voxel_prop 2: {new_voxel_prop}")
-                #     # print(f"mean_residuals 2: {residuals_2.mean()}")
-                #     unwrapped_diff += 2 * np.pi
-                # else:
-                #     print(f"mean_proposed_fieldmap 1: {proposed_fieldmap[voxel_mask].mean()}")
-                #     print(f"voxel_prop 1 : {voxel_prop}")
-                #     print(f"mean_residuals 1: {residuals_1.mean()}")
-                #     print(f"mean_phase_offset 1: {mean_phase_offset}")
-                #     print(f"proposed_fieldmap 2: {new_proposed_fieldmap.mean()}")
-                #     print(f"voxel_prop 2: {new_voxel_prop}")
-                #     print(f"mean_residuals 2: {residuals_2.mean()}")
-                #     print(f"mean_phase_offset 2: {new_proposed_offset.mean()}")
-                #     # check if subtracting 2pi makes it better
-                #     new_proposed_offset = np.angle(
-                #         np.exp(1j * (phase0 - ((TE0 * (unwrapped_diff - 2 * np.pi)) / (TE1 - TE0))))
-                #     )
-
-                #     # get the new phases
-                #     new_proposed_phases = phases - new_proposed_offset[..., np.newaxis]
-
-                #     # compute the fieldmap
-                #     new_proposed_fieldmap, new_proposed_unwrapped_phases = get_dual_echo_fieldmap(
-                #         new_proposed_phases, TEs, mags, mask
-                #     )
-
-                #     # compute the mean of the fieldmap
-                #     new_voxel_prop = (
-                #         np.count_nonzero(new_proposed_fieldmap[voxel_mask] > 0)
-                #         / new_proposed_fieldmap[voxel_mask].shape[0]
-                #     )
-
-                #     # fit linear model to the proposed phases
-                #     new_phase_fits = np.concatenate(
-                #         (np.zeros((*new_proposed_unwrapped_phases.shape[:-1], 1)), new_proposed_unwrapped_phases),
-                #         axis=-1,
-                #     )
-                #     _, residuals_2, _, _, _ = np.polyfit(all_TEs, new_phase_fits[voxel_mask, :].T, 1, full=True)
-                #     print(f"proposed_fieldmap 2: {new_proposed_fieldmap.mean()}")
-                #     print(f"voxel_prop 2: {new_voxel_prop}")
-                #     print(f"mean_residuals 2: {residuals_2.mean()}")
-                # if new_voxel_prop < 0.1:
-                #     unwrapped_diff += 4 * np.pi
-                #     proposed_new_offset = np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0)))))
-                #     proposed_new_phases = phases - proposed_new_offset[..., np.newaxis]
-                #     proposed_new_fieldmap = get_dual_echo_fieldmap(proposed_new_phases, TEs, mags, mask)
-                #     print(f"current_fieldmap: {proposed_fieldmap[voxel_mask].mean()}")
-                #     print(f"proposed_new_fieldmap: {proposed_new_fieldmap[voxel_mask].mean()}")
-                #     if proposed_new_fieldmap[voxel_mask].mean() < 0:
-                #         pass
-                #     unwrapped_diff -= 2 * np.pi
-                # elif new_voxel_prop > 0.9:
-                #     # unwrapped_diff -= 2 * np.pi
-                #     pass
-
-        # unwrapped_diff += 2 * np.pi
-        # proposed_new_offset = np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0)))))
-        # proposed_new_phases = phases - proposed_new_offset[..., np.newaxis]
-        # proposed_new_fieldmap = get_dual_echo_fieldmap(proposed_new_phases, TEs, mags, mask)
-        # # if adding an offset made it worse, then don't do it
-        # print(f"proposed_new_fieldmap: {proposed_new_fieldmap[voxel_mask].mean()}")
-        # if proposed_new_fieldmap[voxel_mask].mean() < 0:
-        #     unwrapped_diff -= 2 * np.pi
-        # else:
-        #     # check field in center of brain for negatives
-        #     center_mask = create_brain_mask(mag0, -10)
-        #     proposed_new_fieldmap_center = proposed_new_fieldmap[center_mask].mean()
-        #     print(f"proposed_new_fieldmap_center: {proposed_new_fieldmap_center}")
-
-    # # now loop over potential phase offsets, choosing the one that has the smallest mean fieldmap
-    # smallest_mean = 0
-    # smallest_offset = None
-    # for idx, i in enumerate([0, 0, -1, 1]):
-    #     proposed_unwrapped_diff = unwrapped_diff + i * 2 * np.pi
-    #     proposed_offset = np.angle(np.exp(1j * (phase0 - ((TE0 * proposed_unwrapped_diff) / (TE1 - TE0)))))
-
-    #     # get the new phases
-    #     proposed_phases = phases - proposed_offset[..., np.newaxis]
-
-    #     # unwrap the phases
-    #     proposed_unwrapped_phases = JULIA.romeo_unwrap4D(  # type: ignore
-    #         phase=proposed_phases,
-    #         TEs=TEs,
-    #         weights="romeo",
-    #         mag=mags,
-    #         mask=mask,
-    #         correct_global=True,
-    #         maxseeds=1,
-    #         merge_regions=False,
-    #         correct_regions=False,
-    #     )
-
-    #     # get fieldmap
-    #     proposed_phase_diff = proposed_unwrapped_phases[..., 1] - proposed_unwrapped_phases[..., 0]
-    #     proposed_fieldmap = (1000 / (2 * np.pi)) * proposed_phase_diff / (TE1 - TE0)
-    #     mean_proposed_fieldmap = proposed_fieldmap[voxel_mask].mean()
-
-    #     if idx == 0:
-    #         if mean_proposed_fieldmap < -5:
-    #             unwrapped_diff += 2 * np.pi
-    #             continue
-    #         else:
-    #             continue
-
-    #     # check the mean of the unwrapped phase 0
-    #     mean_unwrapped_phase0 = proposed_unwrapped_phases[voxel_mask, 0].mean()
-    #     if DEBUG:
-    #         print(f"mean_unwrapped_phase0: {mean_unwrapped_phase0}")
-    #         print(f"mean_proposed_fieldmap: {mean_proposed_fieldmap}")
-
-    #     # fit linear model to the proposed phases
-    #     phase_fits = np.concatenate(
-    #         (np.zeros((*proposed_unwrapped_phases.shape[:-1], 1)), proposed_unwrapped_phases), axis=-1
-    #     )
-    #     _, residuals, _, _, _ = np.polyfit(all_TEs, phase_fits[voxel_mask, :].T, 1, full=True)
-    #     if DEBUG:
-    #         print(f"mean_residuals: {residuals.mean()}")
-
-    #     if smallest_offset is None:
-    #         smallest_mean = residuals.mean()
-    #         smallest_offset = i
-    #     elif residuals.mean() < smallest_mean:
-    #         # if it's close don't do anything
-    #         if np.isclose(residuals.mean(), smallest_mean, atol=1e-3, rtol=1e-3):
-    #             continue
-    #         smallest_mean = residuals.mean()
-    #         smallest_offset = i
-
-    # add offset to diff
-    # unwrapped_diff += smallest_offset * 2 * np.pi
 
     # compute the phase offset
     return np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0))))), unwrapped_diff
@@ -501,19 +231,6 @@ def unwrap_phase(
         mask_data = mask_data_select > 0
 
     # Do MCPC-3D-S algo to compute phase offset
-    # first pass is used to get a reference unwrapping to make sure the phase offset is in the correct domain
-    # ref_mask = create_brain_mask(mag_data[..., 0], -10).astype(bool)
-    # _, unwrapped_phase_ref = mcpc_3d_s(
-    #     mag_data[..., 0] * ref_mask,
-    #     mag_data[..., 1] * ref_mask,
-    #     phase_data[..., 0] * ref_mask,
-    #     phase_data[..., 1] * ref_mask,
-    #     TEs[0],
-    #     TEs[1],
-    #     ref_mask,
-    # )
-    # nib.Nifti1Image(unwrapped_phase_ref, np.eye(4)).to_filename(f"unwrapped_ref{idx}.nii")
-    # nib.Nifti1Image(ref_mask.astype('f8'), np.eye(4)).to_filename(f"ref_mask{idx}.nii")
     phase_offset, unwrapped_diff = mcpc_3d_s(
         mag_data[..., 0],
         mag_data[..., 1],
@@ -523,7 +240,6 @@ def unwrap_phase(
         TEs[1],
         mask_data,
         wrap_limit=wrap_limit,
-        # ref_mask,
     )
     global DEBUG
     if DEBUG:
@@ -554,38 +270,6 @@ def unwrap_phase(
     echo_idx = np.argmin(TEs)
     mag_shortest = mag_data[..., echo_idx]
     brain_mask = create_brain_mask(mag_shortest)
-    # eroded_brain_mask = create_brain_mask(mag_shortest, -2)
-
-    # global mode offset the first echo
-    # print(mode(np.round(unwrapped[brain_mask, 0] / (2 * np.pi)).astype(int), axis=0, keepdims=False).mode * 2 * np.pi)
-    # unwrapped -= (
-    #     mode(
-    #         np.round(reject_outliers(unwrapped[eroded_brain_mask, 0]) / (2 * np.pi)).astype(int),
-    #         axis=0,
-    #         keepdims=False,
-    #     ).mode
-    #     * 2
-    #     * np.pi
-    # )
-    # global mode offset sometimes on wrong side, so if the mean for last echo negative, then add 2pi
-    # reestimated_phase_at_1ms = unwrapped[..., 0] / TEs[0]
-    # print(reestimated_phase_at_1ms[eroded_brain_mask].mean())
-
-    # for the first echo, find the global offset that's closest to the estimated first echo phase
-    # computed from the unwrapped_diff phase
-    # estimated_phase_at_echo1 = (TEs[0] * unwrapped_diff) / (TEs[1] - TEs[0])
-    # print((estimated_phase_at_echo1[eroded_brain_mask] - unwrapped[eroded_brain_mask, 0]))
-    # offset = mode(
-    #     np.round((estimated_phase_at_echo1[eroded_brain_mask] - unwrapped[eroded_brain_mask, 0]) / (2 * np.pi)).astype(
-    #         int
-    #     ),
-    #     axis=0,
-    #     keepdims=False,
-    # ).mode
-    # print(offset)
-    # unwrapped += offset * 2 * np.pi
-
-    # subsequent echoes are corrected by minimizing fit to linear model from 1st echo
 
     # for each of these matrices TEs are on rows, voxels are columns
     # get design matrix
@@ -604,29 +288,6 @@ def unwrap_phase(
 
         # apply the offset
         unwrapped[..., i] += 2 * np.pi * best_offset
-
-    # # examine second echo, look at proportion of voxels that are positive
-    # second_echo_brain_mask = create_brain_mask(mag_data[..., 1], -10)
-    # voxel_mean = reject_outliers(unwrapped[second_echo_brain_mask, 1]).mean()
-    # voxel_prop = (
-    #     np.count_nonzero(unwrapped[second_echo_brain_mask, 1] > 0) / unwrapped[second_echo_brain_mask, 1].shape[0]
-    # )
-    # # print(voxel_mean)
-    # # print(voxel_prop)
-    # # if in the wrong mean domain for second echo, add 2pi to first echo
-    # if voxel_mean < 0 and voxel_prop < FMAP_PROPORTION_HEURISTIC:
-    #     # add 2pi to 1st echo
-    #     unwrapped[..., 0] += 2 * np.pi
-    #     # loop over each index past 1st echo
-    #     for i in range(1, TEs.shape[0]):
-    #         # get matrix with the masked unwrapped data (weighted by magnitude)
-    #         Y = unwrapped[brain_mask, :].T
-
-    #         # Compute offset through linear regression method
-    #         best_offset = compute_offset(i, W, X, Y)
-
-    #         # apply the offset
-    #         unwrapped[..., i] += 2 * np.pi * best_offset
 
     # set anything outside of mask_data to 0
     unwrapped[~mask_data] = 0
