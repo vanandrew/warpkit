@@ -14,7 +14,13 @@ pip install -e ./[dev] -v --config-settings editable_mode=strict
 ```
 You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. For the Julia install,
 ensure that you have the `julia` executable in your path, and the `julia` libraries correctly setup in your
-`ld.so.conf`.
+`ld.so.conf`. If you have done this correctly, you should see `libjulia.so` in your ldconfig:
+
+```
+ldconfig -p | grep julia                                                                                        
+	libjulia.so.1 (libc6,x86-64) => /usr/lib/libjulia.so.1
+	libjulia.so (libc6,x86-64) => /usr/lib/libjulia.so
+```
 
 The build process uses CMake to build the C++/Python Extension. If you encounter an error during the build process,
 please report the full logs of the build process using the `-v` flag to the `pip` command above. 
