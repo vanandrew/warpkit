@@ -1,4 +1,6 @@
 # warpkit
+![Build and Test](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)
+
 A python library for neuroimaging transforms
 
 If you've landed here, you're probably interested in the Multi-Echo DIstortion Correction (MEDIC) algorithm, which this library implements.
