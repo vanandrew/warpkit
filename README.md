@@ -7,19 +7,38 @@ See below for usage details.
 
 ## Installation
 To install, clone this repo and run the following in the repo directory. Due to the current developmental nature of this
-package, I recommend installing it in editable mode:
+package, I highly recommend installing it in editable mode (with the strict option, see
+[here](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#strict-editable-installs)):
 
 ```
 pip install -e ./[dev] -v --config-settings editable_mode=strict
 ```
 You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. For the Julia install,
 ensure that you have the `julia` executable in your path, and the `julia` libraries correctly setup in your
-`ld.so.conf`. If you have done this correctly, you should see `libjulia.so` in your ldconfig:
+`ld.so.conf`. If you installed julia via a package manager, this should be done for you (most of time) already. However,
+if you installed Julia manually, you may need to tell `ldconfig`` where the julia libraries are. For example, on debian
+based systems you can do this with:
 
+```bash
+# /path to julia installation (the lib folder will have libjulia.so)
+echo /path/to/julia/lib > /etc/ld.so.conf.d/julia.conf
+ldconfig
 ```
+
+If you have done this correctly, you should see `libjulia.so` in your ldconfig:
+
+```bash
 ldconfig -p | grep julia                                                                                        
 	libjulia.so.1 (libc6,x86-64) => /usr/lib/libjulia.so.1
 	libjulia.so (libc6,x86-64) => /usr/lib/libjulia.so
+```
+
+The above may require root privileges. The alternative to the above is to set the `LD_LIBRARY_PATH` environment
+variable to the path of the julia libraries.
+
+```bash
+# /path to julia installation (the lib folder will have libjulia.so)
+export LD_LIBRARY_PATH=/path/to/julia/lib:$LD_LIBRARY_PATH
 ```
 
 The build process uses CMake to build the C++/Python Extension. If you encounter an error during the build process,
