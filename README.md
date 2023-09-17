@@ -41,6 +41,9 @@ variable to the path of the julia libraries.
 export LD_LIBRARY_PATH=/path/to/julia/lib:$LD_LIBRARY_PATH
 ```
 
+Note however, that you must type the above each time you open a new terminal. To make this permanent, you can add the
+above line to your shell's profile file.
+
 The build process uses CMake to build the C++/Python Extension. If you encounter an error during the build process,
 please report the full logs of the build process using the `-v` flag to the `pip` command above. 
 

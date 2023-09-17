@@ -11,11 +11,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up Julia 1.8.3
         uses: julia-actions/setup-julia@v1
         with:
           version: '1.8.3'
+      - name: Add Julia shared libraries
+        run: |
+          echo ${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib | sudo tee -a /etc/ld.so.conf.d/julia.conf
+          cat /etc/ld.so.conf.d/julia.conf
+          sudo ldconfig
+          ldconfig -p | grep julia
       - name: Set up Python 3.9
         uses: actions/setup-python@v4
         with:
@@ -26,4 +32,4 @@ jobs:
       - name: Test warpkit
         run: |
           pushd tests/data && ./download_bids_testdata.sh && popd
-          LD_LIBRARY_PATH=${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib:${LD_LIBRARY_PATH} python -m pytest -s -v
+          python -m pytest -s -v
