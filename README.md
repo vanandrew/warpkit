@@ -18,7 +18,7 @@ pip install -e ./[dev] -v --config-settings editable_mode=strict
 You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. For the Julia install,
 ensure that you have the `julia` executable in your path, and the `julia` libraries correctly setup in your
 `ld.so.conf`. If you installed julia via a package manager, this should be done for you (most of time) already. However,
-if you installed Julia manually, you may need to tell `ldconfig`` where the julia libraries are. For example, on debian
+if you installed Julia manually, you may need to tell `ldconfig` where the julia libraries are. For example, on debian
 based systems you can do this with:
 
 ```bash
