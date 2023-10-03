@@ -85,18 +85,27 @@ def medic(
                 raise ValueError("Affines and shapes must match")
 
     # unwrap phase and compute field maps
-    field_maps_native = unwrap_and_compute_field_maps(
-        phase,
-        mag,
-        TEs,
-        border_size=border_size,
-        border_filt=border_filt,
-        svd_filt=svd_filt,
-        frames=frames,
-        n_cpus=n_cpus,
-        debug=debug,
-        wrap_limit=wrap_limit,
-    )
+    try:
+        field_maps_native = unwrap_and_compute_field_maps(
+            phase,
+            mag,
+            TEs,
+            border_size=border_size,
+            border_filt=border_filt,
+            svd_filt=svd_filt,
+            frames=frames,
+            n_cpus=n_cpus,
+            debug=debug,
+            wrap_limit=wrap_limit,
+        )
+    except IndexError as e:
+        raise IndexError(
+            "An IndexError was encountered while unwrapping phase images. This tends to happen if "
+            "you have noise frames left in your data. You should remove these frames and try again. "
+            "Though, if you already have removed the noise frames from your data, then I'm out of ideas... Sorry! But,"
+            " I'm just a error message that was written to anticipate a common error after all, not a psychic! "
+            ":("
+        ) from e
 
     # convert to displacement maps (these are in distorted space)
     inv_displacement_maps = field_maps_to_displacement_maps(
