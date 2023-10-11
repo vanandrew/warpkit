@@ -1,0 +1,5 @@
+services:
+  me_pipeline:
+    image: ghcr.io/vanandrew/warpkit:latest
+    build:
+      context: .

@@ -1,12 +1,13 @@
 import argparse
 import nibabel as nib
 from warpkit.utilities import AXIS_MAP, displacement_map_to_field, WARP_ITK_FLIPS
+from . import epilog
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="This program extracts a displacement field from a series of displacement maps.",
-        epilog="Andrew Van <vanandrew@wustl.edu>, 12/14/2022",
+        epilog=f"{epilog} 12/14/2022",
     )
     parser.add_argument("maps", help="Displacement maps to extract field from.")
     parser.add_argument("field", help="Displacement field to write out.")

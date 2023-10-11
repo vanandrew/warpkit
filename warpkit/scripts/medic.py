@@ -1,7 +1,6 @@
 import argparse
 import json
 import nibabel as nib
-from pathlib import Path
 from memori.logging import setup_logging
 from . import epilog
 from warpkit.distortion import medic
@@ -86,4 +85,3 @@ def main():
     dmaps.to_filename(f"{args.out_prefix}_displacementmaps.nii")
     fmaps.to_filename(f"{args.out_prefix}_fieldmaps.nii")
     print("Done.")
-
