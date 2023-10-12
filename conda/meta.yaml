@@ -1,0 +1,21 @@
+package:
+  name: warpkit
+  version: 0.0.1
+
+source:
+  path: ../ 
+
+build:
+  script: python -m pip install https://github.com/vanandrew/cmake-setuptools-ext/archive/refs/tags/0.1.2.tar.gz; python -m pip install ./[dev] -v
+
+requirements:
+  build:
+    - {{ compiler('cxx') }}
+    - cmake >=3.13
+  host:
+    - julia >=1.6.3
+    - python >=3.9
+  run:
+    - julia >=1.6.3
+    - python >=3.9
+
