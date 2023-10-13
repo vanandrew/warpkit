@@ -143,3 +143,9 @@ tests/test_outputs/
 # download is via box
 tests/data/bidsdata
 tests/data/bidsdata.zip
+
+# ignore build-tmp
+warpkit/build-tmp*/
+
+# ignore itk docs
+warpkit/share/
