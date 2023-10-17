@@ -62,7 +62,7 @@ to this:
 for each frame of your data. You can then use these field maps to distortion correct your data.
 
 ## MEDIC Usage
-The `warpkit` library is meant for integration into a larger python pipeline/package.
+The `warpkit` library is meant for integration into a larger neuroimaging pipeline/software package.
 
 An example of how to call MEDIC from python is provided below:
 ```python
@@ -110,4 +110,35 @@ displacement_field = displacement_map_to_field(displacement_maps, axis="y", form
 
 # if you are using fsl and instead want to use fugue to distortion correction, you can use the field_maps outputs
 # (these are the equivalent field maps of that you would get from fugue, but with multiple frames)
+```
+
+You can also use the provided CLI script `medic` to run MEDIC from the command line. The script is installed to your `PATH` when you install the package. `medic` takes the following arguments:
+
+```bash
+usage: medic [-h] --magnitude MAGNITUDE [MAGNITUDE ...] --phase PHASE
+             [PHASE ...] --metadata METADATA [METADATA ...]
+             [--out_prefix OUT_PREFIX] [-f NOISEFRAMES] [-n N_CPUS]
+             [--debug] [--wrap_limit]
+
+Multi-Echo DIstortion Correction
+
+options:
+  -h, --help            show this help message and exit
+  --magnitude MAGNITUDE [MAGNITUDE ...]
+                        Magnitude data
+  --phase PHASE [PHASE ...]
+                        Phase data
+  --metadata METADATA [METADATA ...]
+                        JSON sidecar for each echo
+  --out_prefix OUT_PREFIX
+                        Prefix to output field maps and displacment maps.
+  -f NOISEFRAMES, --noiseframes NOISEFRAMES
+                        Number of noise frames
+  -n N_CPUS, --n_cpus N_CPUS
+                        Number of CPUs to use.
+  --debug               Debug mode
+  --wrap_limit          Turns off some heuristics for phase unwrapping
+
+Vahdeta Suljic <suljic@wustl.edu>, Andrew Van <vanandrew@wustl.edu>
+12/09/2022
 ```
