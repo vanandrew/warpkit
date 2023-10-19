@@ -61,12 +61,16 @@ FetchContent_Declare(
     GIT_TAG v5.4rc01
 )
 # itk with fetchcontent is a bit weird, OVERRIDE_FIND_PACKAGE does not work
-# so we have to explicitly build itk with make available
-# and then set the itk dir to the build location so find_package can find it
+# but FetchContent_MakeAvailable with ITK_DIR does?
 FetchContent_MakeAvailable(ITK)
-FetchContent_GetProperties(ITK)
 set(ITK_DIR ${itk_BINARY_DIR})
-find_package(ITK CONFIG REQUIRED COMPONENTS ITKCommon ITKImageCompose ITKDisplacementField ITKDistanceMap)
+find_package(ITK CONFIG REQUIRED)
+# create an ITKLIB target to link against
+add_library(ITKLIB INTERFACE IMPORTED)
+set_target_properties(ITKLIB PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${ITK_INCLUDE_DIRS}"
+    INTERFACE_LINK_LIBRARIES "${ITK_LIBRARIES}"
+)
 
 # display all warnings
 add_compile_options(-Wall -O3 -march=x86-64-v3)
@@ -75,9 +79,9 @@ add_compile_options(-Wall -O3 -march=x86-64-v3)
 pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)
 target_include_directories(warpkit_cpp
     PUBLIC ${PROJECT_SOURCE_DIR}/include
-    PRIVATE ${ITK_INCLUDE_DIRS} ${PROJECT_SOURCE_DIR}/include/itk
+    PRIVATE ${PROJECT_SOURCE_DIR}/include/itk
 )
-target_link_libraries(warpkit_cpp PRIVATE Julia ITKCommon)
+target_link_libraries(warpkit_cpp PRIVATE Julia ITKLIB)
 
 # install target
 install(

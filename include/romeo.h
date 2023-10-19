@@ -54,7 +54,6 @@ class JuliaContext {
 
         // initialize modules
         jl_eval_string("using ROMEO;");
-        // jl_eval_string("using MriResearchTools;");
 
         // get functions from modules
         // wrap them in lambdas so we can call arguments positionally
@@ -72,8 +71,6 @@ class JuliaContext {
                            "maxseeds, merge_regions, correct_regions) = unwrap(phase, TEs=TEs, "
                            "weights=weights, mag=mag, mask=mask, correctglobal=correctglobal, maxseeds=maxseeds, "
                            "merge_regions=merge_regions, correct_regions=correct_regions);"));
-        // jl_robustmask = static_cast<jl_function_t*>(
-        //     jl_eval_string("robustmask_wrapper(weight, factor) = Float32.(robustmask(weight; factor=factor));"));
     }
 
     /**
@@ -148,47 +145,6 @@ class JuliaContext {
         // close Julia context
         jl_atexit_hook(0);
     }
-
-    // /**
-    //  * @brief Wrapper for MriResearchTools robustmask function
-    //  *
-    //  * @param weight
-    //  * @param factor
-    //  * @return py::array_t<T, py::array::fstyle>
-    //  */
-    // py::array_t<T, py::array::f_style> mri_robustmask(py::array_t<T, py::array::f_style> weight, int factor = 1) {
-    //     if (PyErr_CheckSignals() != 0) throw py::error_already_set();
-
-    //     // setup variables
-    //     jl_ntuple3_t* weight_dims = reinterpret_cast<jl_ntuple3_t*>(jl_new_struct_uninit(jl_ntuple3));
-    //     jl_array_t* jl_weight;
-
-    //     // Push to GC
-    //     JL_GC_PUSH2(&weight_dims, &jl_weight);
-    //     weight_dims->a = weight.shape(0);
-    //     weight_dims->b = weight.shape(1);
-    //     weight_dims->c = weight.shape(2);
-    //     auto jl_factor = jl_box_int64(factor);
-
-    //     // convert to julia
-    //     jl_weight =
-    //         jl_ptr_to_array(jl_array3d, const_cast<T*>(weight.data()), reinterpret_cast<jl_value_t*>(weight_dims),
-    //         0);
-
-    //     // call julia function
-    //     jl_value_t* args[2] = {reinterpret_cast<jl_value_t*>(jl_weight), reinterpret_cast<jl_value_t*>(jl_factor)};
-    //     jl_value_t* jl_mask = jl_call(jl_robustmask, args, 2);
-
-    //     // convert to python
-    //     auto mask_ptr = static_cast<T*>(jl_array_data(jl_mask));
-    //     std::vector<T> mask_vec(mask_ptr, mask_ptr + weight.size());
-
-    //     // Pop from GC
-    //     JL_GC_POP();
-
-    //     // return python array
-    //     return as_pyarray(std::move(mask_vec), {weight.shape(0), weight.shape(1), weight.shape(2)});
-    // }
 
     /**
      * @brief Wrapper for ROMEO unwrap function (3D)
@@ -373,7 +329,6 @@ class JuliaContext {
     jl_function_t* jl_voxelquality;
     jl_function_t* jl_unwrap3D;
     jl_function_t* jl_unwrap4D;
-    // jl_function_t* jl_robustmask;
     jl_tupletype_t* jl_ntuple3;
     jl_tupletype_t* jl_ntuple4;
     jl_value_t* jl_vector;
