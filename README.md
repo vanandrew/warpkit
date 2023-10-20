@@ -49,7 +49,7 @@ medic --help  # should return help
 ```
 
 After installing and configuring everything, you must type `micromamba activate base` each time you open a new terminal
-to get back into the `conda` environment to use `warpkit``. To make this permanent, you can add the above line to your
+to get back into the `conda` environment to use `warpkit`. To make this permanent, you can add the above line to your
 shell's profile file.
 
 ### Installing through pip
