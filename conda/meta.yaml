@@ -6,16 +6,37 @@ source:
   path: ../ 
 
 build:
-  script: python -m pip install ./[dev] -v
+  script: {{ PYTHON }} -m pip install --no-deps --ignore-installed . -vv
 
 requirements:
   build:
     - {{ compiler('cxx') }}
     - cmake >=3.24
-    - cmake-build-extension >=0.5.1
   host:
+    - setuptools >=68.0.0
+    - wheel >=0.40.0
+    - cmake-build-extension >=0.5.1
     - julia >=1.6.3
-    - python >=3.9
+    - python >=3.9,<=3.11
   run:
     - julia >=1.6.3
-    - python >=3.9
+    - python >=3.9,<=3.11
+    - nibabel >=4.0.2
+    - numpy >=1.23.3
+    - scikit-image >=0.20.0
+    - scipy >=1.8.1
+    - transforms3d >=0.4.1
+    - indexed_gzip >=0.7.0
+
+test:
+  source_files:
+    - tests/
+  requires:
+    - pytest
+    - pybids
+  imports:
+    - warpkit
+  commands:
+    - pushd tests/data && ./download_bids_testdata.sh && popd
+    - pytest -s tests/
+    - medic -h

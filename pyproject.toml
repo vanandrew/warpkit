@@ -14,7 +14,6 @@ dependencies = [
   "numpy >= 1.23.3",
   "scikit-image >= 0.20.0",
   "scipy >= 1.8.1",
-  "memori >= 0.2.1",
   "transforms3d >= 0.4.1",
   "indexed-gzip >= 1.7.0",
 ]

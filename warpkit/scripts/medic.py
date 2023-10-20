@@ -1,9 +1,9 @@
 import argparse
 import json
 import nibabel as nib
-from memori.logging import setup_logging
 from . import epilog
 from warpkit.distortion import medic
+from warpkit.utilities import setup_logging
 
 
 def main():

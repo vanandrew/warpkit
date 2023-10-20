@@ -3,11 +3,57 @@
 
 A python library for neuroimaging transforms
 
-If you've landed here, you're probably interested in the Multi-Echo DIstortion Correction (MEDIC) algorithm, which this library implements.
+If you've landed here, you're probably interested in the Multi-Echo DIstortion Correction (MEDIC) algorithm, which this
+library implements.
 
 See below for usage details.
 
 ## Installation
+
+### Installing through conda (recommended)
+
+The easiest way to install `warpkit` is through a `conda` environment. Currently, `warpkit` is not uploaded to any
+`conda` channels, so you will need to build it from source.
+
+> [!NOTE]
+> **For advanced users only**
+> A `meta.yaml` file is present in the `conda` folder in the root of the repo. If you are familiar with `conda-build`
+> you should be able to build this with your existing `conda` install.
+
+Fortunately, there is an automated script that will download `micromamba` (a `conda` variant), create a new
+environment, and build/install `warpkit` for you automagically. To do this, clone this repo and run the following:
+
+```bash
+# switch to conda directory in repo
+cd conda
+# run the install script (use -p or --path to specify an install prefix)
+# by default this is set to ~/micromamba
+./warpkit-conda-install.sh
+
+# in your shell profile add the following lines
+# or just execute them in your current shell
+# but it won't be permanent
+export MAMBA_ROOT_PREFIX=/whatever/path/you/installed/micromamba/prefix/above
+eval "$(/whatever/path/you/installed/micromamba/prefix/above/bin/micromamba shell hook -s posix)"
+
+# if you added the above to your profile
+# restart your shell then activate the environment
+#
+# unless you have already executed the above in your current shell
+# then you don't need to restart it and can just activate the environment
+micromamba activate base
+
+# you should now be able to import/use warpkit
+python -c "import warpkit"  # should return no errors
+medic --help  # should return help
+```
+
+After installing and configuring everything, you must type `micromamba activate base` each time you open a new terminal
+to get back into the `conda` environment to use `warpkit``. To make this permanent, you can add the above line to your
+shell's profile file.
+
+### Installing through pip
+
 To install, clone this repo and run the following in the repo directory. Due to the current developmental nature of this
 package, I highly recommend installing it in editable mode (with the strict option, see
 [here](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#strict-editable-installs)):
@@ -17,9 +63,9 @@ pip install -e ./[dev] -v --config-settings editable_mode=strict
 ```
 You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. For the Julia install,
 ensure that you have the `julia` executable in your path, and the `julia` libraries correctly setup in your
-`ld.so.conf`. If you installed julia via a package manager, this should be done for you (most of time) already. However,
-if you installed Julia manually, you may need to tell `ldconfig` where the julia libraries are. For example, on debian
-based systems you can do this with:
+`ld.so.conf`. If you installed julia via a package manager, this should be done for you (most of the time) already.
+However, if you installed Julia manually, you may need to tell `ldconfig` where the julia libraries are. For example,
+on debian based systems you can do this with:
 
 ```bash
 # /path to julia installation (the lib folder will have libjulia.so)
@@ -112,7 +158,8 @@ displacement_field = displacement_map_to_field(displacement_maps, axis="y", form
 # (these are the equivalent field maps of that you would get from fugue, but with multiple frames)
 ```
 
-You can also use the provided CLI script `medic` to run MEDIC from the command line. The script is installed to your `PATH` when you install the package. `medic` takes the following arguments:
+You can also use the provided CLI script `medic` to run MEDIC from the command line. The script is installed to your
+`PATH` when you install the package. `medic` takes the following arguments:
 
 ```bash
 usage: medic [-h] --magnitude MAGNITUDE [MAGNITUDE ...] --phase PHASE
