@@ -72,8 +72,34 @@ set_target_properties(ITKLIB PROPERTIES
     INTERFACE_LINK_LIBRARIES "${ITK_LIBRARIES}"
 )
 
-# display all warnings
-add_compile_options(-Wall -O3 -march=x86-64-v3)
+# add compile options based on architecture
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+    # we need minimum of gcc 11 for -march=x86-64-v3
+    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
+            add_compile_options(-Wall -O3 -march=x86-64)
+            message(STATUS "Using -march=x86-64")
+        else()
+            add_compile_options(-Wall -O3 -march=x86-64-v3)
+            message(STATUS "Using -march=x86-64-v3")
+        endif()
+    # else if clang
+    elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+        if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
+            add_compile_options(-Wall -O3 -march=x86-64)
+            message(STATUS "Using -march=x86-64")
+        else()
+            add_compile_options(-Wall -O3 -march=x86-64-v3)
+            message(STATUS "Using -march=x86-64-v3")
+        endif()
+    endif()
+# else if arm
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+    # this is probably apple silicon
+    # just try native, it usually works
+    add_compile_options(-Wall -O3 -march=native)
+    message(STATUS "Using -march=native")
+endif()
 
 # compile pybind11 interface
 pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)
