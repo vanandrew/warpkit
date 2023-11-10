@@ -159,6 +159,7 @@ def unwrap_phase(
     automask_dilation: int = 3,
     idx: Union[int, None] = None,
     wrap_limit: bool = False,
+    debug: bool = False,
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int8]]:
     """Unwraps the phase for a single frame of ME-EPI
 
@@ -241,8 +242,7 @@ def unwrap_phase(
         mask_data,
         wrap_limit=wrap_limit,
     )
-    global DEBUG
-    if DEBUG:
+    if debug:
         global affine
         global header
         nib.Nifti1Image(phase_offset, affine, header).to_filename(f"phase_offset{idx}.nii")
@@ -618,14 +618,11 @@ def unwrap_and_compute_field_maps(
     new_masks = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
 
     # FOR DEBUGGING
-    global DEBUG
-    DEBUG = False
     if debug:
         global affine
         affine = phase[0].affine
         global header
         header = phase[0].header
-        DEBUG = True
 
     # allocate mask if needed
     if not mask:
@@ -668,7 +665,7 @@ def unwrap_and_compute_field_maps(
             )
             mask_data = cast(npt.NDArray[np.bool_], mask.dataobj[..., frame_idx].astype(bool))
             TEs = TEs.astype(np.float32)
-            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx, wrap_limit)
+            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx, wrap_limit, debug)
 
     def save_unwrapped_and_mask(idx, result):
         # get the unwrapped image
