@@ -6,6 +6,8 @@ A python library for neuroimaging transforms
 If you've landed here, you're probably interested in the Multi-Echo DIstortion Correction (MEDIC) algorithm, which this
 library implements.
 
+You can find the pre-print for MEDIC here: https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1.
+
 See below for usage details.
 
 ## Installation
