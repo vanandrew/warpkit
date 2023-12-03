@@ -8,7 +8,7 @@ keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
 urls = { github = "https://github.com/vanandrew/warpkit" }
 version = "0.0.1"
-dynamic = ["entry-points", "scripts"]
+dynamic = ["scripts"]
 dependencies = [
   "nibabel >= 4.0.2",
   "numpy >= 1.23.3",
