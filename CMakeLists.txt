@@ -34,6 +34,7 @@ FetchContent_Declare(
     GIT_TAG v2.11.1
     OVERRIDE_FIND_PACKAGE
 )
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
 # download, configure, and include itk

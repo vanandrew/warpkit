@@ -2,7 +2,7 @@
 name = "warpkit"
 description = "A python library for neuroimaging transformations"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 authors = [{ name = "Andrew Van", email = "vanandrew@wustl.edu" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
@@ -36,7 +36,18 @@ exclude = ["tests"]
 
 [tool.black]
 line-length = 120
-target-version = ["py37", "py38", "py39", "py310"]
+target-version = ["py38", "py39", "py310", "py311", "py312"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.cibuildwheel]
+build = ["cp*-manylinux_x86_64", "cp*-macosx_universal2"]
+build-frontend = "build"
+environment = { PATH = "/opt/julia/bin:$PATH" }
+before-all = [
+  "yum install -y wget",
+  "curl -fsSL https://install.julialang.org | sh -s -- --yes --default-channel 1.9.4",
+  "mkdir -p /opt/julia/ && cp -r /root/.julia/juliaup/*/* /opt/julia/",
+  "echo \"/opt/julia/lib\" >> /etc/ld.so.conf.d/julia.conf && ldconfig",
+]
