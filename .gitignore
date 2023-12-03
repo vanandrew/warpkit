@@ -149,3 +149,5 @@ warpkit/build-tmp*/
 
 # ignore itk docs
 warpkit/share/
+
+# ignore .secrets

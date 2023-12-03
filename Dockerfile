@@ -9,19 +9,18 @@ WORKDIR /opt
 
 # get python and other dependencies
 RUN apt-get update && \
-    apt-get install -y build-essential wget git python3 python3-pip unzip
+    apt-get install -y build-essential wget curl git python3 python3-pip unzip
 
-# get and install Julia
+# get and install Julia via juliaup
 FROM base as julia
-RUN wget https://julialang-s3.julialang.org/bin/linux/x64/1.8/julia-1.8.3-linux-x86_64.tar.gz && \
-    tar -xzf julia-1.8.3-linux-x86_64.tar.gz && \
-    rm julia-1.8.3-linux-x86_64.tar.gz
+RUN curl -fsSL https://install.julialang.org | sh -s -- --yes --default-channel 1.9.4 && \
+    mkdir -p /opt/julia/ && cp -r /root/.julia/juliaup/*/* /opt/julia/
 
 # final image
 FROM base as final
 
 # copy over julia
-COPY --from=julia /opt/julia-1.8.3/ /opt/julia/
+COPY --from=julia /opt/julia/ /opt/julia/
 ENV PATH=/opt/julia/bin:${PATH}
 # add libjulia to ldconfig
 RUN echo "/opt/julia/lib" >> /etc/ld.so.conf.d/julia.conf && ldconfig
