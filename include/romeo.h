@@ -29,6 +29,11 @@ class JuliaContext {
         // initialize Julia context
         jl_init();
 
+        // check if ROMEO installed
+        jl_eval_string(
+            "using Pkg; !in(\"ROMEO\", [dep.name for (uuid, dep) in Pkg.dependencies()]) ? "
+            "Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing");
+
         // setup types
         jl_value_t* ntuple3[3] = {reinterpret_cast<jl_value_t*>(jl_long_type),
                                   reinterpret_cast<jl_value_t*>(jl_long_type),

@@ -39,18 +39,19 @@ target-version = ["py38", "py39", "py310", "py311", "py312"]
 testpaths = ["tests"]
 
 [tool.cibuildwheel]
-build = ["cp*-manylinux_x86_64", "cp*-macosx_universal2"]
+skip = "*musllinux*"
 build-frontend = "build"
-build-verbosity = 1
 environment = { PATH = "/opt/julia/bin:$PATH" }
 before-all = [
-  "cp /root/.bashrc /root/.bashrc.bak",
-  "cp /root/.bash_profile /root/.bash_profile.bak",
   "curl -fsSL https://install.julialang.org | sh -s -- --yes --default-channel 1.9.4",
   "mkdir -p /opt/julia/ && cp -r /root/.julia/juliaup/*/* /opt/julia/",
   "echo \"/opt/julia/lib\" >> /etc/ld.so.conf.d/julia.conf && ldconfig",
-  "rm -rf /root/.julia",
-  "rm -rf /root/.juliaup",
-  "mv /root/.bashrc.bak /root/.bashrc",
-  "mv /root/.bash_profile.bak /root/.bash_profile",
 ]
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+repair-wheel-command = "auditwheel repair --exclude libjulia.so.1 -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+archs = ["universal2"]
+repair-wheel-command = "delocate-wheel --exclude libjulia.so.1 --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
