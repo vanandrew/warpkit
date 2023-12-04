@@ -1,4 +1,5 @@
 recursive-include src *
 recursive-include include *
 recursive-include cmake_aux *
+recursive-include warpkit/share *
 include CMakeLists.txt

@@ -9,7 +9,7 @@ WORKDIR /opt
 
 # get python and other dependencies
 RUN apt-get update && \
-    apt-get install -y build-essential wget curl git python3 python3-pip unzip
+    apt-get install -y build-essential curl git python3 python3-pip unzip
 
 # get and install Julia via juliaup
 FROM base as julia
