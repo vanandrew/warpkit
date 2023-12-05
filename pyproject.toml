@@ -42,16 +42,22 @@ testpaths = ["tests"]
 skip = "*musllinux*"
 build-frontend = "build"
 environment = { PATH = "/opt/julia/bin:$PATH" }
+
+[tool.cibuildwheel.linux]
+archs = ["x86_64"]
+repair-wheel-command = "auditwheel repair --exclude libjulia.so.1 -w {dest_dir} {wheel}"
 before-all = [
   "curl -fsSL https://install.julialang.org | sh -s -- --yes --default-channel 1.9.4",
   "mkdir -p /opt/julia/ && cp -r /root/.julia/juliaup/*/* /opt/julia/",
   "echo \"/opt/julia/lib\" >> /etc/ld.so.conf.d/julia.conf && ldconfig",
 ]
 
-[tool.cibuildwheel.linux]
-archs = ["x86_64"]
-repair-wheel-command = "auditwheel repair --exclude libjulia.so.1 -w {dest_dir} {wheel}"
-
 [tool.cibuildwheel.macos]
 archs = ["universal2"]
-repair-wheel-command = "delocate-wheel --exclude libjulia.so.1 --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+repair-wheel-command = "delocate-wheel --ignore-missing-dependencies --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
+before-all = [
+  "brew install julia",
+]
+before-build = [
+  "pip install delocate==0.10.6"
+]

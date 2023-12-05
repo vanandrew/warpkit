@@ -1,11 +1,12 @@
 import subprocess
 import os
+import sys
 from pathlib import Path
 from setuptools import setup
 from tempfile import TemporaryDirectory
 from cmake_build_extension import CMakeExtension, BuildExtension
 
-
+# get this directory
 THISDIR = Path(__file__).parent
 
 # get CMakeLists.txt
@@ -17,6 +18,12 @@ scripts_path = THISDIR / "warpkit" / "scripts"
 
 # is cibuildwheel environment?
 IS_CIBUILDWHEEL = os.environ.get("CIBUILDWHEEL", "0") == "1"
+
+# is this macOS?
+IS_MACOS = os.environ.get("RUNNER_OS", "0") == "macOS"
+
+# set python version to give hint for cmake
+python_version = sys.executable
 
 # ensure julia is installed
 try:
@@ -45,15 +52,15 @@ if not IS_CIBUILDWHEEL:
 
 # open a temporary directory for install artifacts that we would like to remove
 with TemporaryDirectory(prefix="build-tmp-", dir="/tmp") as tmpdir:
+    cmake_configure_options = [f"-DPYTHON_INSTALL_TMPDIR={tmpdir}", f"-DPython_EXECUTABLE={python_version}"]
+    if IS_CIBUILDWHEEL and not IS_MACOS:
+        cmake_configure_options.append(f"-DCIBUILDWHEEL=")
     setup(
         ext_modules=[
             CMakeExtension(
                 name="warpkit.warpkit_cpp",
                 source_dir=cmake_dir,
-                cmake_configure_options=[
-                    f"-DPYTHON_INSTALL_TMPDIR={tmpdir}",
-                    f"-DCIBUILDWHEEL={str(IS_CIBUILDWHEEL).upper()}",
-                ],
+                cmake_configure_options=cmake_configure_options,
             )
         ],
         cmdclass={"build_ext": BuildExtension},

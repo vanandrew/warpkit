@@ -1,4 +1,21 @@
 import os
+import subprocess
+# ensure ROMEO is installed
+try:
+    subprocess.run(
+        [
+            "julia",
+            "-e",
+            (
+                'using Pkg; !in("ROMEO",'
+                "[dep.name for (uuid, dep) in Pkg.dependencies()])"
+                ' ? Pkg.add(Pkg.PackageSpec(;name="ROMEO", version="1.0.0")) : nothing'
+            ),
+        ],
+        check=True,
+    )
+except subprocess.CalledProcessError:
+    raise OSError("ROMEO failed to install. Check your Julia installation.")
 
 if os.environ.get("WARPKIT_DEV", False) == "1":
     from warnings import warn

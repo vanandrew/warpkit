@@ -9,7 +9,7 @@ jobs:
   wheels-build:
     strategy:
       matrix:
-        os: [ubuntu-22.04]
+        os: [ubuntu-22.04, macos-12]
         python-versions: [
           {version: '3.8', glob: cp38*},
           {version: '3.9', glob: cp39*},
@@ -17,12 +17,12 @@ jobs:
           {version: '3.11', glob: cp311*},
           {version: '3.12', glob: cp312*},
           ]
-    name: Build and Test Python ${{ matrix.python-versions.version }} wheel on ${{ matrix.os }}
+    name: Python ${{ matrix.python-versions.version }} wheel on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Build wheels
+      - name: Build wheel
         uses: pypa/cibuildwheel@v2.16.2
         env:
           CIBW_BUILD: ${{ matrix.python-versions.glob }}
@@ -32,8 +32,10 @@ jobs:
           version: '1.9.4'
       - name: Add Julia shared libraries
         run: |
-          echo ${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib | sudo tee -a /etc/ld.so.conf.d/julia.conf
-          sudo ldconfig
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            echo ${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib | sudo tee -a /etc/ld.so.conf.d/julia.conf
+            sudo ldconfig
+          fi;
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -45,6 +47,9 @@ jobs:
       - name: Test wheel
         run: |
           pushd tests/data && ./download_bids_testdata.sh && popd
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            export DYLD_LIBRARY_PATH=${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib
+          fi;
           pytest --import-mode=append
       - uses: actions/upload-artifact@v3
         with:

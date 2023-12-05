@@ -16,7 +16,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0148 NEW)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake_aux")
 
 # find julia headers and library
-if(CIBUILDWHEEL STREQUAL "TRUE")
+if(DEFINED CIBUILDWHEEL)
     # manually define Julia for CIBUILDWHEEL since using julia will cause it to crash
     # get the version string
     execute_process(
@@ -52,7 +52,7 @@ endif()
 # ensure ROMEO dependency installed during compile time
 # there is an additional check in setup.py for pre-built python packages.
 # only do if not CIBUILDWHEEL since it will crash
-if (NOT CIBUILDWHEEL STREQUAL "TRUE")
+if (NOT DEFINED CIBUILDWHEEL)
     execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"ROMEO\",\
     [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
     Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing")
