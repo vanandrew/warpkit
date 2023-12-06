@@ -55,6 +55,8 @@ with TemporaryDirectory(prefix="build-tmp-", dir="/tmp") as tmpdir:
     cmake_configure_options = [f"-DPYTHON_INSTALL_TMPDIR={tmpdir}", f"-DPython_EXECUTABLE={python_version}"]
     if IS_CIBUILDWHEEL and not IS_MACOS:
         cmake_configure_options.append(f"-DCIBUILDWHEEL=")
+    if IS_MACOS:
+        cmake_configure_options.append(f"-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64")
     setup(
         ext_modules=[
             CMakeExtension(

@@ -110,6 +110,7 @@ set_target_properties(ITKLIB PROPERTIES
 )
 
 # add compile options based on architecture
+message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
     # we need minimum of gcc 11 for -march=x86-64-v3
     if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
@@ -133,11 +134,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
     endif()
 
 # else if arm
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-    # this is probably apple silicon
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     # just try native, it usually works
-    add_compile_options(-Wall -O3 -march=native)
-    message(STATUS "Using -march=native")
+    add_compile_options(-Wall -O3 -march=armv8.4-a)
+    message(STATUS "Using -march=armv8.4-a")
 endif()
 
 # compile pybind11 interface
