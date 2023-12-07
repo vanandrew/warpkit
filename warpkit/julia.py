@@ -1,14 +1,6 @@
 import logging
 import os
-from multiprocessing import Process
 from . import JuliaContext as _JuliaContext  # type: ignore
-
-# We start a JuliaContext so that we can check if ROMEO is installed.
-# we have to make it in a separate process because Julia context can
-# only be initialized once per process.
-p = Process(target=_JuliaContext)
-p.start()
-p.join()
 
 
 PID_MAP = {}

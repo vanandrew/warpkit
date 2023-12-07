@@ -79,28 +79,31 @@ jobs:
       - uses: actions/upload-artifact@v3
         with:
           path: dist/*.tar.gz
-  # py-publish:
-  #   name: Publish to PyPI
-  #   needs: [wheels-build, sdist-build]
-  #   runs-on: ubuntu-22.04
-  #   environment:
-  #     name: pypi
-  #     url: https://pypi.org/project/warpkit/
-  #   permissions:
-  #     id-token: write
-  #   if: github.event_name == 'release' && github.event.action == 'published'
-  #   steps:
-  #   - uses: actions/download-artifact@v3
-  #     with:
-  #       name: artifact
-  #       path: dist
-  #   - uses: pypa/gh-action-pypi-publish@release/v1
+  py-publish:
+    name: Publish to PyPI
+    needs: [wheels-build, sdist-build]
+    runs-on: ubuntu-22.04
+    environment:
+      name: release
+      url: https://pypi.org/project/warpkit/
+    permissions:
+      id-token: write
+    if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+    - uses: actions/download-artifact@v3
+      with:
+        name: artifact
+        path: dist
+    - uses: pypa/gh-action-pypi-publish@release/v1
   docker-build:
     name: Build Docker image
+    needs: [wheels-build, sdist-build]
     runs-on: ubuntu-22.04
     permissions:
       packages: write
     if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -120,7 +123,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/vanandrew/warpkit:latest
+          tags: ghcr.io/vanandrew/warpkit:${{ github.ref_name }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
