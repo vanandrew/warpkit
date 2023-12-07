@@ -15,14 +15,48 @@ set(CMAKE_POLICY_DEFAULT_CMP0148 NEW)
 # load auxillary cmake modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake_aux")
 
-# find julia headers
-find_package(Julia REQUIRED)
+# find julia headers and library
+if(DEFINED CIBUILDWHEEL)
+    # manually define Julia for CIBUILDWHEEL since using julia will cause it to crash
+    # get the version string
+    execute_process(
+        COMMAND /opt/julia/bin/julia --startup-file=no --version
+        OUTPUT_VARIABLE Julia_VERSION_STRING
+    )
+    string(
+        REGEX REPLACE ".*([0-9]+\\.[0-9]+\\.[0-9]+).*" "\\1"
+        Julia_VERSION_STRING "${Julia_VERSION_STRING}"
+    )
+
+    # get the include directory
+    set(Julia_INCLUDE_DIRS /opt/julia/include/julia)
+
+    # get the library
+    set(Julia_LIBRARY /opt/julia/lib/libjulia.so.1)
+
+    # print out status
+    message(STATUS "Using Julia ${Julia_VERSION_STRING}")
+    message(STATUS "Julia_INCLUDE_DIRS: ${Julia_INCLUDE_DIRS}")
+    message(STATUS "Julia_LIBRARY: ${Julia_LIBRARY}")
+
+    # make importable target
+    add_library(Julia INTERFACE IMPORTED)
+    set_target_properties(Julia PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${Julia_INCLUDE_DIRS}"
+        INTERFACE_LINK_LIBRARIES "${Julia_LIBRARY}"
+    )
+else()
+    find_package(Julia REQUIRED)
+endif()
 
 # ensure ROMEO dependency installed during compile time
 # there is an additional check in setup.py for pre-built python packages.
-execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"ROMEO\",\
- [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
- Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing")
+# only do if not CIBUILDWHEEL since it will crash
+if (NOT DEFINED CIBUILDWHEEL)
+    execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"ROMEO\",\
+    [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
+    Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing")
+endif()
 
 # include FetchContent module
 include(FetchContent)
@@ -34,6 +68,7 @@ FetchContent_Declare(
     GIT_TAG v2.11.1
     OVERRIDE_FIND_PACKAGE
 )
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
 find_package(pybind11 CONFIG REQUIRED)
 
 # download, configure, and include itk
@@ -60,11 +95,13 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/InsightSoftwareConsortium/ITK.git
     GIT_TAG v5.4rc01
 )
+
 # itk with fetchcontent is a bit weird, OVERRIDE_FIND_PACKAGE does not work
 # but FetchContent_MakeAvailable with ITK_DIR does?
 FetchContent_MakeAvailable(ITK)
 set(ITK_DIR ${itk_BINARY_DIR})
 find_package(ITK CONFIG REQUIRED)
+
 # create an ITKLIB target to link against
 add_library(ITKLIB INTERFACE IMPORTED)
 set_target_properties(ITKLIB PROPERTIES
@@ -73,7 +110,8 @@ set_target_properties(ITKLIB PROPERTIES
 )
 
 # add compile options based on architecture
-if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
     # we need minimum of gcc 11 for -march=x86-64-v3
     if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
         if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
@@ -83,9 +121,10 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
             add_compile_options(-Wall -O3 -march=x86-64-v3)
             message(STATUS "Using -march=x86-64-v3")
         endif()
+
     # else if clang
     elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
+        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
             add_compile_options(-Wall -O3 -march=x86-64)
             message(STATUS "Using -march=x86-64")
         else()
@@ -93,12 +132,12 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
             message(STATUS "Using -march=x86-64-v3")
         endif()
     endif()
+
 # else if arm
-elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-    # this is probably apple silicon
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     # just try native, it usually works
-    add_compile_options(-Wall -O3 -march=native)
-    message(STATUS "Using -march=native")
+    add_compile_options(-Wall -O3 -march=armv8.4-a)
+    message(STATUS "Using -march=armv8.4-a")
 endif()
 
 # compile pybind11 interface

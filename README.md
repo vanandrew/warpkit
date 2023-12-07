@@ -1,5 +1,5 @@
 # warpkit
-![Build and Test](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)
+![Build](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)
 
 A python library for neuroimaging transforms
 
