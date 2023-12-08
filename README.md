@@ -1,7 +1,7 @@
 # warpkit
-![Build](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)
-![PyPI](https://img.shields.io/pypi/v/warpkit)
-![docker](https://ghcr-badge.egpl.dev/vanandrew/warpkit/latest_tag?trim=major&label=ghcr&nbsp;latest)
+[![Build](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)](https://github.com/vanandrew/warpkit/actions)
+[![PyPI](https://img.shields.io/pypi/v/warpkit)](https://pypi.org/project/warpkit/)
+[![docker](https://ghcr-badge.egpl.dev/vanandrew/warpkit/latest_tag?trim=major&label=ghcr&nbsp;latest)](https://github.com/vanandrew/warpkit/pkgs/container/warpkit)
 
 A python library for neuroimaging transforms
 
