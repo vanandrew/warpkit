@@ -1,5 +1,7 @@
 # warpkit
 ![Build](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)
+![PyPI](https://img.shields.io/pypi/v/warpkit)
+![docker](https://ghcr-badge.egpl.dev/vanandrew/warpkit/latest_tag?trim=major&label=ghcr&nbsp;latest)
 
 A python library for neuroimaging transforms
 
@@ -12,10 +14,70 @@ See below for usage details.
 
 ## Installation
 
-### Installing through conda (recommended)
+### Julia
 
-The easiest way to install `warpkit` is through a `conda` environment. Currently, `warpkit` is not uploaded to any
-`conda` channels, so you will need to build it from source.
+`warpkit` requires `julia` installed on your system ensure that you have the `julia` executable in your path, and
+the `julia` libraries correctly setup in your `ld.so.conf`. See the below instructions for both Linux and macOS.
+
+#### Linux
+
+If you installed julia via a package manager, library configuration should be done for you (most of the time) already.
+However, if you installed Julia manually, you may need to tell `ldconfig` where the julia libraries are. For example,
+on debian based systems you can do this with:
+
+```bash
+# /path to julia installation (the lib folder will have libjulia.so)
+echo /path/to/julia/lib > /etc/ld.so.conf.d/julia.conf
+ldconfig
+```
+
+If you have done this correctly, you should see `libjulia.so` in your ldconfig:
+
+```bash
+ldconfig -p | grep julia                                                                                        
+	libjulia.so.1 (libc6,x86-64) => /usr/lib/libjulia.so.1
+	libjulia.so (libc6,x86-64) => /usr/lib/libjulia.so
+```
+
+The above may require root privileges. The alternative to the above is to set the `LD_LIBRARY_PATH` environment
+variable to the path of the julia libraries.
+
+```bash
+# /path to julia installation (the lib folder will have libjulia.so)
+export LD_LIBRARY_PATH=/path/to/julia/lib:$LD_LIBRARY_PATH
+```
+
+Note however, that you must type the above each time you open a new terminal. To make this permanent, you can add the
+above line to your shell's profile file.
+
+#### macOS
+
+If you installed julia through `brew`, this should be done for you already.
+
+However, if you get an error saying that `libjulia` cannot be found, you may need to add the julia libraries via your
+`DYLD_LIBRARY_PATH` environment variable. For example, if you installed julia to `/Applications/Julia-1.6.app`, you
+would add the following to your shell's profile file:
+
+```bash
+export DYLD_LIBRARY_PATH=/Applications/Julia-1.6.app/Contents/Resources/julia/lib:$DYLD_LIBRARY_PATH
+```
+
+### Installing through pip
+
+Assuming you have `julia` installed and configured correctly, you can install `warpkit` through `pip`:
+
+```bash
+pip install warpkit
+```
+
+If you encounter any errors during the installation process, please report them to the issue tracker with the logs
+reported from `pip install warpkit -v`.
+
+### Installing through conda
+
+Another way to install `warpkit` is through a `conda` environment. Currently, `warpkit` is not uploaded to any
+`conda` channels, so you will need to build it from source (Looking for help on this
+[issue](https://github.com/vanandrew/warpkit/issues/6)).
 
 > [!NOTE]
 > **For advanced users only**
@@ -54,45 +116,27 @@ After installing and configuring everything, you must type `micromamba activate 
 to get back into the `conda` environment to use `warpkit`. To make this permanent, you can add the above line to your
 shell's profile file.
 
-### Installing through pip
+### Installing through docker
 
-To install, clone this repo and run the following in the repo directory. Due to the current developmental nature of this
-package, I highly recommend installing it in editable mode (with the strict option, see
+If you are familiar with `docker`, you can also install `warpkit` through a `docker` container.
+
+```bash
+docker run -it --rm ghcr.io/vanandrew/warpkit:latest
+```
+
+Note that the default entrypoint is the `medic` CLI script, so you can run `medic --help` to get the help message.
+
+### Building and installing from source
+
+To build and install from source, clone this repo and run the following in the repo directory.
+I highly recommend installing it in editable mode (with the strict option, see
 [here](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#strict-editable-installs)):
 
 ```
 pip install -e ./[dev] -v --config-settings editable_mode=strict
 ```
-You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. For the Julia install,
-ensure that you have the `julia` executable in your path, and the `julia` libraries correctly setup in your
-`ld.so.conf`. If you installed julia via a package manager, this should be done for you (most of the time) already.
-However, if you installed Julia manually, you may need to tell `ldconfig` where the julia libraries are. For example,
-on debian based systems you can do this with:
-
-```bash
-# /path to julia installation (the lib folder will have libjulia.so)
-echo /path/to/julia/lib > /etc/ld.so.conf.d/julia.conf
-ldconfig
-```
-
-If you have done this correctly, you should see `libjulia.so` in your ldconfig:
-
-```bash
-ldconfig -p | grep julia                                                                                        
-	libjulia.so.1 (libc6,x86-64) => /usr/lib/libjulia.so.1
-	libjulia.so (libc6,x86-64) => /usr/lib/libjulia.so
-```
-
-The above may require root privileges. The alternative to the above is to set the `LD_LIBRARY_PATH` environment
-variable to the path of the julia libraries.
-
-```bash
-# /path to julia installation (the lib folder will have libjulia.so)
-export LD_LIBRARY_PATH=/path/to/julia/lib:$LD_LIBRARY_PATH
-```
-
-Note however, that you must type the above each time you open a new terminal. To make this permanent, you can add the
-above line to your shell's profile file.
+You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. See the [Julia](#julia)
+section for more details.
 
 The build process uses CMake to build the C++/Python Extension. If you encounter an error during the build process,
 please report the full logs of the build process using the `-v` flag to the `pip` command above. 

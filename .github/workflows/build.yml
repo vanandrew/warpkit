@@ -15,7 +15,7 @@ jobs:
   wheels-build:
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-12]
+        os: [ubuntu-latest, macos-latest]
         python-versions: [
           {version: '3.8', glob: cp38*},
           {version: '3.9', glob: cp39*},
@@ -129,7 +129,7 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/vanandrew/warpkit:${{ github.ref_name }}
+          tags: ghcr.io/vanandrew/warpkit:latest,ghcr.io/vanandrew/warpkit:${{ github.ref_name }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
