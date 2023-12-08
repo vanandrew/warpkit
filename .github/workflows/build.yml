@@ -107,12 +107,20 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       packages: write
-    if: github.event_name == 'release' && github.event.action == 'published'
     environment:
       name: release
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/vanandrew/warpkit            
+          tags: |
+            type=semver,pattern={{raw}}
+            type=raw,value=latest
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -129,7 +137,8 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/vanandrew/warpkit:latest,ghcr.io/vanandrew/warpkit:${{ github.ref_name }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
