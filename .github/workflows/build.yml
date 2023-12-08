@@ -87,6 +87,7 @@ jobs:
           path: dist/*.tar.gz
   py-publish:
     name: Publish to PyPI
+    if: github.event_name == 'release' && github.event.action == 'published'
     needs: [wheels-build, sdist-build]
     runs-on: ubuntu-22.04
     environment:
@@ -94,7 +95,6 @@ jobs:
       url: https://pypi.org/project/warpkit/
     permissions:
       id-token: write
-    if: github.event_name == 'release' && github.event.action == 'published'
     steps:
     - uses: actions/download-artifact@v3
       with:
@@ -103,6 +103,7 @@ jobs:
     - uses: pypa/gh-action-pypi-publish@release/v1
   docker-build:
     name: Build Docker image
+    if: github.event_name == 'release' && github.event.action == 'published'
     needs: [wheels-build, sdist-build]
     runs-on: ubuntu-22.04
     permissions:

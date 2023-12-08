@@ -7,7 +7,7 @@ authors = [{ name = "Andrew Van", email = "vanandrew@wustl.edu" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
 urls = { github = "https://github.com/vanandrew/warpkit" }
-version = "0.1.0"
+version = "0.1.1"
 dynamic = ["scripts"]
 dependencies = [
   "nibabel >= 4.0.2",
