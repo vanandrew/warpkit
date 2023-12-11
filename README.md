@@ -2,6 +2,7 @@
 [![Build](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)](https://github.com/vanandrew/warpkit/actions)
 [![PyPI](https://img.shields.io/pypi/v/warpkit)](https://pypi.org/project/warpkit/)
 [![docker](https://ghcr-badge.egpl.dev/vanandrew/warpkit/latest_tag?trim=major&label=ghcr&nbsp;latest)](https://github.com/vanandrew/warpkit/pkgs/container/warpkit)
+[![codecov](https://codecov.io/gh/vanandrew/warpkit/graph/badge.svg?token=S6ZZKOAF8V)](https://codecov.io/gh/vanandrew/warpkit)
 
 A python library for neuroimaging transforms
 
