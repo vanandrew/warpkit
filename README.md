@@ -161,7 +161,7 @@ An example of how to call MEDIC from python is provided below:
 ```python
 import nibabel as nib
 from warpkit.distortion import medic
-from warpkit.utilities import displacement_map_to_warp
+from warpkit.utilities import displacement_map_to_field
 
 # load phase and magnitude images into lists
 # each element in list is a different echo
