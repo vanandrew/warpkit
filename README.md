@@ -17,13 +17,18 @@ See below for usage details.
 
 ### Julia
 
-`warpkit` requires `julia` installed on your system ensure that you have the `julia` executable in your path, and
-the `julia` libraries correctly setup in your `ld.so.conf`. See the below instructions for both Linux and macOS.
+`warpkit` requires `julia` installed on your system. Before proceeding, please ensure that you have the `julia` executable
+on your path, and that the `julia` libraries are correctly setup in your `ld.so.conf` (or relevant library path variable).
+See the below instructions for both Linux and macOS.
+
+Alternatively, you can install `warpkit` through the provided `conda` installer (need testers + feedback, if you choose this
+method, please create an issue if you encounter issues). This obviates the need to install `julia` since conda is setup
+to install it for you automatically.
 
 #### Linux
 
-If you installed julia via a package manager, library configuration should be done for you (most of the time) already.
-However, if you installed Julia manually, you may need to tell `ldconfig` where the julia libraries are. For example,
+If you installed `julia` via a package manager, library configuration should be done for you (most of the time) already.
+However, if you installed `julia` manually, you may need to tell `ldconfig` where the `julia` libraries are. For example,
 on debian based systems you can do this with:
 
 ```bash
@@ -40,8 +45,8 @@ ldconfig -p | grep julia
 	libjulia.so (libc6,x86-64) => /usr/lib/libjulia.so
 ```
 
-The above may require root privileges. The alternative to the above is to set the `LD_LIBRARY_PATH` environment
-variable to the path of the julia libraries.
+Hoever, the above may require root privileges, so the alternative to the above is to set the `LD_LIBRARY_PATH` environment
+variable to the path of the `julia` libraries.
 
 ```bash
 # /path to julia installation (the lib folder will have libjulia.so)
@@ -49,11 +54,11 @@ export LD_LIBRARY_PATH=/path/to/julia/lib:$LD_LIBRARY_PATH
 ```
 
 Note however, that you must type the above each time you open a new terminal. To make this permanent, you can add the
-above line to your shell's profile file.
+above line to your shell's profile file (e.g. `.bashrc` or `.zshrc`.
 
 #### macOS
 
-If you installed julia through `brew`, this should be done for you already.
+If you installed `julia` through `brew`, this should be done for you already.
 
 However, if you get an error saying that `libjulia` cannot be found, you may need to add the julia libraries via your
 `DYLD_LIBRARY_PATH` environment variable. For example, if you installed julia to `/Applications/Julia-1.6.app`, you
@@ -63,7 +68,7 @@ would add the following to your shell's profile file:
 export DYLD_LIBRARY_PATH=/Applications/Julia-1.6.app/Contents/Resources/julia/lib:$DYLD_LIBRARY_PATH
 ```
 
-### Installing through pip
+### Installing `warpkit` through pip
 
 Assuming you have `julia` installed and configured correctly, you can install `warpkit` through `pip`:
 
@@ -135,6 +140,8 @@ I highly recommend installing it in editable mode (with the strict option, see
 
 ```
 pip install -e ./[dev] -v --config-settings editable_mode=strict
+# or for zsh (you need to escape the brackets)
+pip install -e ./\[dev\] -v --config-settings editable_mode=strict
 ```
 You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. See the [Julia](#julia)
 section for more details.
