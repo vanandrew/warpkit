@@ -1,9 +1,7 @@
 import numpy as np
 from numpy.testing import assert_allclose
 
-from warpkit.utilities import *
-
-from . import *
+from warpkit.utilities import corr2_coeff
 
 
 def test_corr2_coeff():
