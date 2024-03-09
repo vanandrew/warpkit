@@ -100,10 +100,13 @@ def medic(
         )
     except IndexError as e:
         raise IndexError(
-            "An IndexError was encountered while unwrapping phase images. This tends to happen if "
-            "you have noise frames left in your data. You should remove these frames and try again. "
-            "Though, if you already have removed the noise frames from your data, then I'm out of ideas... Sorry! But,"
-            " I'm just a error message that was written to anticipate a common error after all, not a psychic! "
+            "An IndexError was encountered while unwrapping phase images. "
+            "This tends to happen if you have noise frames left in your data. "
+            "You should remove these frames and try again. "
+            "Though, if you already have removed the noise frames from your data, "
+            "then I'm out of ideas... Sorry! "
+            "But, I'm just a error message that was written to anticipate a common "
+            "error after all, not a psychic! "
             ":("
         ) from e
 

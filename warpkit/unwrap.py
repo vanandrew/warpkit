@@ -385,27 +385,24 @@ def compute_field_map(
     frame_num: int,
 ) -> npt.NDArray:
     """Function for computing field map for a given frame
-    def reject_outliers(data, m = 2.):
-        d = np.abs(data - np.median(data))
-        mdev = np.median(d)
-        s = d/mdev if mdev else np.zeros(len(d))
-        return data[s<m]
-        Parameters
-        ----------
-        unwrapped_mat: np.ndarray
-            Array of unwrapped phase data for a given frame
-        mag: List[nib.NiftiImage]
-            List of magnitudes
-        num_echos: int
-            Number of echos
-        TEs_mat: npt.NDArray
-            Echo times in a 2d matrix
-        frame_num: int
-            Frame number
 
-        Returns
-        -------
-        B0: np.ndarray
+    Parameters
+    ----------
+    unwrapped_mat: np.ndarray
+        Array of unwrapped phase data for a given frame
+    mag: List[nib.NiftiImage]
+        List of magnitudes
+    num_echos: int
+        Number of echos
+    TEs_mat: npt.NDArray
+        Echo times in a 2d matrix
+    frame_num: int
+        Frame number
+
+    Returns
+    -------
+    B0: np.ndarray
+        Field map in Hertz.
     """
     logging.info(f"Computing field map for frame: {frame_num}")
     unwrapped_mat = unwrapped_mat.reshape(-1, num_echos).T
