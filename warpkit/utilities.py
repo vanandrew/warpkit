@@ -1,28 +1,29 @@
-import sys
 import logging
+import sys
+from pathlib import Path
+from typing import Any, Tuple, cast
+
+import nibabel as nib
 import numpy as np
 import numpy.typing as npt
-import nibabel as nib
-from pathlib import Path
-from transforms3d.affines import decompose44
 from scipy import signal
-from typing import Any, cast, Tuple
+from scipy.ndimage import (binary_dilation, binary_erosion, binary_fill_holes,
+                           generate_binary_structure)
 from skimage.filters import threshold_otsu  # type: ignore
 from skimage.measure import label, regionprops
-from scipy.ndimage import (
-    generate_binary_structure,
-    binary_erosion,
-    binary_dilation,
-    binary_fill_holes,
-)
-from . import (
-    invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
-    invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
-    resample as resample_cpp,  # type: ignore
-    compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
-    compute_jacobian_determinant as compute_jacobian_determinant_cpp,  # type: ignore
-)
+from transforms3d.affines import decompose44
 
+from . import \
+    compute_hausdorff_distance as \
+    compute_hausdorff_distance_cpp  # type: ignore
+from . import \
+    compute_jacobian_determinant as \
+    compute_jacobian_determinant_cpp  # type: ignore
+from . import \
+    invert_displacement_field as invert_displacement_field_cpp  # type: ignore
+from . import \
+    invert_displacement_map as invert_displacement_map_cpp  # type: ignore
+from . import resample as resample_cpp  # type: ignore
 
 # map axis names to axis codes
 AXIS_MAP = {"x": 0, "y": 1, "z": 2, "x-": 0, "y-": 1, "z-": 2, "i": 0, "j": 1, "k": 2, "i-": 0, "j-": 1, "k-": 2}

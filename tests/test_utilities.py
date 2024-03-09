@@ -1,6 +1,8 @@
-from warpkit.utilities import *
-from numpy.testing import assert_allclose
 import numpy as np
+from numpy.testing import assert_allclose
+
+from warpkit.utilities import *
+
 from . import *
 
 

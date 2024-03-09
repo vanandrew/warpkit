@@ -1,7 +1,7 @@
-from pytest import fixture
-from bids import BIDSLayout
 from pathlib import Path
 
+from bids import BIDSLayout
+from pytest import fixture
 
 # get this directory
 THISDIR = Path(__file__).parent
