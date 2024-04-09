@@ -33,11 +33,11 @@ class JuliaContext {
         jl_value_t* ntuple3[3] = {reinterpret_cast<jl_value_t*>(jl_long_type),
                                   reinterpret_cast<jl_value_t*>(jl_long_type),
                                   reinterpret_cast<jl_value_t*>(jl_long_type)};
-        jl_ntuple3 = jl_apply_tuple_type_v(ntuple3, 3);
+        jl_ntuple3 = reinterpret_cast<jl_tupletype_t*>(jl_apply_tuple_type_v(ntuple3, 3));
         jl_value_t* ntuple4[4] = {
             reinterpret_cast<jl_value_t*>(jl_long_type), reinterpret_cast<jl_value_t*>(jl_long_type),
             reinterpret_cast<jl_value_t*>(jl_long_type), reinterpret_cast<jl_value_t*>(jl_long_type)};
-        jl_ntuple4 = jl_apply_tuple_type_v(ntuple4, 4);
+        jl_ntuple4 = reinterpret_cast<jl_tupletype_t*>(jl_apply_tuple_type_v(ntuple4, 4));
         jl_array3d_bool = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_bool_type), 3);
         if (std::is_same<T, double>::value)
             jl_vector = jl_apply_array_type(reinterpret_cast<jl_value_t*>(jl_float64_type), 1);
