@@ -393,11 +393,7 @@ def compute_field_map(
     frame_num: int,
 ) -> npt.NDArray:
     """Function for computing field map for a given frame
-    def reject_outliers(data, m = 2.):
-        d = np.abs(data - np.median(data))
-        mdev = np.median(d)
-        s = d/mdev if mdev else np.zeros(len(d))
-        return data[s<m]
+
         Parameters
         ----------
         unwrapped_mat: np.ndarray
