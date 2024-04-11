@@ -21,6 +21,7 @@ FMAP_AMBIGUIOUS_HEURISTIC = 0.5
 
 
 def reject_outliers(data, m=2.0):
+    """Reject outliers from data."""
     d = np.abs(data - np.median(data))
     mdev = np.median(d)
     s = d / mdev if mdev else np.zeros(len(d))
@@ -28,6 +29,26 @@ def reject_outliers(data, m=2.0):
 
 
 def get_dual_echo_fieldmap(phases, TEs, mags, mask):
+    """Compute the fieldmap from the first two echoes.
+
+    Parameters
+    ----------
+    phases : np.ndarray
+        Array of unwrapped phase data with shape (x, y, z, echo)
+    TEs : np.ndarray
+        Echo times associated with each phase
+    mags : np.ndarray
+        Array of magnitude data with shape (x, y, z, echo)
+    mask : np.ndarray
+        Mask of voxels to use for unwrapping
+
+    Returns
+    -------
+    np.ndarray of shape (x, y, z)
+        Fieldmap in Hz
+    np.ndarray of shape (x, y, z, echo)
+        Unwrapped phases
+    """
     JULIA = JuliaContext()
     # unwrap the phases
     unwrapped_phases = JULIA.romeo_unwrap4D(  # type: ignore
@@ -55,10 +76,45 @@ def mcpc_3d_s(
     TE0: npt.NDArray[np.float32],
     TE1: npt.NDArray[np.float32],
     mask: npt.NDArray[np.bool_],
-    ref: Optional[npt.NDArray[np.float32]] = None,
-    ref_mask: Optional[npt.NDArray[np.bool_]] = None,
     wrap_limit: bool = False,
+    debug: bool = False,
+    img: Union[nib.Nifti1Image, None] = None,
+    idx: Union[int, None] = None,
 ):
+    """Apply the MCPC-3D-S algorithm to compute the phase offset.
+
+    Parameters
+    ----------
+    mag0 : npt.NDArray[np.float32]
+        Magnitude image for the first echo
+    mag1 : npt.NDArray[np.float32]
+        Magnitude image for the second echo
+    phase0 : npt.NDArray[np.float32]
+        Phase image for the first echo
+    phase1 : npt.NDArray[np.float32]
+        Phase image for the second echo
+    TE0 : npt.NDArray[np.float32]
+        Echo time for the first echo
+    TE1 : npt.NDArray[np.float32]
+        Echo time for the second echo
+    mask : npt.NDArray[np.bool_]
+        Mask of voxels to use for unwrapping
+    wrap_limit : bool, optional
+        Limit the phase wrapping, by default False
+    debug : bool, optional
+        Debug mode, by default False
+    img : Union[nib.Nifti1Image, None], optional
+        Image for saving debug images, by default None
+    idx : Union[int, None], optional
+        Index of the frame being processed for verbosity, by default None
+
+    Returns
+    -------
+    npt.NDArray[np.float32]
+        Phase offset in radians
+    npt.NDArray[np.float32]
+        Unwrapped difference in phase
+    """
     JULIA = JuliaContext()
     signal_diff = mag0 * mag1 * np.exp(1j * (phase1 - phase0))
     mag_diff = np.abs(signal_diff)
@@ -76,15 +132,21 @@ def mcpc_3d_s(
     TEs = np.array([TE0, TE1])
     all_TEs = np.array([0.0, TE0, TE1])
     proposed_offset = np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0)))))
+    if debug:
+        nib.Nifti1Image(unwrapped_diff, img.affine, img.header).to_filename(f"mcpc3d_s_unwrapped_diff_{idx}.nii.gz")
+        nib.Nifti1Image(voxel_mask, img.affine, img.header).to_filename(f"mcpc3d_s_voxel_mask_{idx}.nii.gz")
+        nib.Nifti1Image(proposed_offset, img.affine, img.header).to_filename(f"mcpc3d_s_proposed_offset_{idx}.nii.gz")
 
     # get the new phases
     proposed_phases = phases - proposed_offset[..., np.newaxis]
 
     # compute the fieldmap
     proposed_fieldmap, proposed_unwrapped_phases = get_dual_echo_fieldmap(proposed_phases, TEs, mags, mask)
+    if debug:
+        nib.Nifti1Image(proposed_fieldmap, img.affine, img.header).to_filename(f"mcpc3d_s_proposed_fieldmap_{idx}.nii.gz")
 
-    # check if the propossed fieldmap is below 10
-    # print(f"proposed_fieldmap: {proposed_fieldmap[voxel_mask].mean()}")
+    # check if the proposed fieldmap is below 10
+    logging.info(f"proposed_fieldmap: {proposed_fieldmap[voxel_mask].mean()}")
     if proposed_fieldmap[voxel_mask].mean() < -10:
         unwrapped_diff += 2 * np.pi
     # check if the propossed fieldmap is between -10 and 0
@@ -151,9 +213,10 @@ def unwrap_phase(
     automask_dilation: int = 3,
     idx: Union[int, None] = None,
     wrap_limit: bool = False,
+    img: Union[nib.Nifti1Image, None] = None,
     debug: bool = False,
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int8]]:
-    """Unwraps the phase for a single frame of ME-EPI
+    """Unwraps the phase for a single frame of ME-EPI data.
 
     Parameters
     ----------
@@ -187,13 +250,13 @@ def unwrap_phase(
 
     # if automask is True, generate a mask for the frame, instead of using mask_data
     if automask:
-        # get the index with the shortest echo time
-        echo_idx = np.argmin(TEs)
-        mag_shortest = mag_data[..., echo_idx]
         # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
         vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))  # type: ignore
+        if debug:
+            nib.Nifti1Image(vq, img.affine, img.header).to_filename(f"vq{idx}.nii")
+
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
         vq_mask = cast(npt.NDArray[np.bool_], binary_fill_holes(vq_mask, strel))
@@ -233,12 +296,16 @@ def unwrap_phase(
         TEs[1],
         mask_data,
         wrap_limit=wrap_limit,
+        debug=debug,
+        img=img,
+        idx=idx,
     )
     if debug:
         global affine
         global header
-        nib.Nifti1Image(phase_offset, affine, header).to_filename(f"phase_offset{idx}.nii")
-        nib.Nifti1Image(unwrapped_diff, affine, header).to_filename(f"ud{idx}.nii")
+        nib.Nifti1Image(phase_offset, img.affine, img.header).to_filename(f"phase_offset{idx}.nii")
+        nib.Nifti1Image(unwrapped_diff, img.affine, img.header).to_filename(f"ud{idx}.nii")
+
     # remove phase offset from data
     phase_data -= phase_offset[..., np.newaxis]
 
@@ -311,7 +378,8 @@ def check_temporal_consistency_corr(
     Parameters
     ----------
     unwrapped_data : npt.NDArray
-        unwrapped phase data, where last column is time, and second to last column are the echoes
+        unwrapped phase data, where last column is time, and second to last column are the echoes.
+        This array will be modified in place by this function.
     TEs : npt.NDArray
         echo times
     mag : List[nib.Nifti1Image]
@@ -321,7 +389,6 @@ def check_temporal_consistency_corr(
     threshold : float
         threshold for correlation similarity. By default 0.98
     """
-
     logging.info(f"Computing temporal consistency check for frame: {t}")
 
     # generate brain mask (with 1 voxel erosion)
@@ -384,24 +451,24 @@ def compute_field_map(
     TEs_mat: npt.NDArray,
     frame_num: int,
 ) -> npt.NDArray:
-    """Function for computing field map for a given frame
+    """Function for computing field map for a given frame.
 
     Parameters
     ----------
-    unwrapped_mat: np.ndarray
+    unwrapped_mat : np.ndarray of shape (x, y, z, num_echos)
         Array of unwrapped phase data for a given frame
-    mag: List[nib.NiftiImage]
+    mag : List[nib.NiftiImage] of shape (x, y, z, num_echos)
         List of magnitudes
-    num_echos: int
+    num_echos : int
         Number of echos
-    TEs_mat: npt.NDArray
+    TEs_mat : npt.NDArray of shape (num_echos, 1)
         Echo times in a 2d matrix
-    frame_num: int
+    frame_num : int
         Frame number
 
     Returns
     -------
-    B0: np.ndarray
+    B0 : np.ndarray of shape (x, y, z)
         Field map in Hertz.
     """
     logging.info(f"Computing field map for frame: {frame_num}")
@@ -414,22 +481,22 @@ def compute_field_map(
 
 
 def compute_offset(echo_ind: int, W: npt.NDArray, X: npt.NDArray, Y: npt.NDArray) -> int:
-    """Method for computing the global mode offset for echoes > 1
+    """Method for computing the global mode offset for echoes > 1.
 
     Parameters
     ----------
-    echo_ind: int
+    echo_ind : int
         Echo index
-    W: npt.NDArray
+    W : npt.NDArray of shape (num_echos, n_voxels)
         Weights
-    X: npt.NDArray
+    X : npt.NDArray of shape (num_echos, 1)
         TEs in 2d matrix
-    Y: npt.NDArray
+    Y : npt.NDArray of shape (num_echos, n_voxels)
         Masked unwrapped data weighted by magnitude
 
     Returns
     -------
-    best_offset: int
+    best_offset : int
     """
     # fit the model to the up to previous echo
     coefficients, _ = weighted_regression(X[:echo_ind], Y[:echo_ind], W[:echo_ind])
@@ -458,49 +525,80 @@ def svd_filtering(
     border_filt: Tuple[int, int],
     svd_filt: int,
 ):
+    """Apply an SVD-based filter to a 4D field map.
+
+    Parameters
+    ----------
+    field_maps : np.ndarray of shape (x, y, z, n_frames)
+        4D field map array.
+        This array will be modified in place.
+    new_masks : np.ndarray of shape (x, y, z, n_frames)
+        Brain mask array. May be binary or may have 0s, 1s, and 2s.
+    voxel_size : float
+        Voxel size along the first dimension of the phase image, in millimeters.
+        Does this assume isotropic voxels?
+    n_frames : int
+        Number of volumes in the run.
+    border_filt : tuple of (int, int)
+        Border filter.
+    svd_filt : int
+        SVD filter size.
+    """
     if new_masks.max() == 2 and n_frames >= np.max(border_filt):
         logging.info("Performing spatial/temporal filtering of border voxels...")
         smoothed_field_maps = np.zeros(field_maps.shape, dtype=np.float32)
+
         # smooth by 4 mm kernel
         sigma = (4 / voxel_size) / 2.355
-        for i in range(field_maps.shape[-1]):
-            smoothed_field_maps[..., i] = gaussian_filter(field_maps[..., i], sigma=sigma)
+        for i_vol in range(field_maps.shape[-1]):
+            smoothed_field_maps[..., i_vol] = gaussian_filter(field_maps[..., i_vol], sigma=sigma)
+
         # compute the union of all the masks
         union_mask = np.sum(new_masks, axis=-1) > 0
+
         # do temporal filtering of border voxels with SVD
         U, S, VT = np.linalg.svd(smoothed_field_maps[union_mask], full_matrices=False)
+
         # first pass of SVD filtering
         recon = np.dot(U[:, : border_filt[0]] * S[: border_filt[0]], VT[: border_filt[0], :])
         recon_img = np.zeros(field_maps.shape, dtype=np.float32)
         recon_img[union_mask] = recon
+
         # set the border voxels in the field map to the recon values
-        for i in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
+        for i_vol in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i_vol] == 1, i_vol] = recon_img[new_masks[..., i_vol] == 1, i_vol]
+
         # do second SVD filtering pass
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
+
         # second pass of SVD filtering
         recon = np.dot(U[:, : border_filt[1]] * S[: border_filt[1]], VT[: border_filt[1], :])
         recon_img = np.zeros(field_maps.shape, dtype=np.float32)
         recon_img[union_mask] = recon
+
         # set the border voxels in the field map to the recon values
-        for i in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i] == 1, i] = recon_img[new_masks[..., i] == 1, i]
+        for i_vol in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i_vol] == 1, i_vol] = recon_img[new_masks[..., i_vol] == 1, i]
 
     # use svd filter to denoise the field maps
     if n_frames >= svd_filt:
         logging.info("Denoising field maps with SVD...")
         logging.info(f"Keeping {svd_filt} components...")
+
         # compute the union of all the masks
         union_mask = np.sum(new_masks, axis=-1) > 0
+
         # compute SVD
         U, S, VT = np.linalg.svd(field_maps[union_mask], full_matrices=False)
+
         # only keep the first n_components components
         recon = np.dot(U[:, :svd_filt] * S[:svd_filt], VT[:svd_filt, :])
         recon_img = np.zeros(field_maps.shape, dtype=np.float32)
         recon_img[union_mask] = recon
+
         # set the voxel values in the mask to the recon values
-        for i in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i] > 0, i] = recon_img[new_masks[..., i] > 0, i]
+        for i_vol in range(field_maps.shape[-1]):
+            field_maps[new_masks[..., i_vol] > 0, i_vol] = recon_img[new_masks[..., i_vol] > 0, i_vol]
 
 
 def unwrap_and_compute_field_maps(
@@ -554,6 +652,8 @@ def unwrap_and_compute_field_maps(
     nib.Nifti1Image
         Field maps in Hz
     """
+    img = mag[0]
+
     # check TEs if < 0.1, tell user they probably need to convert to ms
     if np.min(TEs) < 0.1:
         logging.warning(
@@ -622,7 +722,7 @@ def unwrap_and_compute_field_maps(
             mask.dataobj = np.ones(phase[0].shape)
 
     # write a function to iterate over each frame for phase unwrapping
-    def phase_iterator(phase, mag, TEs, mask, frames, automask, automask_dilation):
+    def phase_iterator(phase, mag, TEs, mask, frames, automask, automask_dilation, img):
         # note that I separate out idx and frame_idx for the case when the user wants to process a subset of
         # non-contiguous frames
         # this will always reindex the frames to be contiguous however
@@ -654,7 +754,7 @@ def unwrap_and_compute_field_maps(
             )
             mask_data = cast(npt.NDArray[np.bool_], mask.dataobj[..., frame_idx].astype(bool))
             TEs = TEs.astype(np.float32)
-            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx, wrap_limit, debug)
+            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx, wrap_limit, debug, img)
 
     def save_unwrapped_and_mask(idx, result):
         # get the unwrapped image
@@ -667,7 +767,7 @@ def unwrap_and_compute_field_maps(
         ncpus=n_cpus,
         type="process",
         fn=unwrap_phase,
-        iterator=phase_iterator(phase, mag, TEs, mask, frames, automask, border_size),
+        iterator=phase_iterator(phase, mag, TEs, mask, frames, automask, border_size, img),
         post_fn=save_unwrapped_and_mask,
     )
 
