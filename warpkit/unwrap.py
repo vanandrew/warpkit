@@ -1,6 +1,6 @@
 import logging
 from types import SimpleNamespace
-from typing import List, Optional, Tuple, Union, cast
+from typing import List, Tuple, Union, cast
 
 import nibabel as nib
 import numpy as np
