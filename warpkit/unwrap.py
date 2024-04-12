@@ -207,7 +207,6 @@ def unwrap_phase(
     automask_dilation: int = 3,
     idx: Union[int, None] = None,
     wrap_limit: bool = False,
-    img: Union[nib.Nifti1Image, None] = None,
     debug: bool = False,
 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int8]]:
     """Unwraps the phase for a single frame of ME-EPI data.
@@ -292,8 +291,8 @@ def unwrap_phase(
     if debug:
         global affine
         global header
-        nib.Nifti1Image(phase_offset, img.affine, img.header).to_filename(f"phase_offset{idx}.nii")
-        nib.Nifti1Image(unwrapped_diff, img.affine, img.header).to_filename(f"ud{idx}.nii")
+        nib.Nifti1Image(phase_offset, affine, header).to_filename(f"phase_offset{idx}.nii")
+        nib.Nifti1Image(unwrapped_diff, affine, header).to_filename(f"ud{idx}.nii")
 
     # remove phase offset from data
     phase_data -= phase_offset[..., np.newaxis]
@@ -641,8 +640,6 @@ def unwrap_and_compute_field_maps(
     nib.Nifti1Image
         Field maps in Hz
     """
-    img = mag[0]
-
     # check TEs if < 0.1, tell user they probably need to convert to ms
     if np.min(TEs) < 0.1:
         logging.warning(
@@ -711,7 +708,7 @@ def unwrap_and_compute_field_maps(
             mask.dataobj = np.ones(phase[0].shape)
 
     # write a function to iterate over each frame for phase unwrapping
-    def phase_iterator(phase, mag, TEs, mask, frames, automask, automask_dilation, img):
+    def phase_iterator(phase, mag, TEs, mask, frames, automask, automask_dilation):
         # note that I separate out idx and frame_idx for the case when the user wants to process a subset of
         # non-contiguous frames
         # this will always reindex the frames to be contiguous however
@@ -743,7 +740,7 @@ def unwrap_and_compute_field_maps(
             )
             mask_data = cast(npt.NDArray[np.bool_], mask.dataobj[..., frame_idx].astype(bool))
             TEs = TEs.astype(np.float32)
-            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx, wrap_limit, debug, img)
+            yield (phase_data, mag_data, TEs, mask_data, automask, automask_dilation, idx, wrap_limit, debug)
 
     def save_unwrapped_and_mask(idx, result):
         # get the unwrapped image
@@ -756,7 +753,7 @@ def unwrap_and_compute_field_maps(
         ncpus=n_cpus,
         type="process",
         fn=unwrap_phase,
-        iterator=phase_iterator(phase, mag, TEs, mask, frames, automask, border_size, img),
+        iterator=phase_iterator(phase, mag, TEs, mask, frames, automask, border_size),
         post_fn=save_unwrapped_and_mask,
     )
 
