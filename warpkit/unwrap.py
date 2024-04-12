@@ -326,15 +326,15 @@ def unwrap_phase(
     W = mag_data[brain_mask, :].T
 
     # loop over each index past 1st echo
-    for i in range(1, TEs.shape[0]):
+    for i_echo in range(1, TEs.shape[0]):
         # get matrix with the masked unwrapped data (weighted by magnitude)
         Y = unwrapped[brain_mask, :].T
 
         # Compute offset through linear regression method
-        best_offset = compute_offset(i, W, X, Y)
+        best_offset = compute_offset(i_echo, W, X, Y)
 
         # apply the offset
-        unwrapped[..., i] += 2 * np.pi * best_offset
+        unwrapped[..., i_echo] += 2 * np.pi * best_offset
 
     # set anything outside of mask_data to 0
     unwrapped[~mask_data] = 0
@@ -566,7 +566,7 @@ def svd_filtering(
 
         # set the border voxels in the field map to the recon values
         for i_vol in range(field_maps.shape[-1]):
-            field_maps[new_masks[..., i_vol] == 1, i_vol] = recon_img[new_masks[..., i_vol] == 1, i]
+            field_maps[new_masks[..., i_vol] == 1, i_vol] = recon_img[new_masks[..., i_vol] == 1, i_vol]
 
     # use svd filter to denoise the field maps
     if n_frames >= svd_filt:
@@ -780,8 +780,13 @@ def unwrap_and_compute_field_maps(
     # Save out unwrapped phase for debugging
     if debug:
         logging.info("Saving unwrapped phase images...")
-        for i in range(unwrapped.shape[-2]):
-            nib.Nifti1Image(unwrapped[:, :, :, i, :], phase[0].affine, phase[0].header).to_filename(f"phase{i}.nii")
+        for i_vol in range(unwrapped.shape[-2]):
+            nib.Nifti1Image(
+                unwrapped[:, :, :, i_vol, :],
+                phase[0].affine,
+                phase[0].header,
+            ).to_filename(f"phase{i_vol}.nii")
+
         logging.info("Saving masks..")
         nib.Nifti1Image(new_masks, phase[0].affine, phase[0].header).to_filename("masks.nii")
 

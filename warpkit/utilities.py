@@ -439,13 +439,18 @@ def invert_displacement_maps(
     # invert maps
     new_data = np.zeros(data.shape, dtype=np.float32)
     logging.info("Inverting displacement maps...")
-    for i in range(data.shape[-1]):
-        logging.info(f"Processing frame: {i}")
+    for i_vol in range(data.shape[-1]):
+        logging.info(f"Processing frame: {i_vol}")
         # pad array with edge values so edge effects of inverse are avoided
-        mod_data = np.pad(data[..., i], pad_width=1)
+        mod_data = np.pad(data[..., i_vol], pad_width=1)
 
-        new_data[..., i] = invert_displacement_map_cpp(
-            mod_data, translations, rotations, zooms, axis=axis_code, verbose=verbose
+        new_data[..., i_vol] = invert_displacement_map_cpp(
+            mod_data,
+            translations,
+            rotations,
+            zooms,
+            axis=axis_code,
+            verbose=verbose,
         )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
 
     # make new image in original orientation
