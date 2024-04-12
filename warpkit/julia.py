@@ -1,5 +1,6 @@
 import logging
 import os
+
 from . import JuliaContext as _JuliaContext  # type: ignore
 
 # There is a known bug where Julia will crash if you start a JuliaContext in

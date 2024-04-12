@@ -1,9 +1,12 @@
 import argparse
 import json
+
 import nibabel as nib
-from . import epilog
+
 from warpkit.distortion import medic
 from warpkit.utilities import setup_logging
+
+from . import epilog
 
 
 def main():
@@ -32,7 +35,7 @@ def main():
 
     # if noiseframes specified, remove them
     if args.noiseframes > 0:
-        print(f"Removing {args.noiseframes} noise frames...")
+        print(f"Removing {args.noiseframes} noise frames from the end of each file...")
         mag_data = [nib.Nifti1Image(m.dataobj[..., : -args.noiseframes], m.affine, m.header) for m in mag_data]
         phase_data = [nib.Nifti1Image(p.dataobj[..., : -args.noiseframes], p.affine, p.header) for p in phase_data]
 

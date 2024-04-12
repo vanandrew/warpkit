@@ -1,11 +1,13 @@
-from typing import List, Tuple, Optional, Union
+from typing import List, Optional, Tuple, Union
+
 import nibabel as nib
 import numpy as np
+
 from warpkit.unwrap import unwrap_and_compute_field_maps
 from warpkit.utilities import (
+    displacement_maps_to_field_maps,
     field_maps_to_displacement_maps,
     invert_displacement_maps,
-    displacement_maps_to_field_maps,
 )
 
 
@@ -100,10 +102,13 @@ def medic(
         )
     except IndexError as e:
         raise IndexError(
-            "An IndexError was encountered while unwrapping phase images. This tends to happen if "
-            "you have noise frames left in your data. You should remove these frames and try again. "
-            "Though, if you already have removed the noise frames from your data, then I'm out of ideas... Sorry! But,"
-            " I'm just a error message that was written to anticipate a common error after all, not a psychic! "
+            "An IndexError was encountered while unwrapping phase images. "
+            "This tends to happen if you have noise frames left in your data. "
+            "You should remove these frames and try again. "
+            "Though, if you already have removed the noise frames from your data, "
+            "then I'm out of ideas... Sorry! "
+            "But, I'm just a error message that was written to anticipate a common "
+            "error after all, not a psychic! "
             ":("
         ) from e
 

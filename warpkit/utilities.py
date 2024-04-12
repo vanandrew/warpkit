@@ -1,28 +1,31 @@
-import sys
 import logging
+import sys
+from pathlib import Path
+from typing import Any, Tuple, cast
+
+import nibabel as nib
 import numpy as np
 import numpy.typing as npt
-import nibabel as nib
-from pathlib import Path
-from transforms3d.affines import decompose44
 from scipy import signal
-from typing import Any, cast, Tuple
+from scipy.ndimage import (
+    binary_dilation,
+    binary_erosion,
+    binary_fill_holes,
+    generate_binary_structure,
+)
 from skimage.filters import threshold_otsu  # type: ignore
 from skimage.measure import label, regionprops
-from scipy.ndimage import (
-    generate_binary_structure,
-    binary_erosion,
-    binary_dilation,
-    binary_fill_holes,
+from transforms3d.affines import decompose44
+
+from . import (
+    compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
 )
 from . import (
-    invert_displacement_map as invert_displacement_map_cpp,  # type: ignore
-    invert_displacement_field as invert_displacement_field_cpp,  # type: ignore
-    resample as resample_cpp,  # type: ignore
-    compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
     compute_jacobian_determinant as compute_jacobian_determinant_cpp,  # type: ignore
 )
-
+from . import invert_displacement_field as invert_displacement_field_cpp  # type: ignore
+from . import invert_displacement_map as invert_displacement_map_cpp  # type: ignore
+from . import resample as resample_cpp  # type: ignore
 
 # map axis names to axis codes
 AXIS_MAP = {"x": 0, "y": 1, "z": 2, "x-": 0, "y-": 1, "z-": 2, "i": 0, "j": 1, "k": 2, "i-": 0, "j-": 1, "k-": 2}
@@ -436,13 +439,18 @@ def invert_displacement_maps(
     # invert maps
     new_data = np.zeros(data.shape, dtype=np.float32)
     logging.info("Inverting displacement maps...")
-    for i in range(data.shape[-1]):
-        logging.info(f"Processing frame: {i}")
+    for i_vol in range(data.shape[-1]):
+        logging.info(f"Processing frame: {i_vol}")
         # pad array with edge values so edge effects of inverse are avoided
-        mod_data = np.pad(data[..., i], pad_width=1)
+        mod_data = np.pad(data[..., i_vol], pad_width=1)
 
-        new_data[..., i] = invert_displacement_map_cpp(
-            mod_data, translations, rotations, zooms, axis=axis_code, verbose=verbose
+        new_data[..., i_vol] = invert_displacement_map_cpp(
+            mod_data,
+            translations,
+            rotations,
+            zooms,
+            axis=axis_code,
+            verbose=verbose,
         )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
 
     # make new image in original orientation

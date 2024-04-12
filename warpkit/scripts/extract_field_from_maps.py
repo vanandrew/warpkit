@@ -1,6 +1,9 @@
 import argparse
+
 import nibabel as nib
-from warpkit.utilities import AXIS_MAP, displacement_map_to_field, WARP_ITK_FLIPS
+
+from warpkit.utilities import AXIS_MAP, WARP_ITK_FLIPS, displacement_map_to_field
+
 from . import epilog
 
 

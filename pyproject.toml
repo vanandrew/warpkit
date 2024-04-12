@@ -42,6 +42,10 @@ exclude = ["tests"]
 line-length = 120
 target-version = ["py38", "py39", "py310", "py311", "py312"]
 
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

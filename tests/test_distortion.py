@@ -1,5 +1,7 @@
 import numpy as np
+
 from warpkit.distortion import medic
+
 from . import bids_test_data
 
 

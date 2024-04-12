@@ -1,10 +1,11 @@
-import subprocess
 import os
+import subprocess
 import sys
 from pathlib import Path
-from setuptools import setup
 from tempfile import TemporaryDirectory
-from cmake_build_extension import CMakeExtension, BuildExtension
+
+from cmake_build_extension import BuildExtension, CMakeExtension
+from setuptools import setup
 
 # get this directory
 THISDIR = Path(__file__).parent

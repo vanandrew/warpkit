@@ -1,4 +1,5 @@
-from multiprocessing import Process, Manager
+from multiprocessing import Manager, Process
+
 from warpkit.julia import JuliaContext
 
 

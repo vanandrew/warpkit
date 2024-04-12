@@ -1,8 +1,8 @@
 from concurrent.futures import (
-    ThreadPoolExecutor,
-    ProcessPoolExecutor,
     Executor,
     Future,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
     as_completed,
 )
 from threading import Lock

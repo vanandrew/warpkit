@@ -1,6 +1,7 @@
+from typing import Tuple
+
 import numpy as np
 import numpy.typing as npt
-from typing import Tuple
 
 
 def weighted_regression(X: npt.NDArray, Y: npt.NDArray, W: npt.NDArray) -> Tuple[npt.NDArray, npt.NDArray]:
