@@ -175,12 +175,12 @@ from warpkit.utilities import displacement_map_to_field
 phases = [nib.load(p) for p in phases_paths]
 magnitudes = [nib.load(p) for p in magnitude_paths]
 TEs = [TE1, TE2, ...] # in milliseconds
-effective_echo_spacing = ... # in seconds
+total_readout_time = ... # in seconds
 phase_encoding_direction = either i, j, k, i-, j-, k-, x , y, z, x-, y-, z- 
 
 # call the medic function
 field_maps_native, displacement_maps, field_maps = medic(
-    phases, magnitudes, TEs, effective_echo_spacing, phase_encoding_direction)
+    phases, magnitudes, TEs, total_readout_time, phase_encoding_direction)
 
 # field_maps_native are returned in the distorted space (Hz) (mainly for reference/debugging purposes)
 # you shouldn't need to use these probably???

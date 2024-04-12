@@ -63,8 +63,13 @@ jobs:
           CIBW_BUILD: ${{ matrix.python-versions.glob }}
       - name: Set up Julia 1.9.4
         uses: julia-actions/setup-julia@v1
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         with:
           version: '1.9.4'
+      - name: Set up Julia through brew
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          brew link --overwrite julia
       - name: Add Julia shared libraries
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
@@ -83,7 +88,8 @@ jobs:
         run: |
           pushd tests/data && ./download_bids_testdata.sh && popd
           if [ "$RUNNER_OS" == "macOS" ]; then
-            export DYLD_LIBRARY_PATH=${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib
+            export DYLD_LIBRARY_PATH=/usr/local/Cellar/julia/$(julia -e "print(VERSION)")/lib
+            echo $DYLD_LIBRARY_PATH
           fi;
           pytest --import-mode=append
       - uses: actions/upload-artifact@v3

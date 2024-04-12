@@ -86,9 +86,6 @@ def mcpc_3d_s(
     TE1: npt.NDArray[np.float32],
     mask: npt.NDArray[np.bool_],
     wrap_limit: bool = False,
-    debug: bool = False,
-    img: Union[nib.Nifti1Image, None] = None,
-    idx: Union[int, None] = None,
 ):
     """Apply the MCPC-3D-S algorithm to compute the phase offset.
 
@@ -110,12 +107,6 @@ def mcpc_3d_s(
         Mask of voxels to use for unwrapping
     wrap_limit : bool, optional
         Limit the phase wrapping, by default False
-    debug : bool, optional
-        Debug mode, by default False
-    img : Union[nib.Nifti1Image, None], optional
-        Image for saving debug images, by default None
-    idx : Union[int, None], optional
-        Index of the frame being processed for verbosity, by default None
 
     Returns
     -------
@@ -141,18 +132,12 @@ def mcpc_3d_s(
     TEs = np.array([TE0, TE1])
     all_TEs = np.array([0.0, TE0, TE1])
     proposed_offset = np.angle(np.exp(1j * (phase0 - ((TE0 * unwrapped_diff) / (TE1 - TE0)))))
-    if debug:
-        nib.Nifti1Image(unwrapped_diff, img.affine, img.header).to_filename(f"mcpc3d_s_unwrapped_diff_{idx}.nii.gz")
-        nib.Nifti1Image(voxel_mask, img.affine, img.header).to_filename(f"mcpc3d_s_voxel_mask_{idx}.nii.gz")
-        nib.Nifti1Image(proposed_offset, img.affine, img.header).to_filename(f"mcpc3d_s_proposed_offset_{idx}.nii.gz")
 
     # get the new phases
     proposed_phases = phases - proposed_offset[..., np.newaxis]
 
     # compute the fieldmap
     proposed_fieldmap, proposed_unwrapped_phases = get_dual_echo_fieldmap(proposed_phases, TEs, mags, mask)
-    if debug:
-        nib.Nifti1Image(proposed_fieldmap, img.affine, img.header).to_filename(f"mcpc3d_s_proposed_fieldmap_{idx}.nii.gz")
 
     # check if the proposed fieldmap is below 10
     logging.info(f"proposed_fieldmap: {proposed_fieldmap[voxel_mask].mean()}")
@@ -263,8 +248,6 @@ def unwrap_phase(
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
         vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))  # type: ignore
-        if debug:
-            nib.Nifti1Image(vq, img.affine, img.header).to_filename(f"vq{idx}.nii")
 
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
@@ -305,9 +288,6 @@ def unwrap_phase(
         TEs[1],
         mask_data,
         wrap_limit=wrap_limit,
-        debug=debug,
-        img=img,
-        idx=idx,
     )
     if debug:
         global affine
