@@ -4,9 +4,11 @@ import nibabel as nib
 import numpy as np
 
 from warpkit.unwrap import unwrap_and_compute_field_maps
-from warpkit.utilities import (displacement_maps_to_field_maps,
-                               field_maps_to_displacement_maps,
-                               invert_displacement_maps)
+from warpkit.utilities import (
+    displacement_maps_to_field_maps,
+    field_maps_to_displacement_maps,
+    invert_displacement_maps,
+)
 
 
 def medic(

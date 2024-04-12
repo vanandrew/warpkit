@@ -1,5 +1,10 @@
-from concurrent.futures import (Executor, Future, ProcessPoolExecutor,
-                                ThreadPoolExecutor, as_completed)
+from concurrent.futures import (
+    Executor,
+    Future,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    as_completed,
+)
 from threading import Lock
 from typing import Callable, Iterator, Optional
 

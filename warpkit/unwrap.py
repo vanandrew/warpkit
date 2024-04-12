@@ -5,16 +5,25 @@ from typing import List, Optional, Tuple, Union, cast
 import nibabel as nib
 import numpy as np
 import numpy.typing as npt
-from scipy.ndimage import (binary_dilation, binary_erosion, binary_fill_holes,
-                           gaussian_filter, generate_binary_structure)
+from scipy.ndimage import (
+    binary_dilation,
+    binary_erosion,
+    binary_fill_holes,
+    gaussian_filter,
+    generate_binary_structure,
+)
 from scipy.stats import mode
 from skimage.filters import threshold_otsu  # type: ignore
 
 from .concurrency import run_executor
 from .julia import JuliaContext
 from .model import weighted_regression
-from .utilities import (corr2_coeff, create_brain_mask,
-                        get_largest_connected_component, rescale_phase)
+from .utilities import (
+    corr2_coeff,
+    create_brain_mask,
+    get_largest_connected_component,
+    rescale_phase,
+)
 
 FMAP_PROPORTION_HEURISTIC = 0.25
 FMAP_AMBIGUIOUS_HEURISTIC = 0.5

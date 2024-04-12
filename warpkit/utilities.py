@@ -7,22 +7,24 @@ import nibabel as nib
 import numpy as np
 import numpy.typing as npt
 from scipy import signal
-from scipy.ndimage import (binary_dilation, binary_erosion, binary_fill_holes,
-                           generate_binary_structure)
+from scipy.ndimage import (
+    binary_dilation,
+    binary_erosion,
+    binary_fill_holes,
+    generate_binary_structure,
+)
 from skimage.filters import threshold_otsu  # type: ignore
 from skimage.measure import label, regionprops
 from transforms3d.affines import decompose44
 
-from . import \
-    compute_hausdorff_distance as \
-    compute_hausdorff_distance_cpp  # type: ignore
-from . import \
-    compute_jacobian_determinant as \
-    compute_jacobian_determinant_cpp  # type: ignore
-from . import \
-    invert_displacement_field as invert_displacement_field_cpp  # type: ignore
-from . import \
-    invert_displacement_map as invert_displacement_map_cpp  # type: ignore
+from . import (
+    compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
+)
+from . import (
+    compute_jacobian_determinant as compute_jacobian_determinant_cpp,  # type: ignore
+)
+from . import invert_displacement_field as invert_displacement_field_cpp  # type: ignore
+from . import invert_displacement_map as invert_displacement_map_cpp  # type: ignore
 from . import resample as resample_cpp  # type: ignore
 
 # map axis names to axis codes
