@@ -44,7 +44,8 @@ jobs:
     needs: [test]
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
+        # os: [ubuntu-latest, macos-latest]
         python-versions: [
           {version: '3.8', glob: cp38*},
           {version: '3.9', glob: cp39*},
