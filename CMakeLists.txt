@@ -135,7 +135,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
 
 # else if arm
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    add_compile_options(-Wall -O3 -march=armv8.4-a)
+    # add_compile_options(-Wall -O3 -march=armv8.4-a)
     message(STATUS "Using -march=armv8.4-a")
 endif()
 
