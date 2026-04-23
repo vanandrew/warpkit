@@ -17,9 +17,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
       - name: Set up Python
@@ -30,7 +30,7 @@ jobs:
           uv run coverage run
           uv run coverage report -m
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   wheels-build:
@@ -47,13 +47,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Build wheel
-        uses: pypa/cibuildwheel@v2.16.2
+        uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_BUILD: ${{ matrix.python-versions.glob }}
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
       - name: Set up Python
         run: uv python install ${{ matrix.python-versions.version }}
       - name: Test wheel
@@ -61,8 +61,9 @@ jobs:
           uv venv --python ${{ matrix.python-versions.version }} .venv-test
           uv pip install --python .venv-test/bin/python ./wheelhouse/*${{ matrix.python-versions.glob }}.whl pytest pybids
           uv run --no-project --python .venv-test/bin/python pytest --import-mode=append
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: wheel-${{ matrix.os }}-cp${{ matrix.python-versions.version }}
           path: ./wheelhouse/*.whl
   sdist-build:
     needs: [test]
@@ -70,15 +71,16 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v6
       - name: Set up Python
         run: uv python install 3.11
       - name: Build sdist
         run: uv build --sdist
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: sdist
           path: dist/*.tar.gz
   py-publish:
     name: Publish to PyPI
@@ -91,10 +93,10 @@ jobs:
     permissions:
       id-token: write
     steps:
-    - uses: actions/download-artifact@v4.1.7
+    - uses: actions/download-artifact@v4
       with:
-        name: artifact
         path: dist
+        merge-multiple: true
     - uses: pypa/gh-action-pypi-publish@release/v1
   docker-build:
     name: Build Docker image
@@ -107,7 +109,7 @@ jobs:
       name: release
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -128,7 +130,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
