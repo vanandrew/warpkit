@@ -22,9 +22,8 @@ namespace romeo {
 
 // Python-facing facade over the pure-C++ ROMEO implementation.
 //
-// Method names match the old Julia-backed JuliaContext<T> so callers in
-// warpkit/unwrap.py don't have to change yet. A Python-level alias
-// `JuliaContext = Romeo` lives in warpkit/__init__.py during the transition.
+// Method names retain the `romeo_*` prefix from the original Julia-backed
+// pybind class so call sites in warpkit/unwrap.py read naturally.
 template <typename T>
 class Romeo {
    public:

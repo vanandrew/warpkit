@@ -16,7 +16,6 @@ from scipy.stats import mode
 from skimage.filters import threshold_otsu  # type: ignore
 
 from .concurrency import run_executor
-from .julia import JuliaContext
 from .model import weighted_regression
 from .utilities import (
     corr2_coeff,
@@ -24,6 +23,7 @@ from .utilities import (
     get_largest_connected_component,
     rescale_phase,
 )
+from .warpkit_cpp import Romeo  # type: ignore
 
 FMAP_PROPORTION_HEURISTIC = 0.25
 FMAP_AMBIGUIOUS_HEURISTIC = 0.5
@@ -58,9 +58,9 @@ def get_dual_echo_fieldmap(phases, TEs, mags, mask):
     np.ndarray of shape (x, y, z, echo)
         Unwrapped phases
     """
-    JULIA = JuliaContext()
+    romeo = Romeo()
     # unwrap the phases
-    unwrapped_phases = JULIA.romeo_unwrap4D(  # type: ignore
+    unwrapped_phases = romeo.romeo_unwrap4D(  # type: ignore
         phase=phases,
         TEs=TEs,
         weights="romeo",
@@ -115,11 +115,11 @@ def mcpc_3d_s(
     npt.NDArray[np.float32]
         Unwrapped difference in phase
     """
-    JULIA = JuliaContext()
+    romeo = Romeo()
     signal_diff = mag0 * mag1 * np.exp(1j * (phase1 - phase0))
     mag_diff = np.abs(signal_diff)
     phase_diff = np.angle(signal_diff)
-    unwrapped_diff = JULIA.romeo_unwrap3D(  # type: ignore
+    unwrapped_diff = romeo.romeo_unwrap3D(  # type: ignore
         phase=phase_diff,
         weights="romeo",
         mag=mag_diff,
@@ -169,9 +169,6 @@ def mcpc_3d_s(
                 new_proposed_phases = phases - new_proposed_offset[..., np.newaxis]
                 new_proposed_fieldmap, new_proposed_unwrapped_phases = get_dual_echo_fieldmap(
                     new_proposed_phases, TEs, mags, mask
-                )
-                new_voxel_prop = (
-                    np.count_nonzero(new_proposed_fieldmap[voxel_mask] > 0) / new_proposed_fieldmap[voxel_mask].shape[0]
                 )
                 # fit linear model to the proposed phases
                 new_phase_fits = np.concatenate(
@@ -235,8 +232,7 @@ def unwrap_phase(
     npt.NDArray[np.int8]
         mask
     """
-    # get Julia Context
-    JULIA = JuliaContext()
+    romeo = Romeo()
 
     if idx is not None:
         logging.info(f"Processing frame: {idx}")
@@ -246,7 +242,7 @@ def unwrap_phase(
         # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
-        vq = JULIA.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))  # type: ignore
+        vq = romeo.romeo_voxelquality(phase_data, TEs, np.ones(shape=mag_data.shape, dtype=np.float32))  # type: ignore
 
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
@@ -298,7 +294,7 @@ def unwrap_phase(
     phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
-    unwrapped = JULIA.romeo_unwrap4D(  # type: ignore
+    unwrapped = romeo.romeo_unwrap4D(  # type: ignore
         phase=phase_data,
         TEs=TEs,
         weights="romeo",
@@ -792,7 +788,7 @@ def unwrap_and_compute_field_maps(
 
     # compute field maps on temporally consistent unwrapped phase
     def field_map_iterator(field_maps, unwrapped, mag, TEs):
-        logging.info(f"Running field map computation...")
+        logging.info("Running field map computation...")
         # convert TEs to a matrix
         TEs_mat = TEs[:, np.newaxis]
         for frame_num in range(unwrapped.shape[-1]):

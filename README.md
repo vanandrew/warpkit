@@ -15,62 +15,7 @@ See below for usage details.
 
 ## Installation
 
-### Julia
-
-`warpkit` requires `julia` installed on your system. Before proceeding, please ensure that you have the `julia` executable
-on your path, and that the `julia` libraries are correctly setup in your `ld.so.conf` (or relevant library path variable).
-See the below instructions for both Linux and macOS.
-
-Alternatively, you can install `warpkit` through the provided `conda` installer (need testers + feedback, if you choose this
-method, please create an issue if you encounter issues). This obviates the need to install `julia` since conda is setup
-to install it for you automatically.
-
-#### Linux
-
-If you installed `julia` via a package manager, library configuration should be done for you (most of the time) already.
-However, if you installed `julia` manually, you may need to tell `ldconfig` where the `julia` libraries are. For example,
-on debian based systems you can do this with:
-
-```bash
-# /path to julia installation (the lib folder will have libjulia.so)
-echo /path/to/julia/lib > /etc/ld.so.conf.d/julia.conf
-ldconfig
-```
-
-If you have done this correctly, you should see `libjulia.so` in your ldconfig:
-
-```bash
-ldconfig -p | grep julia                                                                                        
-	libjulia.so.1 (libc6,x86-64) => /usr/lib/libjulia.so.1
-	libjulia.so (libc6,x86-64) => /usr/lib/libjulia.so
-```
-
-Hoever, the above may require root privileges, so the alternative to the above is to set the `LD_LIBRARY_PATH` environment
-variable to the path of the `julia` libraries.
-
-```bash
-# /path to julia installation (the lib folder will have libjulia.so)
-export LD_LIBRARY_PATH=/path/to/julia/lib:$LD_LIBRARY_PATH
-```
-
-Note however, that you must type the above each time you open a new terminal. To make this permanent, you can add the
-above line to your shell's profile file (e.g. `.bashrc` or `.zshrc`.
-
-#### macOS
-
-If you installed `julia` through `brew`, this should be done for you already.
-
-However, if you get an error saying that `libjulia` cannot be found, you may need to add the julia libraries via your
-`DYLD_LIBRARY_PATH` environment variable. For example, if you installed julia to `/Applications/Julia-1.6.app`, you
-would add the following to your shell's profile file:
-
-```bash
-export DYLD_LIBRARY_PATH=/Applications/Julia-1.6.app/Contents/Resources/julia/lib:$DYLD_LIBRARY_PATH
-```
-
 ### Installing `warpkit` through pip
-
-Assuming you have `julia` installed and configured correctly, you can install `warpkit` through `pip`:
 
 ```bash
 pip install warpkit
@@ -138,16 +83,14 @@ To build and install from source, clone this repo and run the following in the r
 I highly recommend installing it in editable mode (with the strict option, see
 [here](https://setuptools.pypa.io/en/latest/userguide/development_mode.html#strict-editable-installs)):
 
+```bash
+uv sync --group dev --config-setting editable_mode=strict
 ```
-pip install -e ./[dev] -v --config-settings editable_mode=strict
-# or for zsh (you need to escape the brackets)
-pip install -e ./\[dev\] -v --config-settings editable_mode=strict
-```
-You will need a C++ compiler with C++17 support, as well as Julia pre-installed on your system. See the [Julia](#julia)
-section for more details.
 
-The build process uses CMake to build the C++/Python Extension. If you encounter an error during the build process,
-please report the full logs of the build process using the `-v` flag to the `pip` command above. 
+You will need a C++17 compiler and CMake ≥ 3.24. Everything else (including
+Python, build deps, and ITK) is resolved by [uv](https://docs.astral.sh/uv/).
+If you encounter an error during the build, please report the full logs with
+the `-v` flag appended to the `uv sync` command above.
 
 ## What is MEDIC?
 

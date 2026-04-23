@@ -14,11 +14,3 @@ if os.environ.get("WARPKIT_DEV", False) == "1":
     warn("Successfully loaded warpkit_cpp from repo root build directory!")
 else:
     from .warpkit_cpp import *  # type: ignore  # noqa: F403
-
-# Transitional alias — the C++ extension now exposes `Romeo` (Julia is gone).
-# warpkit/unwrap.py and the rest of the call sites still refer to
-# `JuliaContext`; keep the alias until those migrate in phase 6.
-try:
-    JuliaContext = Romeo  # type: ignore[name-defined, has-type]  # noqa: F405, F821
-except NameError:
-    pass
