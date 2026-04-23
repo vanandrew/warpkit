@@ -1,8 +1,11 @@
 import numpy as np
+import pytest
 
 from warpkit.distortion import medic
 
-from . import bids_test_data
+pytestmark = pytest.mark.skip(
+    reason="Needs the BIDS test dataset, which was hosted at a wustl.box.com link that is no longer reachable."
+)
 
 
 def test_medic(bids_test_data):

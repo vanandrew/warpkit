@@ -1,38 +1,31 @@
-FROM ubuntu:22.04 as base
+FROM ubuntu:22.04 AS base
 LABEL maintainer="Andrew Van <vanandrew@wustl.edu>"
 
-# set noninteractive mode for apt-get
 ENV DEBIAN_FRONTEND=noninteractive
 
-# set working directory to /opt
 WORKDIR /opt
 
-# get python and other dependencies
+# build deps (python comes from uv)
 RUN apt-get update && \
-    apt-get install -y build-essential curl git python3 python3-pip unzip
+    apt-get install -y build-essential cmake curl git unzip ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
-# get and install Julia via juliaup
-FROM base as julia
-RUN curl -fsSL https://install.julialang.org | sh -s -- --yes --default-channel 1.9.4 && \
-    mkdir -p /opt/julia/ && cp -r /root/.julia/juliaup/*/* /opt/julia/
-
-# final image
-FROM base as final
-
-# copy over julia
-COPY --from=julia /opt/julia/ /opt/julia/
-ENV PATH=/opt/julia/bin:${PATH}
-# add libjulia to ldconfig
-RUN echo "/opt/julia/lib" >> /etc/ld.so.conf.d/julia.conf && ldconfig
+# install uv (static binary)
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # get and install warpkit
 ADD . /opt/warpkit
 
-# install warpkit
-RUN cd /opt/warpkit && pip3 install -U pip && pip3 install -e ./[dev] -v --config-settings editable_mode=strict
+# sync project (installs python 3.11, deps, and builds the CMake extension)
+ENV UV_PROJECT_ENVIRONMENT=/opt/warpkit/.venv
+ENV UV_PYTHON_PREFERENCE=only-managed
+RUN cd /opt/warpkit && uv sync --group dev --config-setting editable_mode=strict -v
+
+# put the project venv on PATH so `medic` and friends resolve
+ENV PATH=/opt/warpkit/.venv/bin:${PATH}
 
 # test warpkit
-RUN cd /opt/warpkit/tests/data/ && ./download_bids_testdata.sh && cd /opt/warpkit/ && pytest -s -v
+RUN cd /opt/warpkit && uv run pytest -s -v
 
 # set medic script as entrypoint
 ENTRYPOINT ["medic"]

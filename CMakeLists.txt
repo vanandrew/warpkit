@@ -7,56 +7,11 @@ project(warpkit_cpp LANGUAGES CXX)
 
 # set C++ standard
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # set option/variable policy
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0148 NEW)
-
-# load auxillary cmake modules
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake_aux")
-
-# find julia headers and library
-if(DEFINED CIBUILDWHEEL)
-    # manually define Julia for CIBUILDWHEEL since using julia will cause it to crash
-    # get the version string
-    execute_process(
-        COMMAND /opt/julia/bin/julia --startup-file=no --version
-        OUTPUT_VARIABLE Julia_VERSION_STRING
-    )
-    string(
-        REGEX REPLACE ".*([0-9]+\\.[0-9]+\\.[0-9]+).*" "\\1"
-        Julia_VERSION_STRING "${Julia_VERSION_STRING}"
-    )
-
-    # get the include directory
-    set(Julia_INCLUDE_DIRS /opt/julia/include/julia)
-
-    # get the library
-    set(Julia_LIBRARY /opt/julia/lib/libjulia.so.1)
-
-    # print out status
-    message(STATUS "Using Julia ${Julia_VERSION_STRING}")
-    message(STATUS "Julia_INCLUDE_DIRS: ${Julia_INCLUDE_DIRS}")
-    message(STATUS "Julia_LIBRARY: ${Julia_LIBRARY}")
-
-    # make importable target
-    add_library(Julia INTERFACE IMPORTED)
-    set_target_properties(Julia PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${Julia_INCLUDE_DIRS}"
-        INTERFACE_LINK_LIBRARIES "${Julia_LIBRARY}"
-    )
-else()
-    find_package(Julia REQUIRED)
-endif()
-
-# ensure ROMEO dependency installed during compile time
-# there is an additional check in setup.py for pre-built python packages.
-# only do if not CIBUILDWHEEL since it will crash
-if (NOT DEFINED CIBUILDWHEEL)
-    execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"ROMEO\",\
-    [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
-    Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing")
-endif()
 
 # include FetchContent module
 include(FetchContent)
@@ -145,7 +100,7 @@ target_include_directories(warpkit_cpp
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${PROJECT_SOURCE_DIR}/include/itk
 )
-target_link_libraries(warpkit_cpp PRIVATE Julia ITKLIB)
+target_link_libraries(warpkit_cpp PRIVATE ITKLIB)
 
 # install target
 install(

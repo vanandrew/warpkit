@@ -8,7 +8,7 @@ on:
     branches:
       - '*'
   release:
-    types: 
+    types:
       - published
 
 jobs:
@@ -18,24 +18,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Julia 1.9.4
-        uses: julia-actions/setup-julia@v1
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          version: '1.9.4'
-      - name: Add Julia shared libraries
-        run: |
-          echo ${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib | sudo tee -a /etc/ld.so.conf.d/julia.conf
-          sudo ldconfig
+          enable-cache: true
       - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+        run: uv python install 3.11
       - name: Install in dev mode and test
         run: |
-          python -m pip install -e ./[dev] --config-settings editable_mode=strict -v
-          pushd tests/data && ./download_bids_testdata.sh && popd
-          coverage run
-          coverage report -m
+          uv sync --group dev --config-setting editable_mode=strict -v
+          uv run coverage run
+          uv run coverage report -m
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
         env:
@@ -44,14 +37,11 @@ jobs:
     needs: [test]
     strategy:
       matrix:
-        os: [ubuntu-latest]
-        # os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         python-versions: [
-          {version: '3.8', glob: cp38*},
-          {version: '3.9', glob: cp39*},
-          {version: '3.10', glob: cp310*},
           {version: '3.11', glob: cp311*},
           {version: '3.12', glob: cp312*},
+          {version: '3.13', glob: cp313*},
           ]
     name: Python ${{ matrix.python-versions.version }} wheel on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -62,37 +52,15 @@ jobs:
         uses: pypa/cibuildwheel@v2.16.2
         env:
           CIBW_BUILD: ${{ matrix.python-versions.glob }}
-      - name: Set up Julia 1.9.4
-        uses: julia-actions/setup-julia@v1
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        with:
-          version: '1.9.4'
-      - name: Set up Julia through brew
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: |
-          brew link --overwrite julia
-      - name: Add Julia shared libraries
-        run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            echo ${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib | sudo tee -a /etc/ld.so.conf.d/julia.conf
-            sudo ldconfig
-          fi;
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-versions.version }}
-      - name: Install wheel
-        run: |
-          python -m pip install ./wheelhouse/*${{ matrix.python-versions.glob }}.whl
-          python -m pip install pytest pybids
+        run: uv python install ${{ matrix.python-versions.version }}
       - name: Test wheel
         run: |
-          pushd tests/data && ./download_bids_testdata.sh && popd
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            export DYLD_LIBRARY_PATH=/usr/local/Cellar/julia/$(julia -e "print(VERSION)")/lib
-            echo $DYLD_LIBRARY_PATH
-          fi;
-          pytest --import-mode=append
+          uv venv --python ${{ matrix.python-versions.version }} .venv-test
+          uv pip install --python .venv-test/bin/python ./wheelhouse/*${{ matrix.python-versions.glob }}.whl pytest pybids
+          uv run --no-project --python .venv-test/bin/python pytest --import-mode=append
       - uses: actions/upload-artifact@v3
         with:
           path: ./wheelhouse/*.whl
@@ -103,22 +71,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set up Julia 1.9.4
-        uses: julia-actions/setup-julia@v1
-        with:
-          version: '1.9.4'
-      - name: Add Julia shared libraries
-        run: |
-          echo ${RUNNER_TOOL_CACHE}/julia/$(julia -e "print(VERSION)")/x64/lib | sudo tee -a /etc/ld.so.conf.d/julia.conf
-          sudo ldconfig
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
       - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+        run: uv python install 3.11
       - name: Build sdist
-        run: |
-          python -m pip install build
-          python -m build --sdist
+        run: uv build --sdist
       - uses: actions/upload-artifact@v3
         with:
           path: dist/*.tar.gz
@@ -155,7 +113,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/vanandrew/warpkit            
+            ghcr.io/vanandrew/warpkit
           tags: |
             type=semver,pattern={{raw}}
             type=raw,value=latest
