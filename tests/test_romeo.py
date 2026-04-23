@@ -1,20 +1,20 @@
 """
 Tests for warpkit's C++ port of ROMEO (phase unwrapping + voxel quality).
 
-Test strategy mirrors ROMEO.jl v1.0.0's own test suite (vendored under
-`third_party/ROMEO/test/`):
+Test strategy mirrors ROMEO.jl v1.0.0's own test suite:
 
 - Literal-golden tests (`test_unwrap_1d_literals`, `test_weight_calc_literals`)
-  port numeric constants directly from `dsp_tests.jl` and `specialcases.jl`.
+  port numeric constants directly from upstream `dsp_tests.jl` and
+  `specialcases.jl`.
 - Property tests (`test_unwrap3d_property`, `test_unwrap4d_property`) replay
   the `mri.jl` strategy: an unwrapped result must differ from the wrapped input
   by exact multiples of 2π inside the mask.
 - Behavioral tests (`test_voxelquality_behavior`) mirror `voxelquality.jl`:
   outputs must be finite, in [0, 1], and differ across kwarg variants.
 
-All tests are skipped until the C++ port lands — the bindings surface the Julia
-backend today and the Julia install is broken. Remove the module-level skip
-once `warpkit_cpp` exposes a pure-C++ ROMEO implementation.
+The Phase.nii + Mag.nii volumes under `tests/data/romeo/` are copied from
+ROMEO.jl's `test/data/small/` at commit 9faef5bb (MIT, attribution in
+include/romeo/LICENSE).
 """
 
 from pathlib import Path
@@ -23,11 +23,7 @@ import nibabel as nib
 import numpy as np
 import pytest
 
-# Individual tests mark themselves skipped based on which phase of the port
-# their code path belongs to. The module as a whole is NOT skipped — the weight
-# calculation goldens (phase 2) already run.
-
-ROMEO_TEST_DATA = Path(__file__).parent.parent / "third_party" / "ROMEO" / "test" / "data" / "small"
+ROMEO_TEST_DATA = Path(__file__).parent / "data" / "romeo"
 
 
 def _load_nii(path: Path) -> np.ndarray:
@@ -62,7 +58,7 @@ def romeo():
 
 
 # ---------------------------------------------------------------------------
-# Literal goldens — ported from third_party/ROMEO/test/dsp_tests.jl
+# Literal goldens — ported from ROMEO.jl test/dsp_tests.jl
 # ---------------------------------------------------------------------------
 
 
@@ -89,7 +85,7 @@ def test_unwrap_1d_literals(romeo, wrapped):
 
 
 # ---------------------------------------------------------------------------
-# Weight-calculation literals — ported from third_party/ROMEO/test/specialcases.jl
+# Weight-calculation literals — ported from ROMEO.jl test/specialcases.jl
 #
 # The NaN-neighbor expected value is 119, not the 157 from the vendored
 # v1.0.0 test file. ROMEO.jl master hardened `phaselinearity` to return 0.5

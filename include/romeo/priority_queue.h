@@ -6,7 +6,7 @@
 
 namespace romeo {
 
-// Bucket priority queue — port of third_party/ROMEO/src/priorityqueue.jl.
+// Bucket priority queue — port of ROMEO.jl src/priorityqueue.jl.
 //
 // Weights are integers in [1, nbins]. `enqueue` is O(1); `dequeue` is amortized
 // O(1). Dequeues pop from the back of each bin (matches Julia's `pop!`) so that

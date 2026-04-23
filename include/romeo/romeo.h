@@ -33,7 +33,7 @@ class Romeo {
     // Port of ROMEO.jl `calculateweights(phase; weights=:romeo, ...)` — the
     // only weight preset we support. Exposed primarily so Python tests can
     // validate the internal machinery against literal goldens from
-    // third_party/ROMEO/test/specialcases.jl. Not used by warpkit itself.
+    // ROMEO.jl test/specialcases.jl. Not used by warpkit itself.
     //
     // `phase` is a column-major (nx, ny, nz) array. `mag`, `phase2`, `mask` may
     // be 0-sized / empty arrays to indicate "not provided"; `TEs` is required

@@ -11,7 +11,7 @@ namespace romeo {
 constexpr int NBINS = 256;
 
 // Fold x into [-π, π] when only one wrap can have occurred.
-// Ports `γ(x)` from third_party/ROMEO/src/utility.jl.
+// Ports `γ(x)` from ROMEO.jl src/utility.jl.
 template <typename T>
 inline T gamma_fold(T x) {
     constexpr T two_pi = static_cast<T>(2.0L * 3.141592653589793238462643383279502884L);

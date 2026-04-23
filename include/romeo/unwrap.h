@@ -49,7 +49,7 @@ inline T median_in_place(std::vector<T>& xs) {
 
 // Subtract 2π * median(round(wrapped[mask ∧ finite] / 2π)) from every voxel.
 // Ports the `correctglobal` branch of unwrap! in
-// third_party/ROMEO/src/unwrapping.jl.
+// ROMEO.jl src/unwrapping.jl.
 template <typename T>
 inline void apply_correct_global(T* wrapped, std::size_t n, const bool* mask) {
     constexpr T two_pi = static_cast<T>(2.0L * 3.141592653589793238462643383279502884L);
@@ -70,7 +70,7 @@ inline void apply_correct_global(T* wrapped, std::size_t n, const bool* mask) {
 // 3D ROMEO unwrap — modifies `wrapped` in place.
 //
 // Ports `unwrap!(::AbstractArray{T,3}; ...)` from
-// third_party/ROMEO/src/unwrapping.jl. Only the `:romeo` weight preset is
+// ROMEO.jl src/unwrapping.jl. Only the `:romeo` weight preset is
 // supported; warpkit never requests any other. `merge_regions` and
 // `correct_regions` are intentionally not implemented (warpkit always passes
 // false).
@@ -123,7 +123,7 @@ inline void unwrap_3d(T* wrapped, std::size_t nx, std::size_t ny, std::size_t nz
 // 4D (multi-echo) ROMEO unwrap — modifies `wrapped` in place.
 //
 // Strategy (ports `unwrap!(::AbstractArray{T,4}; TEs, ...)` from
-// third_party/ROMEO/src/unwrapping.jl, minus the `individual` and
+// ROMEO.jl src/unwrapping.jl, minus the `individual` and
 // `temporal_uncertain_unwrapping` branches that warpkit never exercises):
 //
 //   1. Spatial-unwrap the template echo (default 0) using unwrap_3d, driven by

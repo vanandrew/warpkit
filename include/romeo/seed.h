@@ -10,7 +10,7 @@
 namespace romeo {
 
 // Single-echo seed correction — snap the seed voxel's phase into (-π, π].
-// Ports the `else` branch of `seedcorrection!` in third_party/ROMEO/src/seed.jl.
+// Ports the `else` branch of `seedcorrection!` in ROMEO.jl src/seed.jl.
 template <typename T>
 inline void seed_correction_single(T* wrapped, std::ptrdiff_t vox) {
     wrapped[vox] = rem2pi_nearest(wrapped[vox]);

@@ -13,7 +13,7 @@
 namespace romeo {
 
 // Per-edge weight flags matching flags 1..4 of
-// third_party/ROMEO/src/weights.jl. The `:romeo` preset (the only one warpkit
+// ROMEO.jl src/weights.jl. The `:romeo` preset (the only one warpkit
 // uses) turns on all four; flags that don't have their inputs available are
 // forced off inside `calculate_weights_romeo` below (see `updateflags!` in the
 // Julia source).
@@ -32,7 +32,7 @@ inline RomeoWeightFlags romeo_flags_default() {
 
 // Rescale a raw weight w ∈ [0, 1] to a bin in [1, NBINS]; any other value
 // (including NaN) maps to 0 which means "edge invalid, not enqueued".
-// Matches `rescale(w)` in third_party/ROMEO/src/weights.jl.
+// Matches `rescale(w)` in ROMEO.jl src/weights.jl.
 template <typename T>
 inline int rescale_weight(T w) {
     if (!(w >= T(0)) || !(w <= T(1))) return 0;
@@ -42,7 +42,7 @@ inline int rescale_weight(T w) {
 }
 
 // Fundamental coherence/linearity terms. Direct C++ translations of the
-// corresponding one-liners in third_party/ROMEO/src/weights.jl.
+// corresponding one-liners in ROMEO.jl src/weights.jl.
 namespace detail {
 
 template <typename T>
@@ -109,7 +109,7 @@ inline T phase_linearity(const T* phase, std::ptrdiff_t i, std::ptrdiff_t j, std
 // out-of-bounds or masked edges (0 for both output types).
 //
 // Mirrors `calculateweights_romeo(wrapped, flags)` + the edge-zeroing tail of
-// `calculateweights` in third_party/ROMEO/src/weights.jl.
+// `calculateweights` in ROMEO.jl src/weights.jl.
 template <typename OutT, typename T, typename Rescale>
 inline std::vector<OutT> calculate_weights_romeo_impl(const T* phase, std::size_t nx, std::size_t ny, std::size_t nz,
                                                      const T* mag, const T* phase2, const T* TEs, const bool* mask,

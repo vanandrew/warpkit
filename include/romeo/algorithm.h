@@ -20,7 +20,7 @@ namespace romeo {
 // The weights array is (3, nx, ny, nz) in column-major order. Flat index
 // `edge_index(vox, dim) = dim + 3*vox` with dim ∈ {0,1,2} (x/y/z forward
 // neighbor) and vox 0-based linear. Mirrors `getedgeindex(leftvoxel, dim)`
-// from third_party/ROMEO/src/algorithm.jl (translated from Julia 1-based).
+// from ROMEO.jl src/algorithm.jl (translated from Julia 1-based).
 // ----------------------------------------------------------------------------
 
 inline int edge_dim(std::ptrdiff_t edge) { return static_cast<int>(edge % 3); }
@@ -42,7 +42,7 @@ inline T unwrap_voxel(T new_v, T old_v) {
 // Unwrap `newvox` relative to `oldvox`. If the voxel on the "other side" of
 // `oldvox` (call it `oo = 2*oldvox - newvox`) is already visited, use the
 // oldvox→oo phase step as an extra bias (clipped to ±wrap_addition) when
-// predicting newvox's phase. Mirrors third_party/ROMEO/src/algorithm.jl.
+// predicting newvox's phase. Mirrors ROMEO.jl src/algorithm.jl.
 template <typename T>
 inline void unwrap_edge(T* wrapped, std::ptrdiff_t oldvox, std::ptrdiff_t newvox, const std::uint8_t* visited,
                         std::ptrdiff_t n, T wrap_addition) {
@@ -63,7 +63,7 @@ inline void unwrap_edge(T* wrapped, std::ptrdiff_t oldvox, std::ptrdiff_t newvox
 
 // ----------------------------------------------------------------------------
 // grow_region_unwrap — the MST of quality-weighted edges. Ports
-// third_party/ROMEO/src/algorithm.jl minus the merge_regions / correct_regions
+// ROMEO.jl src/algorithm.jl minus the merge_regions / correct_regions
 // tail (warpkit never enables those).
 // ----------------------------------------------------------------------------
 

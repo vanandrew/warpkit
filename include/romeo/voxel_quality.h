@@ -11,7 +11,7 @@
 namespace romeo {
 
 // 4D voxel-quality map — port of `voxelquality()` + the 4D `calculateweights`
-// dispatch in third_party/ROMEO/src/voxelquality.jl.
+// dispatch in ROMEO.jl src/voxelquality.jl.
 //
 // Inputs:
 //   - `phase4d` : column-major (nx, ny, nz, ne), ne ≥ 2

@@ -52,7 +52,7 @@ callers can migrate lazily.
   from Python and Julia's default.
 - **NaN handling** must match ROMEO literally: NaN voxel → weight 0 (edge never
   enqueued); edge adjacent to a NaN voxel → weight 157 (the literal from
-  [specialcases.jl](../third_party/ROMEO/test/specialcases.jl)).
+  [specialcases.jl](https://github.com/korbinian90/ROMEO.jl/blob/v1.0.0/test/specialcases.jl)).
 - **Dequeue semantics**: pop from the back of each bin (Julia's `pop!`) — we
   mirror this for reproducibility rather than popping from the front.
 - Public API parameter names stay identical. Internally use snake_case.
@@ -154,8 +154,8 @@ the next phase).
    backend because it no longer builds. The bar is the property tests in
    [tests/test_romeo.py](../tests/test_romeo.py) (2π-modulo inside mask,
    finite outputs, qmap ∈ [0,1]) plus the literal goldens from
-   [dsp_tests.jl](../third_party/ROMEO/test/dsp_tests.jl) and
-   [specialcases.jl](../third_party/ROMEO/test/specialcases.jl). Once the port
+   [dsp_tests.jl](https://github.com/korbinian90/ROMEO.jl/blob/v1.0.0/test/dsp_tests.jl) and
+   [specialcases.jl](https://github.com/korbinian90/ROMEO.jl/blob/v1.0.0/test/specialcases.jl). Once the port
    is stable, capture its own outputs as regression goldens in a follow-up
    (`.npy` snapshot of qmap + unwrapped for the test volume).
 2. **`median` semantics.** Julia's `Statistics.median` on even-length samples
@@ -182,7 +182,7 @@ the next phase).
   packages, no ROMEO registry install**.
 - `uv run pytest tests/test_romeo.py` — 10 passed, 0 skipped, 0 xfailed.
 - `docker build .` succeeds without fetching Julia.
-- `grep -ri julia . --exclude-dir=third_party --exclude-dir=.venv` returns
+- `grep -ri julia . --exclude-dir=.venv` returns
   zero hits (except the project-wide `JuliaContext` alias if still present).
 - No regressions in the other tests (test_concurrency, test_model,
   test_utilities run green; test_distortion stays skipped — separate issue).
