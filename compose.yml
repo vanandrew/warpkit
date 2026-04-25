@@ -1,5 +1,0 @@
-services:
-  me_pipeline:
-    image: warpkit:latest
-    build:
-      context: .
