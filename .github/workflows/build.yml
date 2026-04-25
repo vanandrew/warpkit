@@ -31,8 +31,11 @@ jobs:
           uv sync --group dev --config-setting editable_mode=strict -v
           uv run coverage run
           uv run coverage report -m
+          uv run coverage xml
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v6
+        with:
+          files: ./coverage.xml
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   wheels-build:
