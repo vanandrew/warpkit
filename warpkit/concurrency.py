@@ -1,3 +1,4 @@
+from collections.abc import Callable, Iterator
 from concurrent.futures import (
     Executor,
     Future,
@@ -6,7 +7,6 @@ from concurrent.futures import (
     as_completed,
 )
 from threading import Lock
-from typing import Callable, Iterator, Optional
 
 
 class DummyExecutor(Executor):
@@ -29,7 +29,7 @@ class DummyExecutor(Executor):
 
             return f
 
-    def shutdown(self, wait=True):
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False):
         with self._shutdownLock:
             self._shutdown = True
 
@@ -39,8 +39,8 @@ def run_executor(
     type: str,
     fn: Callable,
     iterator: Iterator,
-    initializer: Optional[Callable] = None,
-    post_fn: Optional[Callable] = None,
+    initializer: Callable | None = None,
+    post_fn: Callable | None = None,
 ):
     """Runs executor with given number of cpus and type of executor.
 

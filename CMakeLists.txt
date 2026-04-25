@@ -7,56 +7,11 @@ project(warpkit_cpp LANGUAGES CXX)
 
 # set C++ standard
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # set option/variable policy
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0148 NEW)
-
-# load auxillary cmake modules
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake_aux")
-
-# find julia headers and library
-if(DEFINED CIBUILDWHEEL)
-    # manually define Julia for CIBUILDWHEEL since using julia will cause it to crash
-    # get the version string
-    execute_process(
-        COMMAND /opt/julia/bin/julia --startup-file=no --version
-        OUTPUT_VARIABLE Julia_VERSION_STRING
-    )
-    string(
-        REGEX REPLACE ".*([0-9]+\\.[0-9]+\\.[0-9]+).*" "\\1"
-        Julia_VERSION_STRING "${Julia_VERSION_STRING}"
-    )
-
-    # get the include directory
-    set(Julia_INCLUDE_DIRS /opt/julia/include/julia)
-
-    # get the library
-    set(Julia_LIBRARY /opt/julia/lib/libjulia.so.1)
-
-    # print out status
-    message(STATUS "Using Julia ${Julia_VERSION_STRING}")
-    message(STATUS "Julia_INCLUDE_DIRS: ${Julia_INCLUDE_DIRS}")
-    message(STATUS "Julia_LIBRARY: ${Julia_LIBRARY}")
-
-    # make importable target
-    add_library(Julia INTERFACE IMPORTED)
-    set_target_properties(Julia PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${Julia_INCLUDE_DIRS}"
-        INTERFACE_LINK_LIBRARIES "${Julia_LIBRARY}"
-    )
-else()
-    find_package(Julia REQUIRED)
-endif()
-
-# ensure ROMEO dependency installed during compile time
-# there is an additional check in setup.py for pre-built python packages.
-# only do if not CIBUILDWHEEL since it will crash
-if (NOT DEFINED CIBUILDWHEEL)
-    execute_process(COMMAND ${Julia_EXECUTABLE} "-e" "using Pkg; !in(\"ROMEO\",\
-    [dep.name for (uuid, dep) in Pkg.dependencies()]) ? \
-    Pkg.add(Pkg.PackageSpec(;name=\"ROMEO\", version=\"1.0.0\")) : nothing")
-endif()
 
 # include FetchContent module
 include(FetchContent)
@@ -65,7 +20,7 @@ include(FetchContent)
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11
-    GIT_TAG v2.11.1
+    GIT_TAG v3.0.4
     OVERRIDE_FIND_PACKAGE
 )
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
@@ -93,7 +48,7 @@ set(ITK_INSTALL_PACKAGE_DIR ${PYTHON_INSTALL_TMPDIR}/package CACHE STRING "" FOR
 FetchContent_Declare(
     ITK
     GIT_REPOSITORY https://github.com/InsightSoftwareConsortium/ITK.git
-    GIT_TAG v5.4rc01
+    GIT_TAG v5.4.5
 )
 
 # itk with fetchcontent is a bit weird, OVERRIDE_FIND_PACKAGE does not work
@@ -109,34 +64,22 @@ set_target_properties(ITKLIB PROPERTIES
     INTERFACE_LINK_LIBRARIES "${ITK_LIBRARIES}"
 )
 
-# add compile options based on architecture
+# add compile options based on architecture.
+# x86_64 targets the v2 microarch level (Nehalem 2008 — SSE3/SSE4.1/SSE4.2/
+# popcnt). v2 features are universal in anything that can install a current
+# Linux distro, and it matches the "above baseline" stance taken on aarch64.
+# Consumers needing to override (older CPU, or a higher microarch level) can
+# pass CXXFLAGS at build time.
 message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-    # we need minimum of gcc 11 for -march=x86-64-v3
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
-            add_compile_options(-Wall -O3 -march=x86-64)
-            message(STATUS "Using -march=x86-64")
-        else()
-            add_compile_options(-Wall -O3 -march=x86-64-v3)
-            message(STATUS "Using -march=x86-64-v3")
-        endif()
-
-    # else if clang
-    elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
-            add_compile_options(-Wall -O3 -march=x86-64)
-            message(STATUS "Using -march=x86-64")
-        else()
-            add_compile_options(-Wall -O3 -march=x86-64-v3)
-            message(STATUS "Using -march=x86-64-v3")
-        endif()
-    endif()
-
-# else if arm
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    # add_compile_options(-Wall -O3 -march=armv8.4-a)
-    message(STATUS "Using -march=armv8.4-a")
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+    add_compile_options(-O3 -mcpu=apple-m1)
+    message(STATUS "Using -mcpu=apple-m1")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    add_compile_options(-O3 -march=armv8.2-a)
+    message(STATUS "Using -march=armv8.2-a")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    add_compile_options(-O3 -march=x86-64-v2)
+    message(STATUS "Using -march=x86-64-v2")
 endif()
 
 # compile pybind11 interface
@@ -145,7 +88,8 @@ target_include_directories(warpkit_cpp
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${PROJECT_SOURCE_DIR}/include/itk
 )
-target_link_libraries(warpkit_cpp PRIVATE Julia ITKLIB)
+target_compile_options(warpkit_cpp PRIVATE -Wall)
+target_link_libraries(warpkit_cpp PRIVATE ITKLIB)
 
 # install target
 install(

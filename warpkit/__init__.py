@@ -1,34 +1,27 @@
 import os
-import subprocess
 
-# ensure ROMEO is installed
 try:
-    subprocess.run(
-        [
-            "julia",
-            "-e",
-            (
-                'using Pkg; !in("ROMEO",'
-                "[dep.name for (uuid, dep) in Pkg.dependencies()])"
-                ' ? Pkg.add(Pkg.PackageSpec(;name="ROMEO", version="1.0.0")) : nothing'
-            ),
-        ],
-        check=True,
-    )
-except subprocess.CalledProcessError:
-    raise OSError("ROMEO failed to install. Check your Julia installation.")
+    from ._version import __version__, __version_tuple__
+except ImportError:
+    __version__ = "0.0.0+unknown"
+    __version_tuple__ = (0, 0, 0, "unknown", "")
 
 if os.environ.get("WARPKIT_DEV", False) == "1":
     from warnings import warn
 
-    warn("WARPKIT_DEV is set, trying to load from repo root build directory instead...")
+    warn(
+        "WARPKIT_DEV is set, trying to load from repo root build directory instead...",
+        stacklevel=2,
+    )
     import sys
     from pathlib import Path
 
     BUILD_DIR = str(Path(__file__).parent.parent / "build")
     sys.path.append(BUILD_DIR)
-    from warpkit_cpp import *  # type: ignore
+    from warpkit_cpp import *  # type: ignore  # noqa: F403
 
-    warn("Successfully loaded warpkit_cpp from repo root build directory!")
+    warn(
+        "Successfully loaded warpkit_cpp from repo root build directory!", stacklevel=2
+    )
 else:
-    from .warpkit_cpp import *  # type: ignore
+    from .warpkit_cpp import *  # noqa: F403
