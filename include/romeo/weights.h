@@ -119,91 +119,65 @@ inline std::vector<OutT> calculate_weights_romeo_impl(const T* phase, std::size_
     if (phase2 == nullptr || TEs == nullptr) flags.phase_gradient_coherence = false;
 
     const std::size_t n = nx * ny * nz;
-    const std::ptrdiff_t stride[3] = {1, static_cast<std::ptrdiff_t>(nx), static_cast<std::ptrdiff_t>(nx * ny)};
     const std::ptrdiff_t signed_n = static_cast<std::ptrdiff_t>(n);
-
-    // ROMEO's `parsekwargs` multiplies mag by mask when both are present. We
-    // do the same pre-pass so `maxmag` is computed over the masked region.
-    std::vector<T> masked_mag;
-    const T* mag_in_use = mag;
-    if (mag != nullptr && mask != nullptr) {
-        masked_mag.assign(mag, mag + n);
-        for (std::size_t i = 0; i < n; ++i) {
-            if (!mask[i]) masked_mag[i] = T(0);
-        }
-        mag_in_use = masked_mag.data();
-    }
-
-    // maxmag: `maximum(mag[isfinite.(mag)])` — infinities and NaNs excluded.
-    T maxmag = T(0);
-    bool has_finite_mag = false;
-    if (mag_in_use != nullptr) {
-        for (std::size_t i = 0; i < n; ++i) {
-            T v = mag_in_use[i];
-            if (std::isfinite(v) && (!has_finite_mag || v > maxmag)) {
-                maxmag = v;
-                has_finite_mag = true;
-            }
-        }
-    }
-    (void)maxmag;  // only needed once magweight/magweight2 (flags 5-6) are ported.
-    (void)has_finite_mag;
+    const std::ptrdiff_t sx = 1;
+    const std::ptrdiff_t sy = static_cast<std::ptrdiff_t>(nx);
+    const std::ptrdiff_t sz = static_cast<std::ptrdiff_t>(nx * ny);
 
     std::vector<OutT> weights(3 * n, zero_value);
 
-    for (int dim = 0; dim < 3; ++dim) {
-        const std::ptrdiff_t step = stride[dim];
-        for (std::ptrdiff_t idx = 0; idx < signed_n; ++idx) {
-            const std::ptrdiff_t jdx = idx + step;
-            if (jdx >= signed_n) continue;
-            if (mask != nullptr && !mask[idx]) continue;
+    // Mirrors ROMEO's `mag .* mask` pre-pass without materializing a copy: any
+    // masked-out voxel reads as 0 magnitude.
+    auto mag_at = [&](std::ptrdiff_t i) -> T {
+        if (mask != nullptr && !mask[i]) return T(0);
+        return mag[i];
+    };
 
-            T w = T(1);
-            if (flags.phase_coherence) {
-                w *= T(0.1) + T(0.9) * detail::phase_coherence(phase[idx], phase[jdx]);
-            }
-            if (flags.phase_gradient_coherence) {
-                w *= T(0.1) +
-                     T(0.9) * detail::phase_gradient_coherence(phase[idx], phase[jdx], phase2[idx], phase2[jdx],
-                                                                TEs[0], TEs[1]);
-            }
-            if (flags.phase_linearity) {
-                w *= T(0.1) + T(0.9) * detail::phase_linearity(phase, idx, jdx, step, signed_n);
-            }
-            if (mag_in_use != nullptr) {
-                T mi = mag_in_use[idx];
-                T mj = mag_in_use[jdx];
-                T small = std::min(mi, mj);
-                T big = std::max(mi, mj);
-                if (flags.mag_coherence) {
-                    w *= T(0.1) + T(0.9) * detail::mag_coherence(small, big);
-                }
-                // flags 5-6 (magweight, magweight2) not ported — warpkit uses :romeo, not :romeo6.
-            }
-
-            // Column-major (3, nx, ny, nz): index = dim + 3*idx
-            weights[static_cast<std::size_t>(dim) + 3u * static_cast<std::size_t>(idx)] = rescale_fn(w);
+    auto edge_weight = [&](std::ptrdiff_t idx, std::ptrdiff_t jdx, std::ptrdiff_t stride) -> T {
+        T w = T(1);
+        if (flags.phase_coherence) {
+            w *= T(0.1) + T(0.9) * detail::phase_coherence(phase[idx], phase[jdx]);
         }
-    }
+        if (flags.phase_gradient_coherence) {
+            w *= T(0.1) + T(0.9) * detail::phase_gradient_coherence(phase[idx], phase[jdx], phase2[idx], phase2[jdx],
+                                                                    TEs[0], TEs[1]);
+        }
+        if (flags.phase_linearity) {
+            w *= T(0.1) + T(0.9) * detail::phase_linearity(phase, idx, jdx, stride, signed_n);
+        }
+        if (mag != nullptr) {
+            T mi = mag_at(idx);
+            T mj = mag_at(jdx);
+            T small = std::min(mi, mj);
+            T big = std::max(mi, mj);
+            if (flags.mag_coherence) {
+                w *= T(0.1) + T(0.9) * detail::mag_coherence(small, big);
+            }
+            // flags 5-6 (magweight, magweight2) not ported — warpkit uses :romeo, not :romeo6.
+        }
+        return w;
+    };
 
-    // Zero out the boundary edges that don't actually exist (Julia:
-    //   weights[1,end,:,:] .= 0 / [2,:,end,:] .= 0 / [3,:,:,end] .= 0).
+    // One pass over voxels in (k, j, i) order. Boundary edges are skipped by
+    // construction via the `+1 < n*` guards, so the trailing zero-fill pass
+    // from the Julia source is unnecessary — the value-init of `weights`
+    // already leaves those slots at `zero_value`.
     for (std::size_t k = 0; k < nz; ++k) {
         for (std::size_t j = 0; j < ny; ++j) {
-            std::size_t idx = (nx - 1) + nx * (j + ny * k);
-            weights[0u + 3u * idx] = zero_value;
-        }
-    }
-    for (std::size_t k = 0; k < nz; ++k) {
-        for (std::size_t i = 0; i < nx; ++i) {
-            std::size_t idx = i + nx * ((ny - 1) + ny * k);
-            weights[1u + 3u * idx] = zero_value;
-        }
-    }
-    for (std::size_t j = 0; j < ny; ++j) {
-        for (std::size_t i = 0; i < nx; ++i) {
-            std::size_t idx = i + nx * (j + ny * (nz - 1));
-            weights[2u + 3u * idx] = zero_value;
+            for (std::size_t i = 0; i < nx; ++i) {
+                const std::size_t idx = i + nx * (j + ny * k);
+                if (mask != nullptr && !mask[idx]) continue;
+                const std::ptrdiff_t sidx = static_cast<std::ptrdiff_t>(idx);
+                if (i + 1 < nx) {
+                    weights[0u + 3u * idx] = rescale_fn(edge_weight(sidx, sidx + sx, sx));
+                }
+                if (j + 1 < ny) {
+                    weights[1u + 3u * idx] = rescale_fn(edge_weight(sidx, sidx + sy, sy));
+                }
+                if (k + 1 < nz) {
+                    weights[2u + 3u * idx] = rescale_fn(edge_weight(sidx, sidx + sz, sz));
+                }
+            }
         }
     }
 
