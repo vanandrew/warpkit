@@ -40,7 +40,13 @@ requires = ["scikit-build-core >= 0.10", "setuptools-scm >= 8.0"]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
-cmake.version = ">=3.24"
+# Cap CMake at <4 — scikit-build-core picks up the cmake PyPI wheel, and
+# 4.2.3 (latest at time of pin) abort()s with glibc heap corruption
+# (`free(): invalid next size (fast)` / `corrupted size vs. prev_size`)
+# on manylinux during configure teardown. The crash is reproducible on
+# the cibuildwheel matrix across Python 3.11–3.14 and unrelated to our
+# CMakeLists. CMake 3.31.x is the most recent 3.x release and works fine.
+cmake.version = ">=3.24,<4"
 ninja.version = ">=1.11"
 # Persistent CMake build dir keyed on wheel tag — survives across `uv sync`
 # invocations so ITK FetchContent + object files cache properly. Without this
