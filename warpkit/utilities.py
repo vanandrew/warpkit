@@ -428,9 +428,13 @@ def displacement_field_to_map(
             f"expected a 4D 3-channel field after itk conversion; got shape {data.shape}"
         )
     map_data = data[..., axis_code]
+    # Drop the vector intent so the 1-channel result isn't later auto-classified
+    # as a field by intent-based heuristics.
+    map_header = cast(nib.Nifti1Header, field_itk.header.copy())
+    map_header.set_intent("none", (), "")
     return cast(
         nib.Nifti1Image,
-        nib.Nifti1Image(map_data, field_itk.affine, field_itk.header),
+        nib.Nifti1Image(map_data, field_itk.affine, map_header),
     )
 
 

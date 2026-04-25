@@ -88,9 +88,14 @@ def bundle_frames_to_3d_series(frames: list[nib.Nifti1Image]) -> nib.Nifti1Image
     """Stack 3D scalar frames into a 4D ``(X, Y, Z, T)`` series.
 
     Used for both 1-channel displacement maps and scalar Jacobian fields.
+    The frame headers may have inherited a vector intent code from an upstream
+    field operation; clear it so the bundled scalar series isn't later
+    misclassified as a field.
     """
     data = np.stack([f.get_fdata() for f in frames], axis=-1).astype(np.float32)
-    return nib.Nifti1Image(data, frames[0].affine, frames[0].header)
+    header = cast(nib.Nifti1Header, frames[0].header.copy())
+    header.set_intent("none", (), "")
+    return nib.Nifti1Image(data, frames[0].affine, header)
 
 
 def bundle_frames_to_field_series(frames: list[nib.Nifti1Image]) -> nib.Nifti1Image:
@@ -132,6 +137,13 @@ def write_output(
         bundled.to_filename(out_paths[0])
     elif n_out == n:
         for path, img in zip(out_paths, frames, strict=True):
+            # Per-frame map outputs may carry a vector intent inherited from an
+            # upstream field operation — drop it so the file isn't later
+            # auto-classified as a field.
+            if out_type == "map":
+                header = cast(nib.Nifti1Header, img.header.copy())
+                header.set_intent("none", (), "")
+                img = nib.Nifti1Image(np.asarray(img.dataobj), img.affine, header)
             img.to_filename(path)
     else:
         parser.error(

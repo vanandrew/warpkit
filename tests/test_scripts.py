@@ -507,6 +507,54 @@ def test_unwrap_phase_te_count_must_match_phase_count(argv, capsys, tmp_path):
     assert "must match" in err
 
 
+def test_unwrap_phase_magnitude_count_must_match_phase_count(argv, capsys, tmp_path):
+    """Mismatched --magnitude / --phase counts should raise a clean parser
+    error, not a downstream zip(strict=True) ValueError."""
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            "m1.nii",  # only 1 mag for 2 phase files
+            "--phase",
+            "p1.nii",
+            "p2.nii",
+            "--TEs",
+            "14.0",
+            "28.0",
+            "--out-prefix",
+            str(tmp_path / "out"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        unwrap_phase_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--magnitude" in err and "--phase" in err
+
+
+def test_unwrap_phase_metadata_count_must_match_phase_count(argv, capsys, tmp_path):
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            "m1.nii",
+            "m2.nii",
+            "--phase",
+            "p1.nii",
+            "p2.nii",
+            "--metadata",
+            "e1.json",  # only 1 sidecar for 2 echoes
+            "--out-prefix",
+            str(tmp_path / "out"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        unwrap_phase_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--metadata" in err and "--phase" in err
+
+
 # ---------------------------------------------------------------------------
 # compute_fieldmap --help / argument validation
 # ---------------------------------------------------------------------------
@@ -1530,3 +1578,41 @@ def test_convert_fieldmap_fieldmap_to_field(argv, tmp_path):
     assert float(np.abs(fdata[..., 1]).max()) > 0.0
     np.testing.assert_allclose(fdata[..., 0], 0.0, atol=1e-5)
     np.testing.assert_allclose(fdata[..., 2], 0.0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# _warp_io intent-leak regression tests
+# ---------------------------------------------------------------------------
+
+
+def _vector_intent_frame(shape=(4, 4, 4)) -> nib.Nifti1Image:
+    """Construct a 3D scalar frame whose header carries a stale vector intent
+    (the typical leak from an upstream field operation)."""
+    img = nib.Nifti1Image(np.zeros(shape, dtype=np.float32), np.eye(4))
+    cast(nib.Nifti1Header, img.header).set_intent("vector", (), "")
+    return img
+
+
+def test_bundle_frames_to_3d_series_clears_vector_intent():
+    from warpkit.scripts._warp_io import bundle_frames_to_3d_series
+
+    frames = [_vector_intent_frame() for _ in range(3)]
+    bundled = bundle_frames_to_3d_series(frames)
+    assert bundled.shape == (4, 4, 4, 3)
+    assert bundled.header.get_intent()[0] != "vector"
+
+
+def test_write_output_per_frame_map_clears_vector_intent(tmp_path):
+    """Per-frame map outputs must round-trip without a stale vector intent."""
+    import argparse
+
+    from warpkit.scripts._warp_io import write_output
+
+    frames = [_vector_intent_frame() for _ in range(2)]
+    out_paths = [str(tmp_path / "f1.nii"), str(tmp_path / "f2.nii")]
+
+    write_output(frames, out_paths, "map", argparse.ArgumentParser())
+
+    for p in out_paths:
+        loaded = _load(p)
+        assert loaded.header.get_intent()[0] != "vector"

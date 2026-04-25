@@ -376,3 +376,16 @@ def test_displacement_map_field_roundtrip_all_formats(axis, fmt):
     field = displacement_map_to_field(dmap, axis=axis, format=fmt, frame=0)
     back = displacement_field_to_map(field, axis=axis, format=fmt)
     assert_allclose(back.get_fdata(), data, atol=1e-5)
+
+
+def test_displacement_field_to_map_clears_vector_intent():
+    """The 1-channel result must not carry the input field's vector intent,
+    or downstream auto-classifiers will mistake it for a field."""
+    affine = np.eye(4)
+    data = np.zeros((4, 4, 4), dtype=np.float32)
+    dmap = nib.Nifti1Image(data, affine)
+    field = displacement_map_to_field(dmap, axis="y", format="itk", frame=0)
+    # The intermediate field carries the vector intent (set by convert_warp).
+    assert field.header.get_intent()[0] == "vector"
+    back = displacement_field_to_map(field, axis="y", format="itk")
+    assert back.header.get_intent()[0] != "vector"

@@ -76,6 +76,19 @@ def main():
     if not args.metadata and args.tes is None:
         parser.error("either --metadata or --TEs must be provided.")
 
+    if len(args.magnitude) != len(args.phase):
+        parser.error(
+            f"got {len(args.magnitude)} --magnitude file(s) but "
+            f"{len(args.phase)} --phase file(s); they must match (one "
+            "mag/phase pair per echo)."
+        )
+    if args.metadata is not None and len(args.metadata) != len(args.phase):
+        parser.error(
+            f"got {len(args.metadata)} --metadata file(s) but "
+            f"{len(args.phase)} --phase file(s); they must match (one "
+            "sidecar per echo)."
+        )
+
     echo_times: list[float]
     if args.metadata:
         metadatas = []
