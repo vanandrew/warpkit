@@ -102,6 +102,20 @@ def write_readme(bundle: Path, version: str, target: str) -> None:
     (bundle / "README.md").write_text(body, encoding="utf-8")
 
 
+def write_licenses(bundle: Path) -> None:
+    # Bundle warpkit's own LICENSE plus the upstream ROMEO MIT notice. The
+    # ROMEO notice is required: the wk-* binaries link in compiled code derived
+    # from include/romeo/, which the MIT terms require we ship the notice with.
+    repo_root = Path(__file__).resolve().parents[2]
+    licenses_dir = bundle / "LICENSES"
+    licenses_dir.mkdir(exist_ok=True)
+    shutil.copy2(repo_root / "LICENSE", licenses_dir / "warpkit.LICENSE")
+    shutil.copy2(
+        repo_root / "include" / "romeo" / "LICENSE",
+        licenses_dir / "ROMEO.LICENSE",
+    )
+
+
 def make_zip(bundle: Path, out_zip: Path) -> None:
     # shutil.make_archive's base_dir keeps a tidy top-level folder inside the zip.
     base_name = str(out_zip.with_suffix(""))
@@ -144,6 +158,7 @@ def main() -> int:
 
     adhoc_sign_macos(versioned)
     write_readme(versioned, version, target)
+    write_licenses(versioned)
 
     out_zip = dist / f"warpkit-{version}-{target}.zip"
     make_zip(versioned, out_zip)

@@ -47,3 +47,9 @@ xattr -r -d com.apple.quarantine /opt/warpkit-@VERSION@
 - `wk-compute-jacobian` — compute the Jacobian determinant of a warp
 
 Run any of them with `--help` for usage.
+
+## Licenses
+
+`LICENSES/warpkit.LICENSE` is the warpkit license. `LICENSES/ROMEO.LICENSE` is
+the upstream MIT notice for the ROMEO phase-unwrapping algorithms compiled
+into these binaries.

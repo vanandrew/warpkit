@@ -48,50 +48,23 @@ inline std::vector<T> voxel_quality(const T* phase4d, std::size_t nx, std::size_
 
     std::vector<T> qmap(vol, T(0));
 
-    // Forward-edge sum: qmap[v] = Σ_d w[d, v] for the 3 dims.
-    for (std::size_t idx = 0; idx < vol; ++idx) {
-        qmap[idx] = w[0u + 3u * idx] + w[1u + 3u * idx] + w[2u + 3u * idx];
-    }
-
-    // Backward-edge contributions. Julia:
-    //   qmap[2:end,:,:] .+= weights[1, 1:end-1, :, :]
-    //   qmap[:,2:end,:] .+= weights[2, :, 1:end-1, :]
-    //   qmap[:,:,2:end] .+= weights[3, :, :, 1:end-1]
-    // In 0-based: each interior voxel adds the forward-edge weight of its
-    // previous neighbor along that dim.
-    const std::ptrdiff_t sx = 1;
-    const std::ptrdiff_t sy = static_cast<std::ptrdiff_t>(nx);
-    const std::ptrdiff_t sz = static_cast<std::ptrdiff_t>(nx * ny);
-
+    // Single fused pass: each voxel sums its three forward edges plus the
+    // forward-edge weight of its previous neighbor along each axis (= the
+    // backward-edge contribution from Julia's three .+= expressions).
+    // Associativity matches the original four-pass form: forward triplet
+    // first, then back-x, then back-y, then back-z.
     for (std::size_t k = 0; k < nz; ++k) {
-        for (std::size_t j = 0; j < ny; ++j) {
-            for (std::size_t i = 1; i < nx; ++i) {
-                const std::size_t idx = i + nx * (j + ny * k);
-                const std::size_t prev = idx - static_cast<std::size_t>(sx);
-                qmap[idx] += w[0u + 3u * prev];
-            }
-        }
-    }
-    for (std::size_t k = 0; k < nz; ++k) {
-        for (std::size_t j = 1; j < ny; ++j) {
-            for (std::size_t i = 0; i < nx; ++i) {
-                const std::size_t idx = i + nx * (j + ny * k);
-                const std::size_t prev = idx - static_cast<std::size_t>(sy);
-                qmap[idx] += w[1u + 3u * prev];
-            }
-        }
-    }
-    for (std::size_t k = 1; k < nz; ++k) {
         for (std::size_t j = 0; j < ny; ++j) {
             for (std::size_t i = 0; i < nx; ++i) {
                 const std::size_t idx = i + nx * (j + ny * k);
-                const std::size_t prev = idx - static_cast<std::size_t>(sz);
-                qmap[idx] += w[2u + 3u * prev];
+                T q = w[0u + 3u * idx] + w[1u + 3u * idx] + w[2u + 3u * idx];
+                if (i > 0) q += w[0u + 3u * (idx - 1)];
+                if (j > 0) q += w[1u + 3u * (idx - nx)];
+                if (k > 0) q += w[2u + 3u * (idx - nx * ny)];
+                qmap[idx] = q / T(6);
             }
         }
     }
-
-    for (std::size_t i = 0; i < vol; ++i) qmap[i] /= T(6);
     return qmap;
 }
 
