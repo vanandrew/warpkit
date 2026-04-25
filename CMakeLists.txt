@@ -37,29 +37,27 @@ find_package(pybind11 CONFIG REQUIRED)
 set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
 set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
-# EIGEN_BUILD_CMAKE_PACKAGE=ON is required at 3.4.1+. 3.4.1 introduced a bare
-# INTERFACE target named `eigen` (with `Eigen3::Eigen` now an alias) and added
-# `install(TARGETS eigen EXPORT Eigen3Targets)` unconditionally, but kept the
-# matching `install(EXPORT Eigen3Targets ...)` gated behind this flag. ITK's
-# ITKCommon link interface picks up the bare `eigen`, so when CMake validates
-# `install(EXPORT ITKTargets ...)` it errors with "target eigen is not in any
-# export set" unless we flip this on. The Eigen3Config.cmake artifacts the
-# flag produces don't end up in the wheel — `install.components = ["extension"]`
-# in pyproject.toml only collects ITK's extension component, so Eigen's
-# unspecified-component install rules run at generate-time validation and are
-# skipped at install-time.
-set(EIGEN_BUILD_CMAKE_PACKAGE ON CACHE BOOL "" FORCE)
+# Pin to 3.4.0 — bumping to 3.4.1 requires `EIGEN_BUILD_CMAKE_PACKAGE=ON`
+# (3.4.1 added an unconditional `install(TARGETS eigen EXPORT Eigen3Targets)`
+# while leaving the matching `install(EXPORT)` behind that flag, which trips
+# CMake's `install(EXPORT ITKTargets)` validator since ITKCommon's link
+# interface now references the bare `eigen` target). With that flag flipped,
+# CMake 4.2.x crashes with a glibc heap corruption (`corrupted size vs.
+# prev_size`) immediately after Eigen's CMakeLists finishes on manylinux —
+# reproducible across Python 3.11–3.14. macOS doesn't trip it, but the wheel
+# matrix is unrunnable. Until CMake or Eigen ships a fix, 3.4.0 is the
+# stable choice; we get nothing functional from 3.4.1 anyway.
 FetchContent_Declare(
     Eigen3
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.1
+    GIT_TAG 3.4.0
     OVERRIDE_FIND_PACKAGE
 )
 set(ITK_USE_SYSTEM_EIGEN ON CACHE BOOL "" FORCE)
 # OVERRIDE_FIND_PACKAGE bypasses Config-file processing, so Eigen3_VERSION
 # isn't populated by find_package(Eigen3). ITK's ThirdParty/Eigen3 module
 # enforces Eigen3_VERSION >= 3.3 — set it explicitly to match GIT_TAG above.
-set(Eigen3_VERSION 3.4.1 CACHE STRING "" FORCE)
+set(Eigen3_VERSION 3.4.0 CACHE STRING "" FORCE)
 
 # download, configure, and include itk
 set(ZLIBNG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
