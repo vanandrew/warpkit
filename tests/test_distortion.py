@@ -18,5 +18,5 @@ def test_medic(test_data):
         corr = np.corrcoef(frame1.ravel(), framei.ravel())[0, 1]
         print(corr)
         assert corr > 0.98, (
-            f"Correlation between frame 1 and frame {i} is only {corr} < 0.98"
+            f"Correlation between frame 0 and frame {i} is only {corr} < 0.98"
         )
