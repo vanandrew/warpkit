@@ -23,6 +23,7 @@ dependencies = [
 "wk-compute-fieldmap" = "warpkit.scripts.compute_fieldmap:main"
 "wk-apply-warp" = "warpkit.scripts.apply_warp:main"
 "wk-convert-warp" = "warpkit.scripts.convert_warp:main"
+"wk-convert-fieldmap" = "warpkit.scripts.convert_fieldmap:main"
 "wk-compute-jacobian" = "warpkit.scripts.compute_jacobian:main"
 
 [dependency-groups]

@@ -19,10 +19,11 @@ Pre-print: <https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1>.
   registered explicitly in `[project.scripts]` in `pyproject.toml`. All CLIs
   ship with a `wk-` prefix to avoid colliding with same-named tools from
   FSL/ANTs/AFNI/etc.: `wk-medic`, `wk-unwrap-phase`, `wk-compute-fieldmap`,
-  `wk-apply-warp`, `wk-convert-warp`, `wk-compute-jacobian`. Adding a new
-  CLI means adding a new file under `warpkit/scripts/` *and* a new line to
-  `[project.scripts]` — there is no longer any auto-discovery. Shared IO
-  helpers used by `wk-convert-warp` and `wk-compute-jacobian` live in
+  `wk-apply-warp`, `wk-convert-warp`, `wk-convert-fieldmap`,
+  `wk-compute-jacobian`. Adding a new CLI means adding a new file under
+  `warpkit/scripts/` *and* a new line to `[project.scripts]` — there is
+  no longer any auto-discovery. Shared IO helpers used by the
+  `wk-convert-*` and `wk-compute-jacobian` scripts live in
   `warpkit/scripts/_warp_io.py` (private; not a CLI).
 - `warpkit/warpkit_cpp.pyi` + `warpkit/py.typed` — type info for the compiled
   extension, shipped via `MANIFEST.in` and `[tool.setuptools.package-data]`.

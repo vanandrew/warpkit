@@ -109,6 +109,7 @@ with same-named tools from FSL/ANTs/AFNI/etc.:
 | `wk-compute-fieldmap`  | Stage 2: take stage-1 outputs → native + displacement + undistorted-space field maps. |
 | `wk-apply-warp`        | Resample an image through a displacement map / field (single or per-frame series).   |
 | `wk-convert-warp`      | Convert between maps ↔ fields and between ITK / FSL / ANTs / AFNI; `--invert` warps. |
+| `wk-convert-fieldmap`  | Convert between mm displacement maps/fields and Hz B0 field maps.                    |
 | `wk-compute-jacobian`  | Per-voxel Jacobian determinant (1 = no change, <1 = compression, >1 = expansion).     |
 
 `wk-medic` runs the full pipeline; `wk-unwrap-phase` + `wk-compute-fieldmap`
@@ -175,6 +176,18 @@ wk-compute-jacobian \
   --input sub-01_run-01_displacementmaps.nii \
   --axis j \
   --output sub-01_run-01_jacobian.nii
+```
+
+Convert MEDIC's mm displacement maps to a Hz B0 field map (or back —
+this CLI handles either direction, with maps or fields on the mm side):
+
+```bash
+wk-convert-fieldmap \
+  --input sub-01_run-01_displacementmaps.nii \
+  --to fieldmap \
+  --total-readout-time 0.0501 \
+  --phase-encoding-direction j- \
+  --output sub-01_run-01_fieldmap.nii
 ```
 
 ## Authors

@@ -21,6 +21,7 @@ import pytest
 from warpkit.scripts.apply_warp import main as apply_warp_main
 from warpkit.scripts.compute_fieldmap import main as compute_fieldmap_main
 from warpkit.scripts.compute_jacobian import main as compute_jacobian_main
+from warpkit.scripts.convert_fieldmap import main as convert_fieldmap_main
 from warpkit.scripts.convert_warp import main as convert_warp_main
 from warpkit.scripts.medic import main as medic_main
 from warpkit.scripts.unwrap_phase import main as unwrap_phase_main
@@ -1270,3 +1271,262 @@ def test_compute_jacobian_per_frame_outputs(argv, tmp_path):
         j = _load(p)
         assert j.shape == (6, 6, 6)
         np.testing.assert_allclose(j.get_fdata(), 1.0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# wk-convert-fieldmap — argument validation + happy paths
+# ---------------------------------------------------------------------------
+
+
+def test_convert_fieldmap_help(argv, capsys):
+    argv(["wk-convert-fieldmap", "--help"])
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "mm displacement" in out and "Hz" in out
+    assert "--total-readout-time" in out
+    assert "--phase-encoding-direction" in out
+    assert "--to" in out
+    assert "--flip-sign" in out
+
+
+def test_convert_fieldmap_requires_to(argv, capsys, tmp_path):
+    """--to is required (no sensible default)."""
+    fmap = _write_nifti(tmp_path / "fmap.nii", (4, 4, 4))
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            fmap,
+            "--output",
+            str(tmp_path / "out.nii"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--to" in err
+
+
+def test_convert_fieldmap_rejects_bad_pe_direction(argv, capsys, tmp_path):
+    fmap = _write_nifti(tmp_path / "fmap.nii", (4, 4, 4))
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            fmap,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--to",
+            "map",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "diagonal",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice" in err
+
+
+def test_convert_fieldmap_requires_trt_and_pe(argv, capsys, tmp_path):
+    fmap = _write_nifti(tmp_path / "fmap.nii", (4, 4, 4))
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            fmap,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--to",
+            "map",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "--total-readout-time" in err
+    assert "--phase-encoding-direction" in err
+
+
+def test_convert_fieldmap_rejects_mm_to_mm(argv, capsys, tmp_path):
+    """--from=map --to=field is a representation conversion (no unit
+    crossing). The script should redirect users to wk-convert-warp."""
+    maps = _write_nifti(tmp_path / "maps.nii", (4, 4, 4, 5))
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            maps,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--from",
+            "map",
+            "--to",
+            "field",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "wk-convert-warp" in err
+
+
+def test_convert_fieldmap_rejects_same_from_to(argv, capsys, tmp_path):
+    fmap = _write_nifti(tmp_path / "fmap.nii", (4, 4, 4))
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            fmap,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--from",
+            "fieldmap",
+            "--to",
+            "fieldmap",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "are the same" in err
+
+
+def test_convert_fieldmap_map_to_fieldmap_roundtrip(argv, tmp_path):
+    """mm displacement map -> Hz fieldmap -> mm displacement map preserves
+    the original (within float roundtrip jitter). Also asserts that the
+    'auto' classifier picks 'map' for 1-channel input + --to=fieldmap."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    map_data = rng.random((6, 6, 6, 4), dtype=np.float32) - 0.5
+    map_path = tmp_path / "maps.nii"
+    nib.Nifti1Image(map_data, affine).to_filename(str(map_path))
+
+    fmap_path = tmp_path / "fmap.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(map_path),
+            "--output",
+            str(fmap_path),
+            "--to",
+            "fieldmap",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    convert_fieldmap_main()
+    fmap = _load(str(fmap_path))
+    assert fmap.shape == map_data.shape
+    assert np.isfinite(fmap.get_fdata()).all()
+
+    back_path = tmp_path / "maps_back.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(fmap_path),
+            "--output",
+            str(back_path),
+            "--to",
+            "map",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    convert_fieldmap_main()
+    back = _load(str(back_path))
+    assert back.shape == map_data.shape
+    np.testing.assert_allclose(back.get_fdata(), map_data, atol=1e-5)
+
+
+def test_convert_fieldmap_field_to_fieldmap(argv, tmp_path):
+    """3-channel mm displacement field -> Hz fieldmap. Exercises the
+    field->map axis-extraction branch upstream of the unit conversion."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(1)
+    field_data = np.zeros((6, 6, 6, 3), dtype=np.float32)
+    field_data[..., 1] = rng.random((6, 6, 6), dtype=np.float32) - 0.5
+    field_path = tmp_path / "field.nii"
+    nib.Nifti1Image(field_data, affine).to_filename(str(field_path))
+
+    out_path = tmp_path / "fmap.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(field_path),
+            "--output",
+            str(out_path),
+            "--to",
+            "fieldmap",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    convert_fieldmap_main()
+    fmap = _load(str(out_path))
+    assert fmap.shape == (6, 6, 6)
+    assert np.isfinite(fmap.get_fdata()).all()
+    # zero off-axis channels in the field -> the fieldmap should be a
+    # nontrivial scalar volume (not all zeros).
+    assert float(np.abs(fmap.get_fdata()).max()) > 0.0
+
+
+def test_convert_fieldmap_fieldmap_to_field(argv, tmp_path):
+    """Hz fieldmap -> mm 3-channel field (auto-classify 1-channel as
+    fieldmap because --to is on the mm side)."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(2)
+    fmap_data = rng.random((6, 6, 6), dtype=np.float32) - 0.5
+    fmap_path = tmp_path / "fmap.nii"
+    nib.Nifti1Image(fmap_data, affine).to_filename(str(fmap_path))
+
+    field_path = tmp_path / "field.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(fmap_path),
+            "--output",
+            str(field_path),
+            "--to",
+            "field",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    convert_fieldmap_main()
+    field = _load(str(field_path))
+    assert field.shape == (6, 6, 6, 3)
+    # j-axis has the displacement; off-axis channels are zero.
+    fdata = field.get_fdata()
+    assert float(np.abs(fdata[..., 1]).max()) > 0.0
+    np.testing.assert_allclose(fdata[..., 0], 0.0, atol=1e-5)
+    np.testing.assert_allclose(fdata[..., 2], 0.0, atol=1e-5)
