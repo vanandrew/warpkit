@@ -1,6 +1,4 @@
 import numpy as np
-import pytest
-
 from warpkit.concurrency import run_executor
 
 

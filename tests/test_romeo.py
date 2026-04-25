@@ -71,7 +71,13 @@ def romeo():
         [0.1, 0.2 - 2 * np.pi, 0.3 - 2 * np.pi, 0.4],
         [0.1 + 2 * np.pi, 0.2, 0.3, 0.4],
     ],
-    ids=["nowrap", "wrap-up-idx1", "wrap-down-idx1", "wrap-down-idx1-2", "wrap-up-idx0"],
+    ids=[
+        "nowrap",
+        "wrap-up-idx1",
+        "wrap-down-idx1",
+        "wrap-down-idx1-2",
+        "wrap-up-idx0",
+    ],
 )
 def test_unwrap_1d_literals(romeo, wrapped):
     """ROMEO.jl's unwrap!() reshapes <=2D input to 3D before running. Reproduce
@@ -80,7 +86,7 @@ def test_unwrap_1d_literals(romeo, wrapped):
     phase = np.asarray(wrapped, dtype=np.float32).reshape(-1, 1, 1)
     mag = np.ones_like(phase)
     mask = np.ones(phase.shape, dtype=bool)
-    unwrapped = romeo.romeo_unwrap3D(phase, "romeo", mag, mask).reshape(-1)
+    unwrapped = romeo.romeo_unwrap3d(phase, "romeo", mag, mask).reshape(-1)
     np.testing.assert_allclose(unwrapped, expected, atol=1e-5)
 
 
@@ -98,8 +104,14 @@ def test_unwrap_1d_literals(romeo, wrapped):
 @pytest.mark.parametrize(
     "phase,expected",
     [
-        ([0.1, 0.2 + 2 * np.pi, 0.3, 0.4], [30, 7, 30, 0]),  # phase-linearity penalty (30) at borders
-        ([0.1, 0.2 + 2 * np.pi, 0.3, np.nan], [30, 119, 0, 0]),  # 119 via phaselinearity NaN→0.5 guard
+        (
+            [0.1, 0.2 + 2 * np.pi, 0.3, 0.4],
+            [30, 7, 30, 0],
+        ),  # phase-linearity penalty (30) at borders
+        (
+            [0.1, 0.2 + 2 * np.pi, 0.3, np.nan],
+            [30, 119, 0, 0],
+        ),  # 119 via phaselinearity NaN→0.5 guard
     ],
     ids=["linearity-border", "nan-neighbor"],
 )
@@ -108,7 +120,9 @@ def test_weight_calc_literals(romeo, phase, expected):
     phase_arr = np.asarray(phase, dtype=np.float32).reshape(-1, 1, 1)
     # (3, nx, ny, nz) uint8 — we check dim-0 edges along the length-4 x-axis.
     weights = romeo.calculate_weights(phase_arr)
-    np.testing.assert_array_equal(weights[0, :, 0, 0], np.asarray(expected, dtype=np.uint8))
+    np.testing.assert_array_equal(
+        weights[0, :, 0, 0], np.asarray(expected, dtype=np.uint8)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +142,7 @@ def test_unwrap3d_property(romeo, phase4d, mag4d):
     mag = np.ascontiguousarray(mag4d[..., echo])
     mask = np.ones(wrapped.shape, dtype=bool)
 
-    unwrapped = romeo.romeo_unwrap3D(wrapped, "romeo", mag, mask)
+    unwrapped = romeo.romeo_unwrap3d(wrapped, "romeo", mag, mask)
 
     assert unwrapped.shape == wrapped.shape
     assert not np.array_equal(unwrapped, wrapped), "unwrap returned the input unchanged"
@@ -139,16 +153,18 @@ def test_unwrap3d_property(romeo, phase4d, mag4d):
 
 def test_unwrap4d_property(romeo, phase4d, mag4d):
     """Same 2π-modulo invariant across every echo of the 4D multi-echo unwrap."""
-    TEs = np.array([4.0, 8.0, 12.0], dtype=np.float32)  # matches voxelquality.jl
+    tes = np.array([4.0, 8.0, 12.0], dtype=np.float32)  # matches voxelquality.jl
     mask = np.ones(phase4d.shape[:3], dtype=bool)
 
-    unwrapped = romeo.romeo_unwrap4D(phase4d, TEs, "romeo", mag4d, mask)
+    unwrapped = romeo.romeo_unwrap4d(phase4d, tes, "romeo", mag4d, mask)
 
     assert unwrapped.shape == phase4d.shape
     assert np.isfinite(unwrapped).all()
     for e in range(phase4d.shape[-1]):
         residual = _rem2pi_nearest(unwrapped[..., e] - phase4d[..., e])
-        np.testing.assert_allclose(residual, 0.0, atol=1e-5, err_msg=f"echo {e} failed 2π-modulo check")
+        np.testing.assert_allclose(
+            residual, 0.0, atol=1e-5, err_msg=f"echo {e} failed 2π-modulo check"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -159,16 +175,20 @@ def test_unwrap4d_property(romeo, phase4d, mag4d):
 def test_voxelquality_behavior(romeo, phase4d, mag4d):
     """
     Mirror the three-variant comparison from voxelquality.jl. ROMEO's
-    voxelquality entry point requires TEs and mag, so we reuse the 4D volume
+    voxelquality entry point requires tes and mag, so we reuse the 4D volume
     and vary the echo time ordering to produce distinct qmaps.
     """
-    TEs = np.array([4.0, 8.0, 12.0], dtype=np.float32)
+    tes = np.array([4.0, 8.0, 12.0], dtype=np.float32)
 
-    qm_uniform_mag = romeo.romeo_voxelquality(phase4d, TEs, np.ones_like(mag4d))
-    qm_real_mag = romeo.romeo_voxelquality(phase4d, TEs, mag4d)
-    qm_reordered = romeo.romeo_voxelquality(phase4d, TEs[::-1].copy(), mag4d)
+    qm_uniform_mag = romeo.romeo_voxelquality(phase4d, tes, np.ones_like(mag4d))
+    qm_real_mag = romeo.romeo_voxelquality(phase4d, tes, mag4d)
+    qm_reordered = romeo.romeo_voxelquality(phase4d, tes[::-1].copy(), mag4d)
 
-    for qmap, label in [(qm_uniform_mag, "uniform-mag"), (qm_real_mag, "real-mag"), (qm_reordered, "reordered-TEs")]:
+    for qmap, label in [
+        (qm_uniform_mag, "uniform-mag"),
+        (qm_real_mag, "real-mag"),
+        (qm_reordered, "reordered-tes"),
+    ]:
         assert qmap.shape == phase4d.shape[:3], f"{label}: wrong shape {qmap.shape}"
         assert np.isfinite(qmap).all(), f"{label}: non-finite qmap values"
         assert (qmap >= 0).all() and (qmap <= 1).all(), f"{label}: qmap out of [0, 1]"

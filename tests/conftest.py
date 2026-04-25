@@ -22,7 +22,7 @@ def test_data():
     return {
         "phase": [Nifti1Image.load(p) for p in phase],
         "mag": [Nifti1Image.load(m) for m in mag],
-        "TEs": [m["EchoTime"] * 1000 for m in metadata],
+        "tes": [m["EchoTime"] * 1000 for m in metadata],
         "total_readout_time": metadata[0]["TotalReadoutTime"],
         "phase_encoding_direction": metadata[0]["PhaseEncodingDirection"],
     }

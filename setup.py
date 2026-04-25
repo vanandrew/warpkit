@@ -4,7 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from cmake_build_extension import BuildExtension, CMakeExtension  # type: ignore
-from setuptools import setup
+from setuptools import setup  # type: ignore
 
 THISDIR = Path(__file__).parent
 cmake_dir = (Path(THISDIR)).absolute().as_posix()
@@ -15,7 +15,10 @@ IS_MACOS = os.environ.get("RUNNER_OS", "0") == "macOS"
 python_version = sys.executable
 
 with TemporaryDirectory(prefix="build-tmp-", dir="/tmp") as tmpdir:
-    cmake_configure_options = [f"-DPYTHON_INSTALL_TMPDIR={tmpdir}", f"-DPython_EXECUTABLE={python_version}"]
+    cmake_configure_options = [
+        f"-DPYTHON_INSTALL_TMPDIR={tmpdir}",
+        f"-DPython_EXECUTABLE={python_version}",
+    ]
     if IS_CIBUILDWHEEL and not IS_MACOS:
         cmake_configure_options.append("-DCIBUILDWHEEL=")
     if IS_MACOS:

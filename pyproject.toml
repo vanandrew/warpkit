@@ -22,6 +22,7 @@ dev = [
   "coverage[toml] >= 5.5",
   "pre-commit >= 3.6.0",
   "pybids >= 0.15.1",
+  "pybind11-stubgen>=2.5.5",
   "pytest >= 7.2.2",
 ]
 
@@ -40,6 +41,9 @@ zip-safe = true
 
 [tool.setuptools.packages.find]
 exclude = ["tests"]
+
+[tool.setuptools.package-data]
+warpkit = ["py.typed", "*.pyi"]
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
@@ -79,17 +83,8 @@ exclude = ["**/__pycache__", "warpkit/build-tmp*", "tests/data", ".venv", "**/no
 venvPath = "."
 venv = ".venv"
 pythonVersion = "3.11"
-# The CMake extension (warpkit.warpkit_cpp) has no .pyi stubs yet.
-reportMissingImports = "warning"
-reportMissingModuleSource = "none"
-# Pre-existing numpy/nibabel typing debt in warpkit/{unwrap,utilities,distortion}.py
-# that predates the C++ port. Demoted to warnings so the hook doesn't block;
-# revisit in a follow-up PR scoped just to typing fixes.
-reportArgumentType = "warning"
-reportAssignmentType = "warning"
-reportReturnType = "warning"
-reportGeneralTypeIssues = "warning"
-reportAttributeAccessIssue = "warning"
+# Stubs for the CMake extension live at warpkit/warpkit_cpp.pyi (regenerate with
+# `uv run pybind11-stubgen warpkit.warpkit_cpp --output-dir .` after binding changes).
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -100,26 +95,10 @@ command_line = "-m pytest"
 [tool.coverage.report]
 omit = ["tests/*"]
 
-[tool.pylint.main]
-disable = [
-  "line-too-long",
-  "invalid-name",
-  "missing-module-docstring",
-  "missing-class-docstring",
-  "missing-function-docstring",
-  "too-many-arguments",
-  "too-many-statements",
-  "too-many-locals",
-  "wildcard-import",
-  "unused-argument",
-  "unused-wildcard-import",
-  "import-outside-toplevel",
-  "attribute-defined-outside-init",
-  "dangerous-default-value",
-]
-
 [tool.cibuildwheel]
-skip = "*musllinux*"
+# Skip musllinux (we ship manylinux only) and free-threaded CPython builds
+# (cp31Xt-*) — our pybind11 bindings + ITK haven't been audited for the no-GIL ABI.
+skip = "*musllinux* cp313t-* cp314t-*"
 build-frontend = "build"
 
 [tool.cibuildwheel.linux]
@@ -128,4 +107,4 @@ archs = ["x86_64"]
 [tool.cibuildwheel.macos]
 archs = ["universal2"]
 repair-wheel-command = "delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}"
-before-build = ["pip install delocate==0.10.6"]
+before-build = ["pip install delocate>=0.13.0"]

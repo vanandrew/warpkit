@@ -15,17 +15,17 @@ PYBIND11_MODULE(warpkit_cpp, m) {
              py::arg("phase"),
              py::arg("mag") = py::array_t<float, py::array::f_style>(),
              py::arg("phase2") = py::array_t<float, py::array::f_style>(),
-             py::arg("TEs") = py::array_t<float, py::array::f_style>(),
+             py::arg("tes") = py::array_t<float, py::array::f_style>(),
              py::arg("mask") = py::array_t<bool, py::array::f_style>(),
              py::return_value_policy::move)
         .def("romeo_voxelquality", &Romeo32::romeo_voxelquality,
-             "Compute a per-voxel quality map from multi-echo phase/magnitude", py::arg("phase"), py::arg("TEs"),
+             "Compute a per-voxel quality map from multi-echo phase/magnitude", py::arg("phase"), py::arg("tes"),
              py::arg("mag"), py::return_value_policy::move)
-        .def("romeo_unwrap3D", &Romeo32::romeo_unwrap3D, "3D ROMEO phase unwrap", py::arg("phase"), py::arg("weights"),
+        .def("romeo_unwrap3d", &Romeo32::romeo_unwrap3D, "3D ROMEO phase unwrap", py::arg("phase"), py::arg("weights"),
              py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true, py::arg("maxseeds") = 1,
              py::arg("merge_regions") = false, py::arg("correct_regions") = false, py::return_value_policy::move)
-        .def("romeo_unwrap4D", &Romeo32::romeo_unwrap4D, "4D (multi-echo) ROMEO phase unwrap", py::arg("phase"),
-             py::arg("TEs"), py::arg("weights"), py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true,
+        .def("romeo_unwrap4d", &Romeo32::romeo_unwrap4D, "4D (multi-echo) ROMEO phase unwrap", py::arg("phase"),
+             py::arg("tes"), py::arg("weights"), py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true,
              py::arg("maxseeds") = 1, py::arg("merge_regions") = false, py::arg("correct_regions") = false,
              py::return_value_policy::move);
 

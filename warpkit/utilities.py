@@ -1,7 +1,8 @@
 import logging
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Tuple, cast
+from typing import Any, cast
 
 import nibabel as nib
 import numpy as np
@@ -18,17 +19,30 @@ from skimage.measure import label, regionprops
 from transforms3d.affines import decompose44
 
 from . import (
-    compute_hausdorff_distance as compute_hausdorff_distance_cpp,  # type: ignore
+    compute_hausdorff_distance as compute_hausdorff_distance_cpp,
 )
 from . import (
-    compute_jacobian_determinant as compute_jacobian_determinant_cpp,  # type: ignore
+    compute_jacobian_determinant as compute_jacobian_determinant_cpp,
 )
-from . import invert_displacement_field as invert_displacement_field_cpp  # type: ignore
-from . import invert_displacement_map as invert_displacement_map_cpp  # type: ignore
-from . import resample as resample_cpp  # type: ignore
+from . import invert_displacement_field as invert_displacement_field_cpp
+from . import invert_displacement_map as invert_displacement_map_cpp
+from . import resample as resample_cpp
 
 # map axis names to axis codes
-AXIS_MAP = {"x": 0, "y": 1, "z": 2, "x-": 0, "y-": 1, "z-": 2, "i": 0, "j": 1, "k": 2, "i-": 0, "j-": 1, "k-": 2}
+AXIS_MAP = {
+    "x": 0,
+    "y": 1,
+    "z": 2,
+    "x-": 0,
+    "y-": 1,
+    "z-": 2,
+    "i": 0,
+    "j": 1,
+    "k": 2,
+    "i-": 0,
+    "j-": 1,
+    "k-": 2,
+}
 
 
 # warp_itk_flips
@@ -40,7 +54,7 @@ WARP_ITK_FLIPS = {
 }
 
 
-def setup_logging(log_file: str = None) -> None:
+def setup_logging(log_file: str | None = None) -> None:
     """Sets up logging output.
 
     Parameters
@@ -60,13 +74,19 @@ def setup_logging(log_file: str = None) -> None:
         log_file_path.parent.mkdir(parents=True, exist_ok=True)
 
         # append to handlers
-        handlers.append(logging.FileHandler(str(log_file_path), mode="w"))  # will overwrite logs if they exist at path
+        handlers.append(
+            logging.FileHandler(str(log_file_path), mode="w")
+        )  # will overwrite logs if they exist at path
 
     # add stdout streaming to handlers
     handlers.append(logging.StreamHandler(sys.stdout))
 
     # setup log output config
-    logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s: %(message)s", handlers=handlers)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] %(levelname)s: %(message)s",
+        handlers=handlers,
+    )
 
 
 def normalize(data: npt.NDArray) -> npt.NDArray:
@@ -85,14 +105,14 @@ def normalize(data: npt.NDArray) -> npt.NDArray:
     return (data - np.min(data)) / (np.max(data) - np.min(data))
 
 
-def corr2_coeff(A: npt.NDArray, B: npt.NDArray) -> npt.NDArray:
+def corr2_coeff(a: npt.NDArray, b: npt.NDArray) -> npt.NDArray:
     """Efficiently calculates correlation coefficient between the columns of two 2D arrays
 
     Parameters
     ----------
-    A : npt.NDArray
+    a : npt.NDArray
         1st array to correlate
-    B : npt.NDArray
+    b : npt.NDArray
         2nd array to correlate
 
     Returns
@@ -101,22 +121,24 @@ def corr2_coeff(A: npt.NDArray, B: npt.NDArray) -> npt.NDArray:
         array of correlation coefficients
     """
     # Transpose A and B
-    A = A.T
-    B = B.T
+    a = a.T
+    b = b.T
 
     # Rowwise mean of input arrays & subtract from input arrays themeselves
-    A_mA = A - A.mean(axis=1, keepdims=True)
-    B_mB = B - B.mean(axis=1, keepdims=True)
+    a_ma = a - a.mean(axis=1, keepdims=True)
+    b_mb = b - b.mean(axis=1, keepdims=True)
 
     # Sum of squares across rows
-    ssA = (A_mA**2).sum(axis=1, keepdims=True)
-    ssB = (B_mB**2).sum(axis=1, keepdims=True).T
+    ss_a = (a_ma**2).sum(axis=1, keepdims=True)
+    ss_b = (b_mb**2).sum(axis=1, keepdims=True).T
 
     # Finally get corr coeff
-    return np.dot(A_mA, B_mB.T) / np.sqrt(np.dot(ssA, ssB))
+    return np.dot(a_ma, b_mb.T) / np.sqrt(np.dot(ss_a, ss_b))
 
 
-def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> npt.NDArray[Any]:
+def rescale_phase(
+    data: npt.NDArray[Any], min: int = -4096, max: int = 4096
+) -> npt.NDArray[Any]:
     """Rescale phase data to [-pi, pi]
 
     Rescales data to [-pi, pi] using the specified min and max inputs.
@@ -138,7 +160,9 @@ def rescale_phase(data: npt.NDArray[Any], min: int = -4096, max: int = 4096) -> 
     return (data - min) / (max - min) * 2 * np.pi - np.pi
 
 
-def get_largest_connected_component(mask_data: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
+def get_largest_connected_component(
+    mask_data: npt.NDArray[np.bool_],
+) -> npt.NDArray[np.bool_]:
     """Get the largest connected component of a mask
 
     Parameters
@@ -161,7 +185,9 @@ def get_largest_connected_component(mask_data: npt.NDArray[np.bool_]) -> npt.NDA
     return mask_data
 
 
-def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int = 0) -> npt.NDArray[np.bool_]:
+def create_brain_mask(
+    mag_shortest: npt.NDArray[np.float32], extra_dilation: int = 0
+) -> npt.NDArray[np.bool_]:
     """Create a quick brain mask for a single frame.
 
     Parameters
@@ -185,7 +211,10 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int
     mask_data = cast(npt.NDArray[np.float32], binary_fill_holes(mask_data, strel))
 
     # erode mask
-    mask_data = cast(npt.NDArray[np.bool_], binary_erosion(mask_data, structure=strel, iterations=2, border_value=1))
+    mask_data = cast(
+        npt.NDArray[np.bool_],
+        binary_erosion(mask_data, structure=strel, iterations=2, border_value=1),
+    )
 
     # get largest connected component
     mask_data = get_largest_connected_component(mask_data)
@@ -195,10 +224,14 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int
 
     # extra dilation to get areas on the edge of the brain
     if extra_dilation > 0:
-        mask_data = binary_dilation(mask_data, structure=strel, iterations=extra_dilation)
+        mask_data = binary_dilation(
+            mask_data, structure=strel, iterations=extra_dilation
+        )
     # if negative, erode instead
     if extra_dilation < 0:
-        mask_data = binary_erosion(mask_data, structure=strel, iterations=abs(extra_dilation))
+        mask_data = binary_erosion(
+            mask_data, structure=strel, iterations=abs(extra_dilation)
+        )
 
     # since we can't have a completely empty mask, set all zeros to ones
     # if the mask is all empty
@@ -210,7 +243,9 @@ def create_brain_mask(mag_shortest: npt.NDArray[np.float32], extra_dilation: int
 
 
 def field_maps_to_displacement_maps(
-    field_maps: nib.Nifti1Image, total_readout_time: float, phase_encoding_direction: str
+    field_maps: nib.Nifti1Image,
+    total_readout_time: float,
+    phase_encoding_direction: str,
 ) -> nib.Nifti1Image:
     """Convert field maps (Hz) to displacement maps (mm)
 
@@ -355,7 +390,9 @@ def displacement_map_to_field(
     return convert_warp(warp, in_type="itk", out_type=format)
 
 
-def get_x_orient_transform(img: nib.Nifti1Image, x: str) -> Tuple[np.ndarray, np.ndarray]:
+def get_x_orient_transform(
+    img: nib.Nifti1Image, x: str
+) -> tuple[Sequence[Sequence[int]], Sequence[Sequence[int]]]:
     """Get the transform to x orientation and back
 
     Parameters
@@ -367,17 +404,23 @@ def get_x_orient_transform(img: nib.Nifti1Image, x: str) -> Tuple[np.ndarray, np
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray]
-        X transform and inverse x transform
+    Tuple[Sequence[Sequence[int]], Sequence[Sequence[int]]]
+        X transform and inverse x transform, in the form accepted by
+        ``nib.Nifti1Image.as_reoriented`` (returned as ``np.ndarray`` at runtime).
     """
     img_orientation = nib.orientations.io_orientation(img.affine)
     x_orientation = nib.orientations.axcodes2ornt(x)
     to_canonical = nib.orientations.ornt_transform(img_orientation, x_orientation)
     from_canonical = nib.orientations.ornt_transform(x_orientation, img_orientation)
-    return to_canonical, from_canonical
+    return (
+        cast(Sequence[Sequence[int]], to_canonical),
+        cast(Sequence[Sequence[int]], from_canonical),
+    )
 
 
-def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarray]:
+def get_ras_orient_transform(
+    img: nib.Nifti1Image,
+) -> tuple[Sequence[Sequence[int]], Sequence[Sequence[int]]]:
     """Get the transform to RAS orientation and back
 
     RAS orientation ensures no zooms are negative, which is necessary for
@@ -395,8 +438,8 @@ def get_ras_orient_transform(img: nib.Nifti1Image) -> Tuple[np.ndarray, np.ndarr
 
     Returns
     -------
-    Tuple[np.ndarray, np.ndarray]
-        RAS transform and inverse RAS transform
+    Tuple[Sequence[Sequence[int]], Sequence[Sequence[int]]]
+        RAS transform and inverse RAS transform.
     """
     return get_x_orient_transform(img, "RAS")
 
@@ -462,7 +505,9 @@ def invert_displacement_maps(
     return cast(nib.Nifti1Image, inv_displacement_maps)
 
 
-def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool = False) -> nib.Nifti1Image:
+def invert_displacement_field(
+    displacement_field: nib.Nifti1Image, verbose: bool = False
+) -> nib.Nifti1Image:
     """Invert displacement field
 
     Parameters
@@ -494,9 +539,9 @@ def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool
     mod_data = np.pad(data, pad_width=1)
 
     # invert displacement field
-    new_data = invert_displacement_field_cpp(mod_data, translations, rotations, zooms, verbose=verbose)[
-        1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1
-    ]
+    new_data = invert_displacement_field_cpp(
+        mod_data, translations, rotations, zooms, verbose=verbose
+    )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
 
     # make new image
     inv_displacement_field = nib.Nifti1Image(
@@ -508,7 +553,9 @@ def invert_displacement_field(displacement_field: nib.Nifti1Image, verbose: bool
 
 
 def resample_image(
-    reference_image: nib.Nifti1Image, input_image: nib.Nifti1Image, transform: nib.Nifti1Image
+    reference_image: nib.Nifti1Image,
+    input_image: nib.Nifti1Image,
+    transform: nib.Nifti1Image,
 ) -> nib.Nifti1Image:
     """Resample an image in a reference image space with a given transform.
 
@@ -579,7 +626,9 @@ def resample_image(
     return cast(nib.Nifti1Image, resampled_image)
 
 
-def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.Nifti1Image:
+def convert_warp(
+    in_warp: nib.Nifti1Image, in_type: str, out_type: str
+) -> nib.Nifti1Image:
     """Converts warp from one type to another.
 
     Parameters
@@ -602,7 +651,9 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
             raise ValueError("Input warp must be 4D or 5D.")
         else:
             if in_warp.shape[3] == 1 and in_warp.shape[-1]:
-                raise ValueError("Input warp must have singleton dimension in 4th axis and size in last axis.")
+                raise ValueError(
+                    "Input warp must have singleton dimension in 4th axis and size in last axis."
+                )
     else:
         # check last axis size
         if in_warp.shape[-1] != 3:
@@ -640,7 +691,9 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
         warp_data = warp_data[..., np.newaxis, :]
 
     # create nifti image
-    out_warp = nib.Nifti1Image(warp_data, in_warp_ras.affine, in_warp_ras.header).as_reoriented(from_canonical)
+    out_warp = nib.Nifti1Image(
+        warp_data, in_warp_ras.affine, in_warp_ras.header
+    ).as_reoriented(from_canonical)
 
     # add the vector intent code to the header
     cast(nib.Nifti1Header, out_warp.header).set_intent("vector", (), "")
@@ -650,15 +703,15 @@ def convert_warp(in_warp: nib.Nifti1Image, in_type: str, out_type: str) -> nib.N
 
 
 def build_low_pass_filter(
-    TR_in_sec: float,
+    tr_in_sec: float,
     critical_freq: float = 0.01,
     filter_order: int = 6,
-) -> Tuple[npt.NDArray, npt.NDArray]:
+) -> tuple[npt.NDArray, npt.NDArray]:
     """Function for calculating filter parameters for low pass filter
 
     Parameters
     ----------
-    TR_in_sec : float
+    tr_in_sec : float
         TR in seconds
     critical_freq : float, optional
         Critical frequency for low pass filter, by default 0.01
@@ -671,14 +724,21 @@ def build_low_pass_filter(
         Filter coefficients for IIR filter
     """
 
-    fs = 1.0 / TR_in_sec  # Sampling frequency (Hz)
+    fs = 1.0 / tr_in_sec  # Sampling frequency (Hz)
     fn = fs / 2.0  # Nyquist frequency (Hz)
     w0_cutoff = critical_freq / fn  # Normalized cutoff frequency
-    b, a = signal.iirfilter(filter_order, w0_cutoff, btype="lowpass", output="ba", ftype="butter")
+    b, a = cast(
+        tuple[npt.NDArray, npt.NDArray],
+        signal.iirfilter(
+            filter_order, w0_cutoff, btype="lowpass", output="ba", ftype="butter"
+        ),
+    )
     return b, a
 
 
-def compute_hausdorff_distance(image1: nib.Nifti1Image, image2: nib.Nifti1Image) -> float:
+def compute_hausdorff_distance(
+    image1: nib.Nifti1Image, image2: nib.Nifti1Image
+) -> float:
     """Compute the Hausdorff distance between two images
 
     Parameters
@@ -694,7 +754,7 @@ def compute_hausdorff_distance(image1: nib.Nifti1Image, image2: nib.Nifti1Image)
         Hausdorff distance
     """
     # get all data in RAS orientation
-    to_canonical, from_canonical = get_ras_orient_transform(image1)
+    to_canonical, _ = get_ras_orient_transform(image1)
 
     # get to RAS orientation
     image1_ras = image1.as_reoriented(to_canonical)
@@ -724,7 +784,9 @@ def compute_hausdorff_distance(image1: nib.Nifti1Image, image2: nib.Nifti1Image)
     return hausdorff_distance
 
 
-def compute_jacobian_determinant(displacement_field: nib.Nifti1Image) -> nib.Nifti1Image:
+def compute_jacobian_determinant(
+    displacement_field: nib.Nifti1Image,
+) -> nib.Nifti1Image:
     """Compute the Jacobian determinant of a displacement field
 
     Parameters
@@ -750,11 +812,15 @@ def compute_jacobian_determinant(displacement_field: nib.Nifti1Image) -> nib.Nif
     origin, rotations, zooms, _ = decompose44(displacement_field_ras.affine)
 
     # compute jacobian determinant
-    jacobian_determinant = compute_jacobian_determinant_cpp(data, origin, rotations, zooms)
+    jacobian_determinant = compute_jacobian_determinant_cpp(
+        data, origin, rotations, zooms
+    )
 
     # make new image
     jacobian_determinant_image = nib.Nifti1Image(
-        jacobian_determinant, displacement_field_ras.affine, displacement_field_ras.header
+        jacobian_determinant,
+        displacement_field_ras.affine,
+        displacement_field_ras.header,
     ).as_reoriented(from_canonical)
 
     # return jacobian determinant

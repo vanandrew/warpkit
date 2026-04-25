@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple, Union
+from typing import cast
 
 import nibabel as nib
 import numpy as np
@@ -12,19 +12,19 @@ from warpkit.utilities import (
 
 
 def medic(
-    phase: List[nib.Nifti1Image],
-    mag: List[nib.Nifti1Image],
-    TEs: Union[List[float], Tuple[float]],
+    phase: list[nib.Nifti1Image],
+    mag: list[nib.Nifti1Image],
+    tes: list[float] | tuple[float],
     total_readout_time: float,
     phase_encoding_direction: str,
-    frames: Optional[List[int]] = None,
+    frames: list[int] | None = None,
     border_size: int = 5,
-    border_filt: Tuple[int, int] = (1, 5),
+    border_filt: tuple[int, int] = (1, 5),
     svd_filt: int = 10,
     n_cpus: int = 4,
     debug: bool = False,
     wrap_limit: bool = False,
-) -> Tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
+) -> tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
     """This runs Multi-Echo DIstortion Correction (MEDIC) on a set of phase and magnitude images.
 
     Computes field maps from unwrapped phase images, converts to displacement maps, and inverts to
@@ -41,7 +41,7 @@ def medic(
         Phases to unwrap
     mag : List[nib.Nifti1Image]
         Magnitudes associated with each phase
-    TEs : Union[List[float], Tuple[float]]
+    tes : Union[List[float], Tuple[float]]
         Echo times associated with each phase (in milliseconds)
     total_readout_time : float
         Total readout time (in seconds)
@@ -70,19 +70,26 @@ def medic(
         Field maps in Hz (undistorted space)
     """
     # make sure affines/shapes are all correct
-    for p1, m1 in zip(phase, mag):
-        for p2, m2 in zip(phase, mag):
+    for img in (*phase, *mag):
+        if img.affine is None:
+            raise ValueError("All input images must have a non-None affine.")
+    for p1, m1 in zip(phase, mag, strict=True):
+        p1_aff = cast(np.ndarray, p1.affine)
+        m1_aff = cast(np.ndarray, m1.affine)
+        for p2, m2 in zip(phase, mag, strict=True):
+            p2_aff = cast(np.ndarray, p2.affine)
+            m2_aff = cast(np.ndarray, m2.affine)
             if not (
-                np.allclose(p1.affine, p2.affine, rtol=1e-3, atol=1e-3)
-                and np.allclose(m1.affine, m2.affine, rtol=1e-3, atol=1e-3)
+                np.allclose(p1_aff, p2_aff, rtol=1e-3, atol=1e-3)
+                and np.allclose(m1_aff, m2_aff, rtol=1e-3, atol=1e-3)
                 and p1.shape == p2.shape
                 and m1.shape == m2.shape
             ):
-                print(p1.affine, p2.affine)
-                print(p1.affine - p2.affine)
+                print(p1_aff, p2_aff)
+                print(p1_aff - p2_aff)
                 print(p1.shape, p2.shape)
-                print(m1.affine, m2.affine)
-                print(m1.affine - m2.affine)
+                print(m1_aff, m2_aff)
+                print(m1_aff - m2_aff)
                 print(m1.shape, m2.shape)
                 raise ValueError("Affines and shapes must match")
 
@@ -91,7 +98,7 @@ def medic(
         field_maps_native = unwrap_and_compute_field_maps(
             phase,
             mag,
-            TEs,
+            tes,
             border_size=border_size,
             border_filt=border_filt,
             svd_filt=svd_filt,
@@ -118,7 +125,9 @@ def medic(
     )
 
     # invert displacement maps (these are in undistorted space)
-    displacement_maps = invert_displacement_maps(inv_displacement_maps, phase_encoding_direction)
+    displacement_maps = invert_displacement_maps(
+        inv_displacement_maps, phase_encoding_direction
+    )
 
     # convert correction maps back to undistorted space field map
     field_maps = displacement_maps_to_field_maps(
@@ -127,9 +136,17 @@ def medic(
 
     # check if we need to flip sign of field maps (this is done by comparing sign of correlation between
     # native and undistorted field maps)
-    if np.corrcoef(field_maps.dataobj[..., 0].ravel(), field_maps_native.dataobj[..., 0].ravel())[0, 1] < 0:
+    if (
+        np.corrcoef(
+            field_maps.dataobj[..., 0].ravel(),
+            field_maps_native.dataobj[..., 0].ravel(),
+        )[0, 1]
+        < 0
+    ):
         field_map_data = field_maps.get_fdata() * -1
-        field_maps = nib.Nifti1Image(field_map_data, field_maps.affine, field_maps.header)
+        field_maps = nib.Nifti1Image(
+            field_map_data, field_maps.affine, field_maps.header
+        )
 
     # return correction maps
     return field_maps_native, displacement_maps, field_maps

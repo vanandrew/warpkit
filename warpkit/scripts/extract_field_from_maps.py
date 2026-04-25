@@ -1,4 +1,5 @@
 import argparse
+from typing import cast
 
 import nibabel as nib
 
@@ -20,14 +21,14 @@ def main():
     parser.add_argument("field", help="Displacement field to write out.")
     parser.add_argument(
         "-n",
-        "--frame_number",
+        "--frame-number",
         type=int,
         default=0,
         help="Frame number to extract field from. 0-indexed. By default 0th frame.",
     )
     parser.add_argument(
         "-p",
-        "--phase_encoding_axis",
+        "--phase-encoding-axis",
         default="j",
         choices=list(AXIS_MAP),
         help="The phase encoding axis of the data. Default is j.",
@@ -43,7 +44,7 @@ def main():
     args = parser.parse_args()
 
     # load the displacement maps
-    maps_img = nib.load(args.maps)
+    maps_img = cast(nib.Nifti1Image, nib.load(args.maps))
 
     # grab the map specified by frame_number
     selected_map_data = maps_img.dataobj[:, :, :, args.frame_number]
