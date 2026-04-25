@@ -22,7 +22,7 @@ class Romeo:
         mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
         phase2: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
         tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
-        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool] = ...,
+        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_] = ...,
     ) -> numpy.typing.NDArray[numpy.uint8]:
         """
         ROMEO edge-weight map (3, nx, ny, nz) uint8. Exposed for port validation; not used by warpkit.
@@ -32,7 +32,7 @@ class Romeo:
         phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
         weights: str,
         mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool],
+        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_],
         correct_global: bool = True,
         maxseeds: typing.SupportsInt | typing.SupportsIndex = 1,
         merge_regions: bool = False,
@@ -47,7 +47,7 @@ class Romeo:
         tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
         weights: str,
         mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool],
+        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_],
         correct_global: bool = True,
         maxseeds: typing.SupportsInt | typing.SupportsIndex = 1,
         merge_regions: bool = False,

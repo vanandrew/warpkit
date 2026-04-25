@@ -64,7 +64,10 @@ set_target_properties(ITKLIB PROPERTIES
     INTERFACE_LINK_LIBRARIES "${ITK_LIBRARIES}"
 )
 
-# add compile options based on architecture
+# add compile options based on architecture.
+# x86_64 stays at the baseline -march=x86-64 so wheels run on any x86_64 CPU
+# (pre-Haswell included). Bumping to a microarchitecture level (v2/v3/v4) is
+# a per-build choice the consumer can make via CXXFLAGS if they need it.
 message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
 if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
     add_compile_options(-O3 -mcpu=apple-m1)
@@ -73,8 +76,8 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     add_compile_options(-O3 -march=armv8.2-a)
     message(STATUS "Using -march=armv8.2-a")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    add_compile_options(-O3 -march=x86-64-v3)
-    message(STATUS "Using -march=x86-64-v3")
+    add_compile_options(-O3 -march=x86-64)
+    message(STATUS "Using -march=x86-64")
 endif()
 
 # compile pybind11 interface

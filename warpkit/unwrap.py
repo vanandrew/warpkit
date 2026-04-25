@@ -644,6 +644,7 @@ def unwrap_and_compute_field_maps(
     tes: list[float] | tuple[float] | npt.NDArray[np.float32],
     mask: nib.Nifti1Image | SimpleNamespace | None = None,
     automask: bool = True,
+    automask_dilation: int = 3,
     border_size: int = 5,
     border_filt: tuple[int, int] = (1, 5),
     svd_filt: int = 10,
@@ -671,6 +672,8 @@ def unwrap_and_compute_field_maps(
         Boolean mask, by default None
     automask : bool, optional
         Automatically generate a mask (ignore mask option), by default True
+    automask_dilation : int, optional
+        Number of dilation iterations applied to the automask, by default 3
     border_size : int, optional
         Size of border in automask, by default 5
     border_filt : Tuple[int, int], optional
@@ -831,7 +834,9 @@ def unwrap_and_compute_field_maps(
         ncpus=n_cpus,
         type="process",
         fn=unwrap_phase,
-        iterator=phase_iterator(phase, mag, tes, mask, frames, automask, border_size),
+        iterator=phase_iterator(
+            phase, mag, tes, mask, frames, automask, automask_dilation
+        ),
         post_fn=save_unwrapped_and_mask,
     )
 

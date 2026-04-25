@@ -1,6 +1,8 @@
 from json import load
 from pathlib import Path
+from typing import cast
 
+import nibabel as nib
 from nibabel.nifti1 import Nifti1Image
 from pytest import fixture
 
@@ -20,8 +22,8 @@ def test_data():
         with s.open() as f:
             metadata.append(load(f))
     return {
-        "phase": [Nifti1Image.load(p) for p in phase],
-        "mag": [Nifti1Image.load(m) for m in mag],
+        "phase": [cast(Nifti1Image, nib.load(str(p))) for p in phase],
+        "mag": [cast(Nifti1Image, nib.load(str(m))) for m in mag],
         "tes": [m["EchoTime"] * 1000 for m in metadata],
         "total_readout_time": metadata[0]["TotalReadoutTime"],
         "phase_encoding_direction": metadata[0]["PhaseEncodingDirection"],

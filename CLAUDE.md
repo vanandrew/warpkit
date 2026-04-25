@@ -19,9 +19,11 @@ Pre-print: <https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1>.
   by `setup.py` and exposed as `medic` and `extract_field_from_maps`.
 - `warpkit/warpkit_cpp.pyi` + `warpkit/py.typed` — type info for the compiled
   extension, shipped via `MANIFEST.in` and `[tool.setuptools.package-data]`.
-  Regenerate the stub after pybind11 binding changes:
+  Regenerate the stub after pybind11 binding changes via the wrapper script —
+  it runs pybind11-stubgen and rewrites the `numpy.bool` → `numpy.bool_`
+  artifact that stubgen 2.5.x emits:
   ```bash
-  uv run pybind11-stubgen warpkit.warpkit_cpp --output-dir .
+  scripts/regen-stub.sh
   ```
 - `src/warpkit.cpp` — pybind11 bindings. C++ headers (and the vendored ROMEO
   port) live under `include/`. CMake fetches and statically links ITK 5.4 and
@@ -44,7 +46,7 @@ uv run --with ruff ruff format
 uv run --with pyright pyright
 
 # regenerate the .pyi after touching src/warpkit.cpp
-uv run pybind11-stubgen warpkit.warpkit_cpp --output-dir .
+scripts/regen-stub.sh
 
 # install pre-commit hooks (incl. the commit-msg gitmoji check)
 uv run pre-commit install
