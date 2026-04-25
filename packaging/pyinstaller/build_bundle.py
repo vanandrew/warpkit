@@ -67,18 +67,6 @@ def run_pyinstaller(spec: Path, dist: Path, work: Path) -> None:
     subprocess.run(cmd, check=True)
 
 
-def strip_binaries(bundle: Path) -> None:
-    # COLLECT's strip= can mangle some libs; strip explicitly here on Linux only.
-    if platform.system().lower() != "linux":
-        return
-    strip = shutil.which("strip")
-    if strip is None:
-        return
-    for so in bundle.rglob("*.so*"):
-        if so.is_file() and not so.is_symlink():
-            subprocess.run([strip, "--strip-unneeded", str(so)], check=False)
-
-
 def adhoc_sign_macos(bundle: Path) -> None:
     if platform.system().lower() != "darwin":
         return
@@ -143,7 +131,6 @@ def main() -> int:
     versioned = dist / f"warpkit-{version}"
     raw_bundle.rename(versioned)
 
-    strip_binaries(versioned)
     adhoc_sign_macos(versioned)
     write_readme(versioned, version, target)
 
