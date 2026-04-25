@@ -41,9 +41,9 @@ uv sync --group dev --config-setting editable_mode=strict
 uv run pytest -q
 
 # lint + types (matches pre-commit; never bypass with --no-verify)
-uv run --with ruff ruff check
-uv run --with ruff ruff format
-uv run --with pyright pyright
+uvx ruff check
+uvx ruff format
+uvx pyright
 
 # regenerate the .pyi after touching src/warpkit.cpp
 scripts/regen-stub.sh

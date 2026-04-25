@@ -31,7 +31,7 @@ jobs:
       - name: Install dev dependencies
         run: uv sync --group dev --config-setting editable_mode=strict -v
       - name: Pyright
-        run: uv run --with pyright pyright
+        run: uvx pyright
   wheels-build:
     strategy:
       matrix:
