@@ -13,17 +13,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(CMAKE_POLICY_DEFAULT_CMP0148 NEW)
 
-# Link-time optimization (-flto). Portable across GCC/Clang/MSVC via the
-# CheckIPOSupported helper, which also adds the matching link flag.
-include(CheckIPOSupported)
-check_ipo_supported(RESULT _ipo_supported OUTPUT _ipo_error)
-if(_ipo_supported)
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
-    message(STATUS "IPO/LTO enabled")
-else()
-    message(STATUS "IPO/LTO not supported by this toolchain: ${_ipo_error}")
-endif()
-
 # include FetchContent module
 include(FetchContent)
 
