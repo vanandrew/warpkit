@@ -12,9 +12,9 @@ THISDIR = Path(__file__).parent
 @fixture(scope="session")
 def test_data():
     # get mag and phase data
-    mag = Path(THISDIR, "data", "test_data").glob("*mag*.nii.gz")
-    phase = Path(THISDIR, "data", "test_data").glob("*phase*.nii.gz")
-    sidecar = Path(THISDIR, "data", "test_data").glob("*mag*.json")
+    mag = sorted(Path(THISDIR, "data", "test_data").glob("*mag*.nii.gz"))
+    phase = sorted(Path(THISDIR, "data", "test_data").glob("*phase*.nii.gz"))
+    sidecar = sorted(Path(THISDIR, "data", "test_data").glob("*mag*.json"))
     metadata = []
     for s in sidecar:
         with s.open() as f:
