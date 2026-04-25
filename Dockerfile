@@ -19,7 +19,7 @@ ADD . /opt/warpkit
 # sync project (installs python 3.11, deps, and builds the CMake extension)
 ENV UV_PROJECT_ENVIRONMENT=/opt/warpkit/.venv
 ENV UV_PYTHON_PREFERENCE=only-managed
-RUN cd /opt/warpkit && uv sync --group dev --config-setting editable_mode=strict -v
+RUN cd /opt/warpkit && uv sync --group dev -v
 
 # put the project venv on PATH so `wk-medic` and friends resolve
 ENV PATH=/opt/warpkit/.venv/bin:${PATH}

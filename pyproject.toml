@@ -36,27 +36,34 @@ dev = [
 ]
 
 [build-system]
-requires = [
-  "setuptools >= 77.0",
-  "setuptools-scm >= 8.0",
-  "wheel >= 0.45",
-  "cmake >= 3.24",
-  "cmake-build-extension >= 0.6.1",
-]
-build-backend = "setuptools.build_meta"
+requires = ["scikit-build-core >= 0.10", "setuptools-scm >= 8.0"]
+build-backend = "scikit_build_core.build"
 
-[tool.setuptools]
-zip-safe = true
-
-[tool.setuptools.packages.find]
-exclude = ["tests", "packaging*"]
-
-[tool.setuptools.package-data]
-warpkit = ["py.typed", "*.pyi"]
+[tool.scikit-build]
+cmake.version = ">=3.24"
+ninja.version = ">=1.11"
+# Persistent CMake build dir keyed on wheel tag — survives across `uv sync`
+# invocations so ITK FetchContent + object files cache properly. Without this
+# scikit-build-core defaults to a per-build temp dir, the same problem the old
+# setuptools+cmake-build-extension setup had.
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["warpkit"]
+# Only install our extension component — skips ITK's install rules so we
+# don't waste I/O copying static libs we never ship.
+install.components = ["extension"]
+# Editable installs use a redirect importer pointing at the persistent
+# build-dir. rebuild = false because the per-import `cmake --build` path can't
+# work here: uv provisions ninja and the build python in an ephemeral isolated
+# env, CMake bakes those paths into CMakeCache.txt, then uv tears the env
+# down — leaving the cache pointing at a dead ninja. Rebuilds go through
+# `uv sync --reinstall-package warpkit`, which gets a fresh build env each
+# time and hits the persistent build/{wheel_tag}/ cache for ITK + objects.
+editable.mode = "redirect"
+editable.rebuild = false
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
-version_file = "warpkit/_version.py"
 
 # ── Ruff (linter + formatter) ────────────────────────────────────────
 [tool.ruff]

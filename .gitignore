@@ -138,10 +138,6 @@ dmypy.json
 tests/bidsdata_sustest/
 tests/test_outputs/
 
-# ignore vscode personal settings, but track shared editor config
-.vscode/*
-!.vscode/c_cpp_properties.json
-
 # ignore test data
 # download is via box
 tests/data/bidsdata
