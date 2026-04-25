@@ -7,6 +7,10 @@ authors = [{ name = "Andrew Van", email = "vanandrew77@gmail.com" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
 urls = { github = "https://github.com/vanandrew/warpkit" }
+# include/romeo/LICENSE is the upstream MIT notice for the ROMEO C++ port; it
+# travels with the headers in source distributions and (via PEP 639
+# license-files) gets bundled into wheels under *.dist-info/licenses/.
+license-files = ["LICENSE", "include/romeo/LICENSE"]
 dynamic = ["version"]
 dependencies = [
   "nibabel >= 4.0.2",
