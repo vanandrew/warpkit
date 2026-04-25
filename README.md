@@ -17,7 +17,11 @@ The phase-unwrapping core is a self-contained C++17 port of [ROMEO](https://gith
 pip install warpkit
 ```
 
-Pre-built wheels are published for Linux (x86_64) and macOS (universal2). If `pip` falls back to a source build and fails, please open an issue with the output of `pip install warpkit -v`.
+Pre-built wheels are published for Linux (x86_64 + aarch64) and macOS (universal2). If `pip` falls back to a source build and fails, please open an issue with the output of `pip install warpkit -v`.
+
+### Standalone binaries (no Python required)
+
+Each [GitHub release](https://github.com/vanandrew/warpkit/releases) attaches a zip per arch (`linux-x86_64`, `linux-aarch64`, `macos-arm64`) containing all seven `wk-*` CLIs as standalone binaries — no Python install or system ITK needed. Extract, add to `PATH`, and run. See the bundled `README.md` inside the zip for install/PATH instructions and the macOS Gatekeeper note.
 
 ### Docker
 
