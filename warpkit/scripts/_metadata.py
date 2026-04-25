@@ -39,18 +39,40 @@ def ensure_images(
 
 def load_acquisition_from_metadata(
     metadata_paths: Sequence[PathLike[str] | str],
-) -> tuple[list[float], float, str]:
-    """Read EchoTime (s → ms), TotalReadoutTime (s) and PhaseEncodingDirection
-    from BIDS-style JSON sidecars.
+    *,
+    require_trt_pe: bool = True,
+) -> tuple[list[float], float | None, str | None]:
+    """Read EchoTime (s → ms) — and optionally TotalReadoutTime (s) and
+    PhaseEncodingDirection — from BIDS-style JSON sidecars.
 
     Per-echo ``EchoTime`` is read from each file; ``TotalReadoutTime`` and
-    ``PhaseEncodingDirection`` are taken from the first.
+    ``PhaseEncodingDirection`` are taken from the first. When
+    ``require_trt_pe=False`` the latter two are skipped so callers that only
+    need echo times (e.g. ``unwrap_phase``) accept sidecars that omit them.
+    Missing required keys raise :class:`ValueError`.
     """
     metadatas = []
     for j in metadata_paths:
         with open(j) as f:
             metadatas.append(json.load(f))
-    tes_ms = [float(m["EchoTime"]) * 1000 for m in metadatas]
+    try:
+        tes_ms = [float(m["EchoTime"]) * 1000 for m in metadatas]
+    except KeyError:
+        raise ValueError(
+            "metadata sidecar is missing required key: 'EchoTime'."
+        ) from None
+    if not require_trt_pe:
+        return tes_ms, None, None
+    missing = [
+        k
+        for k in ("TotalReadoutTime", "PhaseEncodingDirection")
+        if k not in metadatas[0]
+    ]
+    if missing:
+        raise ValueError(
+            "metadata sidecar is missing required key(s): "
+            f"{', '.join(repr(k) for k in missing)}."
+        )
     trt = float(metadatas[0]["TotalReadoutTime"])
     ped = str(metadatas[0]["PhaseEncodingDirection"])
     return tes_ms, trt, ped
@@ -105,23 +127,36 @@ def resolve_acquisition(
         raise ValueError("either --metadata or --TEs must be provided.")
 
     if metadata is not None:
-        tes_resolved, trt_resolved, ped_resolved = load_acquisition_from_metadata(
-            metadata
-        )
-        if require_trt_pe:
-            return tes_resolved, trt_resolved, ped_resolved
-        return tes_resolved, None, None
+        return load_acquisition_from_metadata(metadata, require_trt_pe=require_trt_pe)
 
     return list(tes or []), total_readout_time, phase_encoding_direction
 
 
 def trim_noise_frames(images: list[nib.Nifti1Image], n: int) -> list[nib.Nifti1Image]:
     """Trim the last ``n`` frames from each 4D image. Returns the input list
-    unchanged when ``n == 0``."""
+    unchanged when ``n == 0``.
+
+    When ``n > 0`` each image must be 4D with strictly more than ``n`` frames;
+    otherwise ``[..., :-n]`` would either chop the Z dimension of a 3D volume
+    or yield an empty 4D series that crashes downstream consumers. Both raise
+    :class:`ValueError`.
+    """
     if n == 0:
         return images
     if n < 0:
         raise ValueError(f"noise_frames must be non-negative; got {n}.")
+    for idx, img in enumerate(images):
+        if img.ndim != 4:
+            raise ValueError(
+                f"noise_frames={n} requires 4D images; image #{idx} has "
+                f"ndim={img.ndim}."
+            )
+        n_frames = img.shape[-1]
+        if n >= n_frames:
+            raise ValueError(
+                f"noise_frames={n} would leave 0 frames in image #{idx} "
+                f"(has {n_frames} frame(s))."
+            )
     return [
         nib.Nifti1Image(img.dataobj[..., :-n], img.affine, img.header) for img in images
     ]

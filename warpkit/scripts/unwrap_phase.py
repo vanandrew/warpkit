@@ -76,17 +76,7 @@ def unwrap_phase(
     mag_data = ensure_images(magnitude)
     phase_data = ensure_images(phase)
 
-    if noise_frames < 0:
-        raise ValueError(f"noise_frames must be non-negative; got {noise_frames}.")
     if noise_frames > 0:
-        for label, imgs in (("phase", phase_data), ("magnitude", mag_data)):
-            for idx, img in enumerate(imgs):
-                n_frames = img.shape[-1] if img.ndim == 4 else 1
-                if noise_frames >= n_frames:
-                    raise ValueError(
-                        f"noise_frames={noise_frames} would leave 0 frames "
-                        f"in {label} image #{idx} (has {n_frames} frame(s))."
-                    )
         print(f"Removing {noise_frames} noise frames from the end of each file...")
     mag_data = trim_noise_frames(mag_data, noise_frames)
     phase_data = trim_noise_frames(phase_data, noise_frames)

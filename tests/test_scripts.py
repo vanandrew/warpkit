@@ -600,6 +600,91 @@ def test_unwrap_phase_noiseframes_consumes_all_frames(argv, capsys, tmp_path):
     assert "0 frames" in err
 
 
+def test_unwrap_phase_metadata_accepts_echotime_only(argv, capsys, tmp_path):
+    """``wk-unwrap-phase`` only needs EchoTime; sidecars without
+    TotalReadoutTime / PhaseEncodingDirection must work. A mismatched phase
+    count forces a clean parser.error *after* the metadata loader resolves —
+    if the loader still required TRT/PED we'd see a KeyError instead."""
+    sidecar = tmp_path / "m1.json"
+    sidecar.write_text(json.dumps({"EchoTime": 0.014}))
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            "m.nii",
+            "--phase",
+            "p1.nii",
+            "p2.nii",
+            "--metadata",
+            str(sidecar),
+            "--out-prefix",
+            str(tmp_path / "out"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        unwrap_phase_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "must match" in err
+
+
+def test_unwrap_phase_metadata_missing_echotime(argv, capsys, tmp_path):
+    """A sidecar without EchoTime must surface as a clean parser error, not a
+    KeyError from the metadata loader."""
+    sidecar = tmp_path / "m1.json"
+    sidecar.write_text(json.dumps({}))
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            "m.nii",
+            "--phase",
+            "p.nii",
+            "--metadata",
+            str(sidecar),
+            "--out-prefix",
+            str(tmp_path / "out"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        unwrap_phase_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "EchoTime" in err
+
+
+def test_medic_noiseframes_consumes_all_frames(argv, capsys, tmp_path):
+    """``-f`` >= n_frames now raises a clean parser error in medic too: the
+    check moved into ``trim_noise_frames`` so every caller is protected from
+    silently producing an empty 4D series."""
+    mag = _write_nifti(tmp_path / "m.nii", (4, 4, 4, 5))
+    phase = _write_nifti(tmp_path / "p.nii", (4, 4, 4, 5))
+    argv(
+        [
+            "wk-medic",
+            "--magnitude",
+            mag,
+            "--phase",
+            phase,
+            "--TEs",
+            "14.0",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+            "--out-prefix",
+            str(tmp_path / "out"),
+            "-f",
+            "5",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        medic_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "0 frames" in err
+
+
 # ---------------------------------------------------------------------------
 # compute_fieldmap --help / argument validation
 # ---------------------------------------------------------------------------
