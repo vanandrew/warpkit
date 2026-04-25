@@ -28,13 +28,13 @@ embedded interpreter and dependency tree.
 ## macOS Gatekeeper
 
 Binaries are ad-hoc signed, not Apple-notarized, so on first launch macOS will
-refuse to run them. Either:
+quarantine them — and not just the top-level `wk-*` binaries: every `.dylib`
+and `.so` inside `_internal/` is also flagged. Strip the quarantine attribute
+recursively from the whole bundle:
 
 ```sh
-xattr -d com.apple.quarantine /opt/warpkit-@VERSION@/wk-*
+xattr -r -d com.apple.quarantine /opt/warpkit-@VERSION@
 ```
-
-or right-click → Open the first time on each binary.
 
 ## Available CLIs
 
