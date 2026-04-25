@@ -13,6 +13,7 @@ from warpkit.utilities import (
     convert_warp,
     corr2_coeff,
     create_brain_mask,
+    displacement_field_to_map,
     displacement_map_to_field,
     displacement_maps_to_field_maps,
     field_maps_to_displacement_maps,
@@ -337,3 +338,41 @@ def test_convert_warp_rejects_unknown_type():
     warp = nib.Nifti1Image(np.zeros((4, 4, 4, 3), dtype=np.float32), affine)
     with pytest.raises(ValueError, match="not recognized"):
         convert_warp(warp, in_type="bogus", out_type="itk")
+
+
+def test_convert_warp_accepts_5d_ants_layout():
+    """ANTs/AFNI single warps are 5D with shape (X, Y, Z, 1, 3); convert_warp
+    must accept that layout."""
+    affine = np.eye(4)
+    rng = np.random.default_rng(0)
+    data_5d = rng.standard_normal((4, 4, 4, 1, 3)).astype(np.float32)
+    warp = nib.Nifti1Image(data_5d, affine)
+    out = convert_warp(warp, in_type="ants", out_type="itk")
+    # ants -> itk flips x and y (WARP_ITK_FLIPS["ants"] = [-1, -1, 1])
+    expected = data_5d[..., 0, :].copy()
+    expected[..., 0] *= -1
+    expected[..., 1] *= -1
+    assert_allclose(out.get_fdata().squeeze(), expected, atol=1e-5)
+
+
+def test_convert_warp_rejects_bad_5d_shape():
+    """A 5D warp without the (X,Y,Z,1,3) layout (e.g. multi-frame 5D series)
+    must be rejected — the per-frame split should have happened upstream."""
+    affine = np.eye(4)
+    bad = nib.Nifti1Image(np.zeros((4, 4, 4, 2, 3), dtype=np.float32), affine)
+    with pytest.raises(ValueError, match="singleton 4th axis"):
+        convert_warp(bad, "itk", "itk")
+
+
+@pytest.mark.parametrize("fmt", ["itk", "fsl", "ants", "afni"])
+@pytest.mark.parametrize("axis", ["x", "y", "z", "x-", "y-", "z-"])
+def test_displacement_map_field_roundtrip_all_formats(axis, fmt):
+    """displacement_map_to_field followed by displacement_field_to_map must
+    recover the original 1-channel map, for every (axis, format) pair —
+    including the ants/afni formats whose intermediate field is 5D."""
+    rng = np.random.default_rng(7)
+    data = rng.standard_normal((4, 4, 4)).astype(np.float32)
+    dmap = nib.Nifti1Image(data, np.eye(4))
+    field = displacement_map_to_field(dmap, axis=axis, format=fmt, frame=0)
+    back = displacement_field_to_map(field, axis=axis, format=fmt)
+    assert_allclose(back.get_fdata(), data, atol=1e-5)

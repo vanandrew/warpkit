@@ -692,19 +692,18 @@ def convert_warp(
     nib.Nifti1Image
         Output warp in desired format.
     """
-    # check data shape
-    if len(in_warp.shape) != 4:
-        if len(in_warp.shape) != 5:
-            raise ValueError("Input warp must be 4D or 5D.")
-        else:
-            if in_warp.shape[3] == 1 and in_warp.shape[-1]:
-                raise ValueError(
-                    "Input warp must have singleton dimension in 4th axis and size in last axis."
-                )
-    else:
-        # check last axis size
+    # check data shape: 4D (X,Y,Z,3) or 5D (X,Y,Z,1,3) (ANTs/AFNI single warp).
+    if in_warp.ndim == 4:
         if in_warp.shape[-1] != 3:
             raise ValueError("Warp must have size 3 in last axis.")
+    elif in_warp.ndim == 5:
+        if in_warp.shape[3] != 1 or in_warp.shape[-1] != 3:
+            raise ValueError(
+                "5D warp must have singleton 4th axis and size 3 in last axis "
+                f"(got shape {tuple(in_warp.shape)})."
+            )
+    else:
+        raise ValueError("Input warp must be 4D or 5D.")
 
     # get input in RAS orientation
     to_canonical, from_canonical = get_ras_orient_transform(in_warp)
