@@ -32,6 +32,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# but our committed bundle spec is checked in
+!packaging/pyinstaller/warpkit.spec
 
 # Installer logs
 pip-log.txt

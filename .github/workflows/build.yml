@@ -10,6 +10,7 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -66,6 +67,117 @@ jobs:
         with:
           name: wheel-${{ matrix.os }}-cp${{ matrix.python-versions.version }}
           path: ./wheelhouse/*.whl
+  binaries-build-linux:
+    name: PyInstaller bundle (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-latest
+            container: quay.io/pypa/manylinux_2_28_x86_64
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Trust workspace dir for git (container UID mismatch)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Build extension + install dev deps
+        run: uv sync --group dev --config-setting editable_mode=strict -v
+      - name: Install PyInstaller
+        run: uv pip install --python .venv/bin/python pyinstaller
+      - name: Build bundle
+        run: .venv/bin/python packaging/pyinstaller/build_bundle.py --target ${{ matrix.target }}
+      - name: Smoke test (--version per binary)
+        run: |
+          BUNDLE=$(ls -d packaging/pyinstaller/dist/warpkit-*/ | head -1)
+          for bin in "$BUNDLE"wk-*; do
+            "$bin" --version
+          done
+      - name: Smoke test (wk-unwrap-phase end-to-end)
+        run: |
+          BUNDLE=$(ls -d packaging/pyinstaller/dist/warpkit-*/ | head -1)
+          mkdir -p smoke-out
+          "$BUNDLE/wk-unwrap-phase" \
+            --magnitude tests/data/test_data/*part-mag_bold.nii.gz \
+            --phase tests/data/test_data/*part-phase_bold.nii.gz \
+            --metadata tests/data/test_data/*part-mag_bold.json \
+            --out-prefix smoke-out/unwrap
+          ls smoke-out/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binaries-${{ matrix.target }}
+          path: packaging/pyinstaller/dist/warpkit-*-${{ matrix.target }}.zip
+          if-no-files-found: error
+  binaries-build-macos:
+    name: PyInstaller bundle (macos-arm64)
+    runs-on: macos-latest
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Build extension + install dev deps
+        run: uv sync --group dev --config-setting editable_mode=strict -v
+      - name: Install PyInstaller
+        run: uv pip install --python .venv/bin/python pyinstaller
+      - name: Build bundle
+        run: .venv/bin/python packaging/pyinstaller/build_bundle.py --target macos-arm64
+      - name: Smoke test (--version per binary)
+        run: |
+          BUNDLE=$(ls -d packaging/pyinstaller/dist/warpkit-*/ | head -1)
+          for bin in "$BUNDLE"wk-*; do
+            "$bin" --version
+          done
+      - name: Smoke test (wk-unwrap-phase end-to-end)
+        run: |
+          BUNDLE=$(ls -d packaging/pyinstaller/dist/warpkit-*/ | head -1)
+          mkdir -p smoke-out
+          "$BUNDLE/wk-unwrap-phase" \
+            --magnitude tests/data/test_data/*part-mag_bold.nii.gz \
+            --phase tests/data/test_data/*part-phase_bold.nii.gz \
+            --metadata tests/data/test_data/*part-mag_bold.json \
+            --out-prefix smoke-out/unwrap
+          ls smoke-out/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binaries-macos-arm64
+          path: packaging/pyinstaller/dist/warpkit-*-macos-arm64.zip
+          if-no-files-found: error
+  binaries-publish:
+    name: Attach binaries to release
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: [binaries-build-linux, binaries-build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: bins
+          pattern: binaries-*
+          merge-multiple: true
+      - name: Upload zips to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" bins/*.zip --clobber --repo "${{ github.repository }}"
   sdist-build:
     name: Sdist and coverage
     runs-on: ubuntu-latest
