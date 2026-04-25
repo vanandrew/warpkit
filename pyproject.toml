@@ -7,8 +7,7 @@ authors = [{ name = "Andrew Van", email = "vanandrew@wustl.edu" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
 urls = { github = "https://github.com/vanandrew/warpkit" }
-version = "0.1.1"
-dynamic = ["scripts"]
+dynamic = ["version", "scripts"]
 dependencies = [
   "nibabel >= 4.0.2",
   "numpy >= 1.23.3",
@@ -27,7 +26,13 @@ dev = [
 ]
 
 [build-system]
-requires = ["setuptools", "wheel", "cmake >= 3.24", "cmake-build-extension >= 0.5.1"]
+requires = [
+  "setuptools >= 77.0",
+  "setuptools-scm >= 8.0",
+  "wheel >= 0.45",
+  "cmake >= 3.24",
+  "cmake-build-extension >= 0.6.1",
+]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
@@ -35,6 +40,10 @@ zip-safe = true
 
 [tool.setuptools.packages.find]
 exclude = ["tests"]
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
+version_file = "warpkit/_version.py"
 
 # ── Ruff (linter + formatter) ────────────────────────────────────────
 [tool.ruff]
@@ -80,6 +89,7 @@ reportArgumentType = "warning"
 reportAssignmentType = "warning"
 reportReturnType = "warning"
 reportGeneralTypeIssues = "warning"
+reportAttributeAccessIssue = "warning"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

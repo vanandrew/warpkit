@@ -144,6 +144,9 @@ tests/test_outputs/
 tests/data/bidsdata
 tests/data/bidsdata.zip
 
+# ignore setuptools-scm generated version file
+warpkit/_version.py
+
 # ignore build-tmp
 warpkit/build-tmp*/
 
