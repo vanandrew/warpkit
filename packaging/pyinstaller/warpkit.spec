@@ -4,6 +4,7 @@
 from pathlib import Path
 
 LAUNCHERS_DIR = Path(SPECPATH) / "launchers"
+HOOKS_DIR = Path(SPECPATH) / "hooks"
 
 SCRIPTS = [
     "wk-medic",
@@ -33,7 +34,7 @@ for name in SCRIPTS:
         binaries=[],
         datas=[],
         hiddenimports=HIDDEN_IMPORTS,
-        hookspath=[],
+        hookspath=[str(HOOKS_DIR)],
         hooksconfig={},
         runtime_hooks=[],
         excludes=[],

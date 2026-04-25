@@ -94,11 +94,14 @@ jobs:
         with:
           name: ${{ matrix.wheel-artifact }}
           path: wheelhouse
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+      - name: Set up Python
+        run: uv python install 3.11
       - name: Install warpkit + PyInstaller
         run: |
-          /opt/python/cp311-cp311/bin/python -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install ./wheelhouse/*.whl pyinstaller
+          uv venv --python 3.11 .venv
+          uv pip install --python .venv/bin/python ./wheelhouse/*.whl pyinstaller
       - name: Build bundle
         run: .venv/bin/python packaging/pyinstaller/build_bundle.py --target ${{ matrix.target }}
       - name: Smoke test (--version per binary)
