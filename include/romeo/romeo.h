@@ -20,67 +20,28 @@ namespace py = pybind11;
 
 namespace romeo {
 
-// Python-facing facade over the pure-C++ ROMEO implementation.
+// Python-facing entry points over the pure-C++ ROMEO implementation.
 //
-// Method names retain the `romeo_*` prefix from the original Julia-backed
-// pybind class so call sites in warpkit/unwrap.py read naturally.
+// Function names retain the `romeo_*` prefix from the original Julia-backed
+// API so call sites in warpkit/unwrap.py read naturally. They are stateless
+// free functions; pybind11 binds them as module-level functions in
+// `warpkit_cpp` (no class wrapper).
+
+// Port of ROMEO.jl `calculateweights(phase; weights=:romeo, ...)` — the
+// only weight preset we support. Exposed primarily so Python tests can
+// validate the internal machinery against literal goldens from
+// ROMEO.jl test/specialcases.jl. Not used by warpkit itself.
+//
+// `phase` is a column-major (nx, ny, nz) array. `mag`, `phase2`, `mask` may
+// be 0-sized / empty arrays to indicate "not provided"; `TEs` is required
+// only when `phase2` is provided (length 2: [te_phase, te_phase2]).
+// Returns a (3, nx, ny, nz) uint8 array.
 template <typename T>
-class Romeo {
-   public:
-    Romeo() = default;
-    ~Romeo() = default;
-
-    // Port of ROMEO.jl `calculateweights(phase; weights=:romeo, ...)` — the
-    // only weight preset we support. Exposed primarily so Python tests can
-    // validate the internal machinery against literal goldens from
-    // ROMEO.jl test/specialcases.jl. Not used by warpkit itself.
-    //
-    // `phase` is a column-major (nx, ny, nz) array. `mag`, `phase2`, `mask` may
-    // be 0-sized / empty arrays to indicate "not provided"; `TEs` is required
-    // only when `phase2` is provided (length 2: [te_phase, te_phase2]).
-    // Returns a (3, nx, ny, nz) uint8 array.
-    py::array_t<std::uint8_t, py::array::f_style> calculate_weights(py::array_t<T, py::array::f_style> phase,
-                                                                    py::array_t<T, py::array::f_style> mag,
-                                                                    py::array_t<T, py::array::f_style> phase2,
-                                                                    py::array_t<T, py::array::f_style> TEs,
-                                                                    py::array_t<bool, py::array::f_style> mask);
-
-    py::array_t<T, py::array::f_style> romeo_voxelquality(py::array_t<T, py::array::f_style> phase,
-                                                          py::array_t<T, py::array::f_style> TEs,
-                                                          py::array_t<T, py::array::f_style> mag);
-
-    py::array_t<T, py::array::f_style> romeo_unwrap3D(py::array_t<T, py::array::f_style> phase,
-                                                      std::string weights,
-                                                      py::array_t<T, py::array::f_style> mag,
-                                                      py::array_t<bool, py::array::f_style> mask,
-                                                      bool correctglobal = false,
-                                                      int maxseeds = 1,
-                                                      bool merge_regions = false,
-                                                      bool correct_regions = false);
-
-    py::array_t<T, py::array::f_style> romeo_unwrap4D(py::array_t<T, py::array::f_style> phase,
-                                                      py::array_t<T, py::array::f_style> TEs,
-                                                      std::string weights,
-                                                      py::array_t<T, py::array::f_style> mag,
-                                                      py::array_t<bool, py::array::f_style> mask,
-                                                      bool correctglobal = false,
-                                                      int maxseeds = 1,
-                                                      bool merge_regions = false,
-                                                      bool correct_regions = false);
-};
-
-// ----------------------------------------------------------------------------
-// Method implementations (Phase 1: all throw; wired to the public entry points
-// under include/romeo/*.h so Phase 2+ can fill them in without touching this
-// file's signatures).
-// ----------------------------------------------------------------------------
-
-template <typename T>
-py::array_t<std::uint8_t, py::array::f_style> Romeo<T>::calculate_weights(py::array_t<T, py::array::f_style> phase,
-                                                                          py::array_t<T, py::array::f_style> mag,
-                                                                          py::array_t<T, py::array::f_style> phase2,
-                                                                          py::array_t<T, py::array::f_style> TEs,
-                                                                          py::array_t<bool, py::array::f_style> mask) {
+py::array_t<std::uint8_t, py::array::f_style> calculate_weights(py::array_t<T, py::array::f_style> phase,
+                                                                py::array_t<T, py::array::f_style> mag,
+                                                                py::array_t<T, py::array::f_style> phase2,
+                                                                py::array_t<T, py::array::f_style> TEs,
+                                                                py::array_t<bool, py::array::f_style> mask) {
     if (phase.ndim() != 3) throw std::invalid_argument("calculate_weights: phase must be 3D");
     const auto nx = static_cast<std::size_t>(phase.shape(0));
     const auto ny = static_cast<std::size_t>(phase.shape(1));
@@ -118,9 +79,9 @@ py::array_t<std::uint8_t, py::array::f_style> Romeo<T>::calculate_weights(py::ar
 }
 
 template <typename T>
-py::array_t<T, py::array::f_style> Romeo<T>::romeo_voxelquality(py::array_t<T, py::array::f_style> phase,
-                                                                py::array_t<T, py::array::f_style> TEs,
-                                                                py::array_t<T, py::array::f_style> mag) {
+py::array_t<T, py::array::f_style> romeo_voxelquality(py::array_t<T, py::array::f_style> phase,
+                                                      py::array_t<T, py::array::f_style> TEs,
+                                                      py::array_t<T, py::array::f_style> mag) {
     if (phase.ndim() != 4) throw std::invalid_argument("romeo_voxelquality: phase must be 4D");
     const auto nx = static_cast<std::size_t>(phase.shape(0));
     const auto ny = static_cast<std::size_t>(phase.shape(1));
@@ -150,14 +111,14 @@ py::array_t<T, py::array::f_style> Romeo<T>::romeo_voxelquality(py::array_t<T, p
 }
 
 template <typename T>
-py::array_t<T, py::array::f_style> Romeo<T>::romeo_unwrap3D(py::array_t<T, py::array::f_style> phase,
-                                                            std::string weights,
-                                                            py::array_t<T, py::array::f_style> mag,
-                                                            py::array_t<bool, py::array::f_style> mask,
-                                                            bool correctglobal,
-                                                            int maxseeds,
-                                                            bool merge_regions,
-                                                            bool correct_regions) {
+py::array_t<T, py::array::f_style> romeo_unwrap3D(py::array_t<T, py::array::f_style> phase,
+                                                  std::string weights,
+                                                  py::array_t<T, py::array::f_style> mag,
+                                                  py::array_t<bool, py::array::f_style> mask,
+                                                  bool correctglobal = false,
+                                                  int maxseeds = 1,
+                                                  bool merge_regions = false,
+                                                  bool correct_regions = false) {
     if (weights != "romeo")
         throw std::invalid_argument("romeo_unwrap3D: only the \"romeo\" weight preset is supported.");
     if (merge_regions || correct_regions)
@@ -198,15 +159,15 @@ py::array_t<T, py::array::f_style> Romeo<T>::romeo_unwrap3D(py::array_t<T, py::a
 }
 
 template <typename T>
-py::array_t<T, py::array::f_style> Romeo<T>::romeo_unwrap4D(py::array_t<T, py::array::f_style> phase,
-                                                            py::array_t<T, py::array::f_style> TEs,
-                                                            std::string weights,
-                                                            py::array_t<T, py::array::f_style> mag,
-                                                            py::array_t<bool, py::array::f_style> mask,
-                                                            bool correctglobal,
-                                                            int maxseeds,
-                                                            bool merge_regions,
-                                                            bool correct_regions) {
+py::array_t<T, py::array::f_style> romeo_unwrap4D(py::array_t<T, py::array::f_style> phase,
+                                                  py::array_t<T, py::array::f_style> TEs,
+                                                  std::string weights,
+                                                  py::array_t<T, py::array::f_style> mag,
+                                                  py::array_t<bool, py::array::f_style> mask,
+                                                  bool correctglobal = false,
+                                                  int maxseeds = 1,
+                                                  bool merge_regions = false,
+                                                  bool correct_regions = false) {
     if (weights != "romeo")
         throw std::invalid_argument("romeo_unwrap4D: only the \"romeo\" weight preset is supported.");
     if (merge_regions || correct_regions)

@@ -9,6 +9,7 @@ from warpkit.utilities import (
     WARP_ITK_FLIPS,
     build_low_pass_filter,
     compute_hausdorff_distance,
+    compute_jacobian_determinant,
     convert_warp,
     corr2_coeff,
     create_brain_mask,
@@ -234,16 +235,11 @@ def _zero_3vec_field(shape=(8, 8, 8)) -> nib.Nifti1Image:
 
 
 def test_invert_displacement_field_zero():
-    """Inverting a zero field gives back zero (within numerical noise).
-
-    Note: the implementation pads every axis (incl. the 3-channel axis) and
-    only un-pads the spatial dims, so the output channel axis ends up size 5
-    rather than 3. We assert spatial shape match and zero values; fixing the
-    output-shape quirk is out of scope here.
-    """
+    """Inverting a zero field gives back zero (within numerical noise) and
+    preserves the 3-channel last axis."""
     field = _zero_3vec_field()
     inverted = invert_displacement_field(field)
-    assert inverted.shape[:3] == field.shape[:3]
+    assert inverted.shape == field.shape
     assert_allclose(inverted.get_fdata(), 0.0, atol=1e-5)
 
 
@@ -253,6 +249,17 @@ def test_invert_displacement_maps_zero():
     inverted = invert_displacement_maps(dmap, axis="y")
     assert inverted.shape == dmap.shape
     assert_allclose(inverted.get_fdata(), 0.0, atol=1e-5)
+
+
+def test_compute_jacobian_determinant_zero_field():
+    """The Jacobian determinant of a zero displacement field is identically 1
+    (the identity transform doesn't change volume). Exercises the
+    compute_jacobian_determinant_cpp binding."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    field = nib.Nifti1Image(np.zeros((6, 6, 6, 3), dtype=np.float32), affine)
+    jdet = compute_jacobian_determinant(field)
+    assert jdet.shape == (6, 6, 6)
+    assert_allclose(jdet.get_fdata(), 1.0, atol=1e-5)
 
 
 # ---------------------------------------------------------------------------

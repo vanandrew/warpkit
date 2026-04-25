@@ -6,65 +6,27 @@ import numpy
 import numpy.typing
 
 __all__: list[str] = [
-    "Romeo",
+    "calculate_weights",
     "compute_hausdorff_distance",
     "compute_jacobian_determinant",
     "invert_displacement_field",
     "invert_displacement_map",
     "resample",
+    "romeo_unwrap3d",
+    "romeo_unwrap4d",
+    "romeo_voxelquality",
 ]
 
-class Romeo:
-    def __init__(self) -> None: ...
-    def calculate_weights(
-        self,
-        phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
-        phase2: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
-        tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
-        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_] = ...,
-    ) -> numpy.typing.NDArray[numpy.uint8]:
-        """
-        ROMEO edge-weight map (3, nx, ny, nz) uint8. Exposed for port validation; not used by warpkit.
-        """
-    def romeo_unwrap3d(
-        self,
-        phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        weights: str,
-        mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_],
-        correct_global: bool = True,
-        maxseeds: typing.SupportsInt | typing.SupportsIndex = 1,
-        merge_regions: bool = False,
-        correct_regions: bool = False,
-    ) -> numpy.typing.NDArray[numpy.float32]:
-        """
-        3D ROMEO phase unwrap
-        """
-    def romeo_unwrap4d(
-        self,
-        phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        weights: str,
-        mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_],
-        correct_global: bool = True,
-        maxseeds: typing.SupportsInt | typing.SupportsIndex = 1,
-        merge_regions: bool = False,
-        correct_regions: bool = False,
-    ) -> numpy.typing.NDArray[numpy.float32]:
-        """
-        4D (multi-echo) ROMEO phase unwrap
-        """
-    def romeo_voxelquality(
-        self,
-        phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-        mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
-    ) -> numpy.typing.NDArray[numpy.float32]:
-        """
-        Compute a per-voxel quality map from multi-echo phase/magnitude
-        """
+def calculate_weights(
+    phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
+    phase2: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
+    tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32] = ...,
+    mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_] = ...,
+) -> numpy.typing.NDArray[numpy.uint8]:
+    """
+    ROMEO edge-weight map (3, nx, ny, nz) uint8. Exposed for port validation; not used by warpkit.
+    """
 
 def compute_hausdorff_distance(
     image1: typing.Annotated[numpy.typing.ArrayLike, numpy.float64],
@@ -131,4 +93,42 @@ def resample(
 ) -> numpy.typing.NDArray[numpy.float64]:
     """
     Resample an image with transform
+    """
+
+def romeo_unwrap3d(
+    phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    weights: str,
+    mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_],
+    correct_global: bool = True,
+    maxseeds: typing.SupportsInt | typing.SupportsIndex = 1,
+    merge_regions: bool = False,
+    correct_regions: bool = False,
+) -> numpy.typing.NDArray[numpy.float32]:
+    """
+    3D ROMEO phase unwrap
+    """
+
+def romeo_unwrap4d(
+    phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    weights: str,
+    mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    mask: typing.Annotated[numpy.typing.ArrayLike, numpy.bool_],
+    correct_global: bool = True,
+    maxseeds: typing.SupportsInt | typing.SupportsIndex = 1,
+    merge_regions: bool = False,
+    correct_regions: bool = False,
+) -> numpy.typing.NDArray[numpy.float32]:
+    """
+    4D (multi-echo) ROMEO phase unwrap
+    """
+
+def romeo_voxelquality(
+    phase: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    tes: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+    mag: typing.Annotated[numpy.typing.ArrayLike, numpy.float32],
+) -> numpy.typing.NDArray[numpy.float32]:
+    """
+    Compute a per-voxel quality map from multi-echo phase/magnitude
     """

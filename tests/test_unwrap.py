@@ -68,31 +68,32 @@ def test_compute_offset_recovers_known_2pi_shift():
 
 
 # ---------------------------------------------------------------------------
-# Romeo bindings — light smoke test that the new lowercase names exist with
-# the expected signature shape (the heavy property tests live in test_romeo).
+# Romeo bindings — light smoke test that the lowercase free-function names
+# exist at module level (the heavy property tests live in test_romeo).
 # ---------------------------------------------------------------------------
 
 
 def test_romeo_lowercase_bindings_exist():
-    from warpkit.warpkit_cpp import Romeo
+    import warpkit.warpkit_cpp as cpp
 
-    romeo = Romeo()
-    # the Python-visible names are lowercase post-rename; the original
-    # uppercase names should not exist as attributes.
-    assert hasattr(romeo, "romeo_unwrap3d")
-    assert hasattr(romeo, "romeo_unwrap4d")
-    assert hasattr(romeo, "romeo_voxelquality")
-    assert not hasattr(romeo, "romeo_unwrap3D")
-    assert not hasattr(romeo, "romeo_unwrap4D")
+    # Python-visible names are lowercase free functions on the module;
+    # there is no Romeo class wrapper, and the original uppercase names
+    # should not appear at module level either.
+    assert hasattr(cpp, "romeo_unwrap3d")
+    assert hasattr(cpp, "romeo_unwrap4d")
+    assert hasattr(cpp, "romeo_voxelquality")
+    assert hasattr(cpp, "calculate_weights")
+    assert not hasattr(cpp, "Romeo")
+    assert not hasattr(cpp, "romeo_unwrap3D")
+    assert not hasattr(cpp, "romeo_unwrap4D")
 
 
 def test_romeo_unwrap3d_rejects_unknown_weight_preset():
     """`weights` is a preset name string; only "romeo" is supported."""
-    from warpkit.warpkit_cpp import Romeo
+    from warpkit.warpkit_cpp import romeo_unwrap3d
 
-    romeo = Romeo()
     phase = np.zeros((3, 3, 3), dtype=np.float32)
     mag = np.ones_like(phase)
     mask = np.ones(phase.shape, dtype=bool)
     with pytest.raises(Exception, match='only the "romeo" weight preset'):
-        romeo.romeo_unwrap3d(phase, "ramen", mag, mask)
+        romeo_unwrap3d(phase, "ramen", mag, mask)

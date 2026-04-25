@@ -15,8 +15,15 @@ Pre-print: <https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1>.
 ## Layout
 
 - `warpkit/` — Python package. Public entry points: `warpkit.distortion.medic`,
-  `warpkit.utilities.*`. CLI scripts in `warpkit/scripts/` are auto-discovered
-  by `setup.py` and exposed as `medic` and `extract_field_from_maps`.
+  `warpkit.utilities.*`. CLI scripts live in `warpkit/scripts/` and are
+  registered explicitly in `[project.scripts]` in `pyproject.toml`. All CLIs
+  ship with a `wk-` prefix to avoid colliding with same-named tools from
+  FSL/ANTs/AFNI/etc.: `wk-medic`, `wk-unwrap-phase`, `wk-compute-fieldmap`,
+  `wk-apply-warp`, `wk-convert-warp`, `wk-compute-jacobian`. Adding a new
+  CLI means adding a new file under `warpkit/scripts/` *and* a new line to
+  `[project.scripts]` — there is no longer any auto-discovery. Shared IO
+  helpers used by `wk-convert-warp` and `wk-compute-jacobian` live in
+  `warpkit/scripts/_warp_io.py` (private; not a CLI).
 - `warpkit/warpkit_cpp.pyi` + `warpkit/py.typed` — type info for the compiled
   extension, shipped via `MANIFEST.in` and `[tool.setuptools.package-data]`.
   Regenerate the stub after pybind11 binding changes via the wrapper script —
@@ -39,6 +46,9 @@ uv sync --group dev --config-setting editable_mode=strict
 
 # tests
 uv run pytest -q
+
+# coverage (matches the CI `coverage` job)
+uv run coverage run && uv run coverage report -m
 
 # lint + types (matches pre-commit; never bypass with --no-verify)
 uvx ruff check
@@ -106,9 +116,12 @@ and call out anything CI-relevant (wheel matrix, pybind11 ABI, ITK).
 
 ## CI specifics
 
-GitHub Actions builds wheels for Python 3.11–3.14 on `ubuntu-latest` and
-`macos-latest` via cibuildwheel. `pyproject.toml`'s `[tool.cibuildwheel]`
-skips `*musllinux*` and free-threaded builds (`cp313t-*`, `cp314t-*`);
-re-enabling free-threaded support requires auditing the pybind11 + ITK code
-paths for the no-GIL ABI. PyPI publish and the GHCR Docker image only run on
-a published GitHub release.
+GitHub Actions builds wheels for Python 3.11–3.14 on `ubuntu-latest`,
+`ubuntu-24.04-arm`, and `macos-latest` via cibuildwheel.
+`pyproject.toml`'s `[tool.cibuildwheel]` skips `*musllinux*` and the
+`cp314t-*` free-threaded build; re-enabling free-threaded support requires
+auditing the pybind11 + ITK code paths for the no-GIL ABI. The sdist job
+also runs `uv run coverage run` then `coverage report -m` — keep coverage
+healthy when adding code (the `[tool.coverage.report]` config in
+`pyproject.toml` omits the test files). PyPI publish and the GHCR Docker
+image only run on a published GitHub release.

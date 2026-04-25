@@ -8,15 +8,16 @@ from pytest import fixture
 
 # get this directory
 THISDIR = Path(__file__).parent
+TEST_DATA_DIR = THISDIR / "data" / "test_data"
 
 
 # fixture for test data
 @fixture(scope="session")
 def test_data():
     # get mag and phase data
-    mag = sorted(Path(THISDIR, "data", "test_data").glob("*mag*.nii.gz"))
-    phase = sorted(Path(THISDIR, "data", "test_data").glob("*phase*.nii.gz"))
-    sidecar = sorted(Path(THISDIR, "data", "test_data").glob("*mag*.json"))
+    mag = sorted(TEST_DATA_DIR.glob("*mag*.nii.gz"))
+    phase = sorted(TEST_DATA_DIR.glob("*phase*.nii.gz"))
+    sidecar = sorted(TEST_DATA_DIR.glob("*mag*.json"))
     metadata = []
     for s in sidecar:
         with s.open() as f:
@@ -27,4 +28,15 @@ def test_data():
         "tes": [m["EchoTime"] * 1000 for m in metadata],
         "total_readout_time": metadata[0]["TotalReadoutTime"],
         "phase_encoding_direction": metadata[0]["PhaseEncodingDirection"],
+    }
+
+
+@fixture(scope="session")
+def test_data_paths():
+    """File paths for the bundled BIDS-style MEDIC test data, suitable for
+    passing directly to a CLI."""
+    return {
+        "mag": [str(p) for p in sorted(TEST_DATA_DIR.glob("*mag*.nii.gz"))],
+        "phase": [str(p) for p in sorted(TEST_DATA_DIR.glob("*phase*.nii.gz"))],
+        "metadata": [str(p) for p in sorted(TEST_DATA_DIR.glob("*mag*.json"))],
     }

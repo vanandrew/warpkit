@@ -6,28 +6,28 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(warpkit_cpp, m) {
-    using Romeo32 = romeo::Romeo<float>;
+    m.def("calculate_weights", &romeo::calculate_weights<float>,
+          "ROMEO edge-weight map (3, nx, ny, nz) uint8. Exposed for port validation; not used by warpkit.",
+          py::arg("phase"),
+          py::arg("mag") = py::array_t<float, py::array::f_style>(),
+          py::arg("phase2") = py::array_t<float, py::array::f_style>(),
+          py::arg("tes") = py::array_t<float, py::array::f_style>(),
+          py::arg("mask") = py::array_t<bool, py::array::f_style>(),
+          py::return_value_policy::move);
 
-    py::class_<Romeo32>(m, "Romeo")
-        .def(py::init<>())
-        .def("calculate_weights", &Romeo32::calculate_weights,
-             "ROMEO edge-weight map (3, nx, ny, nz) uint8. Exposed for port validation; not used by warpkit.",
-             py::arg("phase"),
-             py::arg("mag") = py::array_t<float, py::array::f_style>(),
-             py::arg("phase2") = py::array_t<float, py::array::f_style>(),
-             py::arg("tes") = py::array_t<float, py::array::f_style>(),
-             py::arg("mask") = py::array_t<bool, py::array::f_style>(),
-             py::return_value_policy::move)
-        .def("romeo_voxelquality", &Romeo32::romeo_voxelquality,
-             "Compute a per-voxel quality map from multi-echo phase/magnitude", py::arg("phase"), py::arg("tes"),
-             py::arg("mag"), py::return_value_policy::move)
-        .def("romeo_unwrap3d", &Romeo32::romeo_unwrap3D, "3D ROMEO phase unwrap", py::arg("phase"), py::arg("weights"),
-             py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true, py::arg("maxseeds") = 1,
-             py::arg("merge_regions") = false, py::arg("correct_regions") = false, py::return_value_policy::move)
-        .def("romeo_unwrap4d", &Romeo32::romeo_unwrap4D, "4D (multi-echo) ROMEO phase unwrap", py::arg("phase"),
-             py::arg("tes"), py::arg("weights"), py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true,
-             py::arg("maxseeds") = 1, py::arg("merge_regions") = false, py::arg("correct_regions") = false,
-             py::return_value_policy::move);
+    m.def("romeo_voxelquality", &romeo::romeo_voxelquality<float>,
+          "Compute a per-voxel quality map from multi-echo phase/magnitude", py::arg("phase"), py::arg("tes"),
+          py::arg("mag"), py::return_value_policy::move);
+
+    m.def("romeo_unwrap3d", &romeo::romeo_unwrap3D<float>, "3D ROMEO phase unwrap", py::arg("phase"),
+          py::arg("weights"), py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true,
+          py::arg("maxseeds") = 1, py::arg("merge_regions") = false, py::arg("correct_regions") = false,
+          py::return_value_policy::move);
+
+    m.def("romeo_unwrap4d", &romeo::romeo_unwrap4D<float>, "4D (multi-echo) ROMEO phase unwrap", py::arg("phase"),
+          py::arg("tes"), py::arg("weights"), py::arg("mag"), py::arg("mask"), py::arg("correct_global") = true,
+          py::arg("maxseeds") = 1, py::arg("merge_regions") = false, py::arg("correct_regions") = false,
+          py::return_value_policy::move);
 
     m.def("invert_displacement_map", &invert_displacement_map<double>, "Invert a displacement map",
           py::arg("displacement_map"), py::arg("origin"), py::arg("direction"), py::arg("spacing"), py::arg("axis") = 1,
