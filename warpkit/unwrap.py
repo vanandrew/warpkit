@@ -939,6 +939,19 @@ def compute_field_maps(
     new_masks = np.asarray(masks.dataobj, dtype=np.int8)
     n_frames = unwrapped_arr.shape[-1]
 
+    if (
+        new_masks.ndim != 4
+        or new_masks.shape[:3] != unwrapped_arr.shape[:3]
+        or new_masks.shape[-1] != n_frames
+    ):
+        raise ValueError(
+            "masks must have shape (x, y, z, n_frames) matching the spatial "
+            "dimensions and frame count of the unwrapped data; got masks shape "
+            f"{new_masks.shape} and expected "
+            f"({unwrapped_arr.shape[0]}, {unwrapped_arr.shape[1]}, "
+            f"{unwrapped_arr.shape[2]}, {n_frames})."
+        )
+
     # allocate output
     field_maps = np.zeros((*unwrapped_arr.shape[:3], n_frames), dtype=np.float32)
 

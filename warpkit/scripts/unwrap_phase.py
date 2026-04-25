@@ -111,7 +111,21 @@ def main():
     mag_data = [cast(nib.Nifti1Image, nib.load(m)) for m in args.magnitude]
     phase_data = [cast(nib.Nifti1Image, nib.load(p)) for p in args.phase]
 
+    if args.noiseframes < 0:
+        parser.error(f"--noiseframes must be non-negative; got {args.noiseframes}.")
     if args.noiseframes > 0:
+        for label, imgs, paths in (
+            ("phase", phase_data, args.phase),
+            ("magnitude", mag_data, args.magnitude),
+        ):
+            for img, path in zip(imgs, paths, strict=True):
+                n_frames = img.shape[-1] if img.ndim == 4 else 1
+                if args.noiseframes >= n_frames:
+                    parser.error(
+                        f"--noiseframes={args.noiseframes} would leave 0 "
+                        f"frames in {label} file '{path}' (has {n_frames} "
+                        "frame(s))."
+                    )
         print(f"Removing {args.noiseframes} noise frames from the end of each file...")
         mag_data = [
             nib.Nifti1Image(m.dataobj[..., : -args.noiseframes], m.affine, m.header)

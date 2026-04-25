@@ -546,6 +546,60 @@ def test_unwrap_phase_metadata_count_must_match_phase_count(argv, capsys, tmp_pa
     assert "--metadata" in err and "--phase" in err
 
 
+def test_unwrap_phase_noiseframes_negative(argv, capsys, tmp_path):
+    """A negative --noiseframes must fail with a clean parser error."""
+    mag = _write_nifti(tmp_path / "m.nii", (4, 4, 4, 5))
+    phase = _write_nifti(tmp_path / "p.nii", (4, 4, 4, 5))
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            mag,
+            "--phase",
+            phase,
+            "--TEs",
+            "14.0",
+            "--out-prefix",
+            str(tmp_path / "out"),
+            "-f",
+            "-1",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        unwrap_phase_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "non-negative" in err
+
+
+def test_unwrap_phase_noiseframes_consumes_all_frames(argv, capsys, tmp_path):
+    """--noiseframes >= n_frames would leave 0 volumes; reject with a clean
+    parser.error instead of producing an empty 4D series that crashes
+    unwrap_phases at frames[0]."""
+    mag = _write_nifti(tmp_path / "m.nii", (4, 4, 4, 5))
+    phase = _write_nifti(tmp_path / "p.nii", (4, 4, 4, 5))
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            mag,
+            "--phase",
+            phase,
+            "--TEs",
+            "14.0",
+            "--out-prefix",
+            str(tmp_path / "out"),
+            "-f",
+            "5",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        unwrap_phase_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "0 frames" in err
+
+
 # ---------------------------------------------------------------------------
 # compute_fieldmap --help / argument validation
 # ---------------------------------------------------------------------------

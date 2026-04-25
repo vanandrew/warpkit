@@ -1,7 +1,8 @@
+import nibabel as nib
 import numpy as np
 import pytest
 from numpy.testing import assert_allclose
-from warpkit.unwrap import compute_offset, reject_outliers
+from warpkit.unwrap import compute_field_maps, compute_offset, reject_outliers
 
 # ---------------------------------------------------------------------------
 # reject_outliers: median + MAD, threshold m=2.0
@@ -86,6 +87,57 @@ def test_romeo_lowercase_bindings_exist():
     assert not hasattr(cpp, "Romeo")
     assert not hasattr(cpp, "romeo_unwrap3D")
     assert not hasattr(cpp, "romeo_unwrap4D")
+
+
+def _make_field_inputs(spatial=(4, 4, 4), n_frames=2, n_echoes=3):
+    """Build minimal valid ``compute_field_maps`` inputs (unwrapped per-echo
+    4D images + per-frame masks). Caller can swap the masks to break the
+    expected shape."""
+    affine = np.eye(4)
+    unwrapped = [
+        nib.Nifti1Image(
+            np.zeros((*spatial, n_frames), dtype=np.float32),
+            affine,
+        )
+        for _ in range(n_echoes)
+    ]
+    mag = [
+        nib.Nifti1Image(
+            np.ones((*spatial, n_frames), dtype=np.float32),
+            affine,
+        )
+        for _ in range(n_echoes)
+    ]
+    masks = nib.Nifti1Image(
+        np.ones((*spatial, n_frames), dtype=np.int8),
+        affine,
+    )
+    tes = [10.0, 20.0, 30.0]
+    return unwrapped, mag, masks, tes
+
+
+def test_compute_field_maps_rejects_3d_masks():
+    """A masks input that's missing the time axis must fail loudly, not
+    silently broadcast or crash deeper inside the SVD pass."""
+    unwrapped, mag, _masks, tes = _make_field_inputs()
+    bad_masks = nib.Nifti1Image(np.ones((4, 4, 4), dtype=np.int8), np.eye(4))
+    with pytest.raises(ValueError, match="masks must have shape"):
+        compute_field_maps(unwrapped, bad_masks, mag, tes)
+
+
+def test_compute_field_maps_rejects_mismatched_frame_count():
+    """masks frame count must match the unwrapped time dimension."""
+    unwrapped, mag, _masks, tes = _make_field_inputs(n_frames=2)
+    bad_masks = nib.Nifti1Image(np.ones((4, 4, 4, 5), dtype=np.int8), np.eye(4))
+    with pytest.raises(ValueError, match="masks must have shape"):
+        compute_field_maps(unwrapped, bad_masks, mag, tes)
+
+
+def test_compute_field_maps_rejects_mismatched_spatial_shape():
+    unwrapped, mag, _masks, tes = _make_field_inputs(spatial=(4, 4, 4))
+    bad_masks = nib.Nifti1Image(np.ones((5, 4, 4, 2), dtype=np.int8), np.eye(4))
+    with pytest.raises(ValueError, match="masks must have shape"):
+        compute_field_maps(unwrapped, bad_masks, mag, tes)
 
 
 def test_romeo_unwrap3d_rejects_unknown_weight_preset():

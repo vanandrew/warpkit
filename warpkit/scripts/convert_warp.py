@@ -156,7 +156,7 @@ def main():
         "--to",
         dest="to_type",
         choices=("map", "field"),
-        help="Output type. Defaults to whatever the input classifies as.",
+        help="Output type. Defaults to --from (no type conversion).",
     )
     parser.add_argument(
         "--from-format",
@@ -188,11 +188,17 @@ def main():
         "--invert",
         action="store_true",
         help=(
-            "Invert each frame before any type/format conversion. Maps are "
-            "inverted with the 1D map inverter along --axis; fields are "
-            "inverted with the full 3D field inverter. Inversion of maps "
-            "requires --axis (the map's own axis); inversion of fields does "
-            "not, but downstream map output still does."
+            "Invert each frame before any type/format conversion. Routing is "
+            "by frame count, not by --from: a single-frame input is inverted "
+            "with the full 3D field inverter (a map is first promoted to a "
+            "field via --axis), and a multi-frame input is routed through "
+            "the per-frame 1D map inverter. For a multi-frame field input, "
+            "only the --axis component is inverted and off-axis components "
+            "are dropped (fine for EPI distortion correction, where "
+            "displacement is along the phase-encoding axis). --axis is "
+            "required for any map input and for multi-frame inversion; "
+            "single-frame field inversion does not require --axis, but "
+            "downstream map output still does."
         ),
     )
     parser.add_argument(
