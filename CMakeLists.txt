@@ -65,9 +65,11 @@ set_target_properties(ITKLIB PROPERTIES
 )
 
 # add compile options based on architecture.
-# x86_64 stays at the baseline -march=x86-64 so wheels run on any x86_64 CPU
-# (pre-Haswell included). Bumping to a microarchitecture level (v2/v3/v4) is
-# a per-build choice the consumer can make via CXXFLAGS if they need it.
+# x86_64 targets the v2 microarch level (Nehalem 2008 — SSE3/SSE4.1/SSE4.2/
+# popcnt). v2 features are universal in anything that can install a current
+# Linux distro, and it matches the "above baseline" stance taken on aarch64.
+# Consumers needing to override (older CPU, or a higher microarch level) can
+# pass CXXFLAGS at build time.
 message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
 if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
     add_compile_options(-O3 -mcpu=apple-m1)
@@ -76,8 +78,8 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
     add_compile_options(-O3 -march=armv8.2-a)
     message(STATUS "Using -march=armv8.2-a")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    add_compile_options(-O3 -march=x86-64)
-    message(STATUS "Using -march=x86-64")
+    add_compile_options(-O3 -march=x86-64-v2)
+    message(STATUS "Using -march=x86-64-v2")
 endif()
 
 # compile pybind11 interface
