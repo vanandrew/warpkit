@@ -12,34 +12,7 @@ on:
       - published
 
 jobs:
-  test:
-    name: Test and Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-      - name: Set up Python
-        run: uv python install 3.11
-      - name: Install in dev mode and test
-        run: |
-          uv sync --group dev --config-setting editable_mode=strict -v
-          uv run coverage run
-          uv run coverage report -m
-          uv run coverage xml
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v6
-        with:
-          files: ./coverage.xml
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
   wheels-build:
-    needs: [test]
     strategy:
       matrix:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
@@ -74,8 +47,7 @@ jobs:
           name: wheel-${{ matrix.os }}-cp${{ matrix.python-versions.version }}
           path: ./wheelhouse/*.whl
   sdist-build:
-    needs: [test]
-    name: Make sdist
+    name: Sdist and coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -84,8 +56,22 @@ jobs:
           fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
       - name: Set up Python
         run: uv python install 3.11
+      - name: Install in dev mode and test with coverage
+        run: |
+          uv sync --group dev --config-setting editable_mode=strict -v
+          uv run coverage run
+          uv run coverage report -m
+          uv run coverage xml
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v6
+        with:
+          files: ./coverage.xml
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Build sdist
         run: uv build --sdist
       - uses: actions/upload-artifact@v7
