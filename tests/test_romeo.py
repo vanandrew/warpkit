@@ -49,14 +49,6 @@ def mag4d() -> np.ndarray:
     return _load_nii(ROMEO_TEST_DATA / "Mag.nii")
 
 
-@pytest.fixture(scope="module")
-def romeo():
-    """Handle to the ROMEO C++ context."""
-    from warpkit.warpkit_cpp import Romeo
-
-    return Romeo()
-
-
 # ---------------------------------------------------------------------------
 # Literal goldens — ported from ROMEO.jl test/dsp_tests.jl
 # ---------------------------------------------------------------------------
@@ -79,14 +71,16 @@ def romeo():
         "wrap-up-idx0",
     ],
 )
-def test_unwrap_1d_literals(romeo, wrapped):
+def test_unwrap_1d_literals(wrapped):
     """ROMEO.jl's unwrap!() reshapes <=2D input to 3D before running. Reproduce
     by feeding a (N, 1, 1) volume through the 3D entry point."""
+    from warpkit.warpkit_cpp import romeo_unwrap3d
+
     expected = np.array([0.1, 0.2, 0.3, 0.4], dtype=np.float32)
     phase = np.asarray(wrapped, dtype=np.float32).reshape(-1, 1, 1)
     mag = np.ones_like(phase)
     mask = np.ones(phase.shape, dtype=bool)
-    unwrapped = romeo.romeo_unwrap3d(phase, "romeo", mag, mask).reshape(-1)
+    unwrapped = romeo_unwrap3d(phase, "romeo", mag, mask).reshape(-1)
     np.testing.assert_allclose(unwrapped, expected, atol=1e-5)
 
 
@@ -115,11 +109,13 @@ def test_unwrap_1d_literals(romeo, wrapped):
     ],
     ids=["linearity-border", "nan-neighbor"],
 )
-def test_weight_calc_literals(romeo, phase, expected):
+def test_weight_calc_literals(phase, expected):
     """Port of the weight_test() assertions from specialcases.jl."""
+    from warpkit.warpkit_cpp import calculate_weights
+
     phase_arr = np.asarray(phase, dtype=np.float32).reshape(-1, 1, 1)
     # (3, nx, ny, nz) uint8 — we check dim-0 edges along the length-4 x-axis.
-    weights = romeo.calculate_weights(phase_arr)
+    weights = calculate_weights(phase_arr)
     np.testing.assert_array_equal(
         weights[0, :, 0, 0], np.asarray(expected, dtype=np.uint8)
     )
@@ -135,14 +131,16 @@ def _rem2pi_nearest(x: np.ndarray) -> np.ndarray:
     return x - 2 * np.pi * np.round(x / (2 * np.pi))
 
 
-def test_unwrap3d_property(romeo, phase4d, mag4d):
+def test_unwrap3d_property(phase4d, mag4d):
     """ROMEO's 3D unwrap must differ from wrapped input only by multiples of 2π."""
+    from warpkit.warpkit_cpp import romeo_unwrap3d
+
     echo = 2  # index for the 3rd echo, matching Julia's `echo = 3` (1-based)
     wrapped = np.ascontiguousarray(phase4d[..., echo])
     mag = np.ascontiguousarray(mag4d[..., echo])
     mask = np.ones(wrapped.shape, dtype=bool)
 
-    unwrapped = romeo.romeo_unwrap3d(wrapped, "romeo", mag, mask)
+    unwrapped = romeo_unwrap3d(wrapped, "romeo", mag, mask)
 
     assert unwrapped.shape == wrapped.shape
     assert not np.array_equal(unwrapped, wrapped), "unwrap returned the input unchanged"
@@ -151,12 +149,14 @@ def test_unwrap3d_property(romeo, phase4d, mag4d):
     np.testing.assert_allclose(residual, 0.0, atol=1e-5)
 
 
-def test_unwrap4d_property(romeo, phase4d, mag4d):
+def test_unwrap4d_property(phase4d, mag4d):
     """Same 2π-modulo invariant across every echo of the 4D multi-echo unwrap."""
+    from warpkit.warpkit_cpp import romeo_unwrap4d
+
     tes = np.array([4.0, 8.0, 12.0], dtype=np.float32)  # matches voxelquality.jl
     mask = np.ones(phase4d.shape[:3], dtype=bool)
 
-    unwrapped = romeo.romeo_unwrap4d(phase4d, tes, "romeo", mag4d, mask)
+    unwrapped = romeo_unwrap4d(phase4d, tes, "romeo", mag4d, mask)
 
     assert unwrapped.shape == phase4d.shape
     assert np.isfinite(unwrapped).all()
@@ -172,17 +172,19 @@ def test_unwrap4d_property(romeo, phase4d, mag4d):
 # ---------------------------------------------------------------------------
 
 
-def test_voxelquality_behavior(romeo, phase4d, mag4d):
+def test_voxelquality_behavior(phase4d, mag4d):
     """
     Mirror the three-variant comparison from voxelquality.jl. ROMEO's
     voxelquality entry point requires tes and mag, so we reuse the 4D volume
     and vary the echo time ordering to produce distinct qmaps.
     """
+    from warpkit.warpkit_cpp import romeo_voxelquality
+
     tes = np.array([4.0, 8.0, 12.0], dtype=np.float32)
 
-    qm_uniform_mag = romeo.romeo_voxelquality(phase4d, tes, np.ones_like(mag4d))
-    qm_real_mag = romeo.romeo_voxelquality(phase4d, tes, mag4d)
-    qm_reordered = romeo.romeo_voxelquality(phase4d, tes[::-1].copy(), mag4d)
+    qm_uniform_mag = romeo_voxelquality(phase4d, tes, np.ones_like(mag4d))
+    qm_real_mag = romeo_voxelquality(phase4d, tes, mag4d)
+    qm_reordered = romeo_voxelquality(phase4d, tes[::-1].copy(), mag4d)
 
     for qmap, label in [
         (qm_uniform_mag, "uniform-mag"),

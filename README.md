@@ -25,7 +25,7 @@ Pre-built wheels are published for Linux (x86_64) and macOS (universal2). If `pi
 docker run -it --rm ghcr.io/vanandrew/warpkit:latest --help
 ```
 
-The image's entrypoint is the `medic` CLI.
+The image's entrypoint is the `wk-medic` CLI.
 
 ### From source
 
@@ -99,12 +99,28 @@ displacement_field = displacement_map_to_field(
 
 ### CLI
 
-A `medic` script is installed on `PATH`. Acquisition parameters can come either from BIDS sidecars or from the command line — pick one.
+All warpkit CLIs are installed on `PATH` with a `wk-` prefix to avoid colliding
+with same-named tools from FSL/ANTs/AFNI/etc.:
+
+| Command                | Purpose                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `wk-medic`             | End-to-end MEDIC pipeline: phase + magnitude → field maps + displacement maps.        |
+| `wk-unwrap-phase`      | Stage 1: ROMEO multi-echo phase unwrapping → unwrapped phase + per-frame masks.       |
+| `wk-compute-fieldmap`  | Stage 2: take stage-1 outputs → native + displacement + undistorted-space field maps. |
+| `wk-apply-warp`        | Resample an image through a displacement map / field (single or per-frame series).   |
+| `wk-convert-warp`      | Convert between maps ↔ fields and between ITK / FSL / ANTs / AFNI; `--invert` warps. |
+| `wk-convert-fieldmap`  | Convert between mm displacement maps/fields and Hz B0 field maps.                    |
+| `wk-compute-jacobian`  | Per-voxel Jacobian determinant (1 = no change, <1 = compression, >1 = expansion).     |
+
+`wk-medic` runs the full pipeline; `wk-unwrap-phase` + `wk-compute-fieldmap`
+run the same thing in two stages so you can inspect/reuse the unwrapped
+phase. Acquisition parameters can come either from BIDS sidecars or from the
+command line — pick one.
 
 From BIDS sidecars:
 
 ```bash
-medic \
+wk-medic \
   --magnitude mag_e1.nii.gz mag_e2.nii.gz mag_e3.nii.gz \
   --phase phase_e1.nii.gz phase_e2.nii.gz phase_e3.nii.gz \
   --metadata mag_e1.json mag_e2.json mag_e3.json \
@@ -116,7 +132,7 @@ medic \
 Or by passing acquisition parameters directly:
 
 ```bash
-medic \
+wk-medic \
   --magnitude mag_e1.nii.gz mag_e2.nii.gz mag_e3.nii.gz \
   --phase phase_e1.nii.gz phase_e2.nii.gz phase_e3.nii.gz \
   --TEs 14.2 38.93 63.66 \
@@ -127,7 +143,52 @@ medic \
 
 `--TEs` is in **milliseconds**, `--total-readout-time` in **seconds**, and `--phase-encoding-direction` is one of `i, j, k, i-, j-, k-, x, y, z, x-, y-, z-`.
 
-Run `medic --help` for the full option list (noise-frame trimming, CPU count, debug mode, etc.).
+Run any `wk-*` CLI with `--help` for the full option list.
+
+#### Common follow-on workflows
+
+Apply a MEDIC displacement-map series to the BOLD it was derived from
+(per-frame distortion correction):
+
+```bash
+wk-apply-warp \
+  --input bold.nii.gz \
+  --transform sub-01_run-01_displacementmaps.nii \
+  --phase-encoding-axis j \
+  --output bold_corrected.nii.gz
+```
+
+Convert MEDIC's per-frame displacement maps into per-frame ANTs-format
+displacement fields:
+
+```bash
+wk-convert-warp \
+  --input sub-01_run-01_displacementmaps.nii \
+  --to field --axis j --to-format ants \
+  --output field_{0..14}.nii.gz
+```
+
+Compute the per-frame Jacobian determinant (volume-change map) of those
+displacement maps:
+
+```bash
+wk-compute-jacobian \
+  --input sub-01_run-01_displacementmaps.nii \
+  --axis j \
+  --output sub-01_run-01_jacobian.nii
+```
+
+Convert MEDIC's mm displacement maps to a Hz B0 field map (or back —
+this CLI handles either direction, with maps or fields on the mm side):
+
+```bash
+wk-convert-fieldmap \
+  --input sub-01_run-01_displacementmaps.nii \
+  --to fieldmap \
+  --total-readout-time 0.0501 \
+  --phase-encoding-direction j- \
+  --output sub-01_run-01_fieldmap.nii
+```
 
 ## Authors
 

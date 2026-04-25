@@ -8,7 +8,6 @@ from setuptools import setup  # type: ignore
 
 THISDIR = Path(__file__).parent
 cmake_dir = (Path(THISDIR)).absolute().as_posix()
-scripts_path = THISDIR / "warpkit" / "scripts"
 
 IS_CIBUILDWHEEL = os.environ.get("CIBUILDWHEEL", "0") == "1"
 IS_MACOS = os.environ.get("RUNNER_OS", "0") == "macOS"
@@ -32,11 +31,4 @@ with TemporaryDirectory(prefix="build-tmp-", dir="/tmp") as tmpdir:
             )
         ],
         cmdclass={"build_ext": BuildExtension},
-        entry_points={
-            "console_scripts": [
-                f"{f.stem}=warpkit.scripts.{f.stem}:main"
-                for f in scripts_path.glob("*.py")
-                if f.name not in "__init__.py"
-            ]
-        },
     )

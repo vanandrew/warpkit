@@ -390,6 +390,54 @@ def displacement_map_to_field(
     return convert_warp(warp, in_type="itk", out_type=format)
 
 
+def displacement_field_to_map(
+    displacement_field: nib.Nifti1Image,
+    axis: str = "y",
+    format: str = "itk",
+) -> nib.Nifti1Image:
+    """Extract a 1-channel displacement map (along ``axis``) from a 3-channel
+    displacement field. Inverse of :func:`displacement_map_to_field`.
+
+    The off-axis channels are dropped — for an EPI distortion-correction warp
+    this is exact because all displacement is along the phase-encoding axis.
+
+    Parameters
+    ----------
+    displacement_field : nib.Nifti1Image
+        Displacement field, in ``format`` convention. 4D (X, Y, Z, 3) or 5D
+        (X, Y, Z, 1, 3) with a singleton 4th axis (ANTs/AFNI single-field).
+    axis : str, optional
+        Axis to extract along, by default "y".
+    format : str, optional
+        Format of the input field (one of ``itk``, ``fsl``, ``ants``,
+        ``afni``), by default ``itk``.
+
+    Returns
+    -------
+    nib.Nifti1Image
+        1-channel displacement map, shape ``(X, Y, Z)``.
+    """
+    axis_code = AXIS_MAP[axis]
+    # Round-trip through itk so we can index the channel axis directly.
+    field_itk = convert_warp(displacement_field, in_type=format, out_type="itk")
+    data = field_itk.get_fdata()
+    if data.ndim == 5 and data.shape[3] == 1:
+        data = data[..., 0, :]
+    if data.ndim != 4 or data.shape[-1] != 3:
+        raise ValueError(
+            f"expected a 4D 3-channel field after itk conversion; got shape {data.shape}"
+        )
+    map_data = data[..., axis_code]
+    # Drop the vector intent so downstream tools don't misread the 1-channel
+    # result as a field.
+    map_header = cast(nib.Nifti1Header, field_itk.header.copy())
+    map_header.set_intent("none", (), "")
+    return cast(
+        nib.Nifti1Image,
+        nib.Nifti1Image(map_data, field_itk.affine, map_header),
+    )
+
+
 def get_x_orient_transform(
     img: nib.Nifti1Image, x: str
 ) -> tuple[Sequence[Sequence[int]], Sequence[Sequence[int]]]:
@@ -535,13 +583,16 @@ def invert_displacement_field(
     # split affine into components
     translations, rotations, zooms, _ = decompose44(displacement_field_ras.affine)
 
-    # pad array with edge values so edge effects of inverse are avoided
-    mod_data = np.pad(data, pad_width=1)
+    # Pad spatial dims only — leaving the 3-channel axis at size 3 — so we
+    # can avoid edge effects of the inverse without inflating the channel
+    # count. (Earlier versions padded all 4 axes which produced a 5-channel
+    # output.)
+    mod_data = np.pad(data, ((1, 1), (1, 1), (1, 1), (0, 0)))
 
     # invert displacement field
     new_data = invert_displacement_field_cpp(
         mod_data, translations, rotations, zooms, verbose=verbose
-    )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
+    )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1, :]
 
     # make new image
     inv_displacement_field = nib.Nifti1Image(
@@ -645,19 +696,18 @@ def convert_warp(
     nib.Nifti1Image
         Output warp in desired format.
     """
-    # check data shape
-    if len(in_warp.shape) != 4:
-        if len(in_warp.shape) != 5:
-            raise ValueError("Input warp must be 4D or 5D.")
-        else:
-            if in_warp.shape[3] == 1 and in_warp.shape[-1]:
-                raise ValueError(
-                    "Input warp must have singleton dimension in 4th axis and size in last axis."
-                )
-    else:
-        # check last axis size
+    # check data shape: 4D (X,Y,Z,3) or 5D (X,Y,Z,1,3) (ANTs/AFNI single warp).
+    if in_warp.ndim == 4:
         if in_warp.shape[-1] != 3:
             raise ValueError("Warp must have size 3 in last axis.")
+    elif in_warp.ndim == 5:
+        if in_warp.shape[3] != 1 or in_warp.shape[-1] != 3:
+            raise ValueError(
+                "5D warp must have singleton 4th axis and size 3 in last axis "
+                f"(got shape {tuple(in_warp.shape)})."
+            )
+    else:
+        raise ValueError("Input warp must be 4D or 5D.")
 
     # get input in RAS orientation
     to_canonical, from_canonical = get_ras_orient_transform(in_warp)

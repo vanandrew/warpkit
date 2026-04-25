@@ -15,7 +15,7 @@ PE_DIRECTIONS = ("i", "j", "k", "i-", "j-", "k-", "x", "y", "z", "x-", "y-", "z-
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Multi-Echo DIstortion Correction", epilog=f"{epilog} 12/09/2022"
+        description="Multi-Echo DIstortion Correction", epilog=f"{epilog}"
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"

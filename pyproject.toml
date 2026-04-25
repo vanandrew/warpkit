@@ -7,7 +7,7 @@ authors = [{ name = "Andrew Van", email = "vanandrew77@gmail.com" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
 urls = { github = "https://github.com/vanandrew/warpkit" }
-dynamic = ["version", "scripts"]
+dynamic = ["version"]
 dependencies = [
   "nibabel >= 4.0.2",
   "numpy >= 1.23.3",
@@ -16,6 +16,15 @@ dependencies = [
   "transforms3d >= 0.4.1",
   "indexed-gzip >= 1.7.0",
 ]
+
+[project.scripts]
+"wk-medic" = "warpkit.scripts.medic:main"
+"wk-unwrap-phase" = "warpkit.scripts.unwrap_phase:main"
+"wk-compute-fieldmap" = "warpkit.scripts.compute_fieldmap:main"
+"wk-apply-warp" = "warpkit.scripts.apply_warp:main"
+"wk-convert-warp" = "warpkit.scripts.convert_warp:main"
+"wk-convert-fieldmap" = "warpkit.scripts.convert_fieldmap:main"
+"wk-compute-jacobian" = "warpkit.scripts.compute_jacobian:main"
 
 [dependency-groups]
 dev = [

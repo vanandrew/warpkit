@@ -23,7 +23,7 @@ from .utilities import (
     get_largest_connected_component,
     rescale_phase,
 )
-from .warpkit_cpp import Romeo
+from .warpkit_cpp import romeo_unwrap3d, romeo_unwrap4d, romeo_voxelquality
 
 FMAP_PROPORTION_HEURISTIC = 0.25
 FMAP_AMBIGUIOUS_HEURISTIC = 0.5
@@ -58,9 +58,8 @@ def get_dual_echo_fieldmap(phases, tes, mags, mask):
     np.ndarray of shape (x, y, z, echo)
         Unwrapped phases
     """
-    romeo = Romeo()
     # unwrap the phases
-    unwrapped_phases = romeo.romeo_unwrap4d(  # type: ignore
+    unwrapped_phases = romeo_unwrap4d(
         phase=phases,
         tes=tes,
         weights="romeo",
@@ -115,11 +114,10 @@ def mcpc_3d_s(
     npt.NDArray[np.float32]
         Unwrapped difference in phase
     """
-    romeo = Romeo()
     signal_diff = mag0 * mag1 * np.exp(1j * (phase1 - phase0))
     mag_diff = np.abs(signal_diff)
     phase_diff = np.angle(signal_diff)
-    unwrapped_diff = romeo.romeo_unwrap3d(  # type: ignore
+    unwrapped_diff = romeo_unwrap3d(
         phase=phase_diff,
         weights="romeo",
         mag=mag_diff,
@@ -253,8 +251,6 @@ def unwrap_phase(
     npt.NDArray[np.int8]
         mask
     """
-    romeo = Romeo()
-
     if idx is not None:
         logging.info(f"Processing frame: {idx}")
 
@@ -263,9 +259,9 @@ def unwrap_phase(
         # the theory goes like this, the magnitude/otsu base mask can be too aggressive occasionally
         # and the voxel quality mask can get extra voxels that are not brain, but is noisy
         # so we combine the two masks to get a better mask
-        vq = romeo.romeo_voxelquality(
+        vq = romeo_voxelquality(
             phase_data, tes, np.ones(shape=mag_data.shape, dtype=np.float32)
-        )  # type: ignore
+        )
 
         vq_mask = vq > threshold_otsu(vq)
         strel = generate_binary_structure(3, 2)
@@ -326,7 +322,7 @@ def unwrap_phase(
     phase_data -= phase_offset[..., np.newaxis]
 
     # unwrap the phase data
-    unwrapped = romeo.romeo_unwrap4d(  # type: ignore
+    unwrapped = romeo_unwrap4d(
         phase=phase_data,
         tes=tes,
         weights="romeo",
@@ -638,59 +634,58 @@ def svd_filtering(
             ]
 
 
-def unwrap_and_compute_field_maps(
+def unwrap_phases(
     phase: list[nib.Nifti1Image],
     mag: list[nib.Nifti1Image],
     tes: list[float] | tuple[float] | npt.NDArray[np.float32],
     mask: nib.Nifti1Image | SimpleNamespace | None = None,
     automask: bool = True,
     automask_dilation: int = 3,
-    border_size: int = 5,
-    border_filt: tuple[int, int] = (1, 5),
-    svd_filt: int = 10,
     frames: list[int] | None = None,
     n_cpus: int = 4,
     debug: bool = False,
     wrap_limit: bool = False,
-) -> nib.Nifti1Image:
-    """Unwrap phase of data weighted by magnitude data and compute field maps. This makes a call
-    to the ROMEO phase unwrapping algorithm for each frame. To learn more about ROMEO, see this paper:
+) -> tuple[list[nib.Nifti1Image], nib.Nifti1Image]:
+    """Unwrap multi-echo phase per frame and enforce temporal consistency.
 
-    Dymerska, B., Eckstein, K., Bachrata, B., Siow, B., Trattnig, S., Shmueli, K., Robinson, S.D., 2020.
-    Phase Unwrapping with a Rapid Opensource Minimum Spanning TreE AlgOrithm (ROMEO).
-    Magnetic Resonance in Medicine. https://doi.org/10.1002/mrm.28563
+    Calls ROMEO via the warpkit C++ bindings. The returned unwrapped phases are
+    useful outside of distortion correction (e.g. phase regression, T2*
+    estimation). Pair with :func:`compute_field_maps` to reconstruct the
+    native-space B0 field map.
 
     Parameters
     ----------
-    phase : List[nib.Nifti1Image]
-        Phases to unwrap
-    mag : List[nib.Nifti1Image]
-        Magnitudes associated with each phase
-    tes : Union[List[float], Tuple[float], npt.NDArray[np.float32]]
-        Echo times associated with each phase (in ms)
+    phase : list[nib.Nifti1Image]
+        Phase images, one per echo. Each may be 3D or 4D.
+    mag : list[nib.Nifti1Image]
+        Magnitude images matched to ``phase``.
+    tes : list[float] | tuple[float] | npt.NDArray
+        Echo times in milliseconds, one per echo.
     mask : nib.Nifti1Image, optional
-        Boolean mask, by default None
+        Boolean mask. Ignored when ``automask`` is True.
     automask : bool, optional
-        Automatically generate a mask (ignore mask option), by default True
+        Auto-generate the mask, by default True.
     automask_dilation : int, optional
-        Number of dilation iterations applied to the automask, by default 3
-    border_size : int, optional
-        Size of border in automask, by default 5
-    border_filt : Tuple[int, int], optional
-        Number of SVD components for each step of border filtering, by default (1, 5)
-    svd_filt : int, optional
-        Number of SVD components to use for filtering of field maps, by default 30
-    frames : List[int], optional
-        Only process these frame indices, by default None (which means all frames)
+        Dilation iterations for the auto mask, by default 3.
+    frames : list[int], optional
+        Subset of frame indices to process, by default None (all frames).
     n_cpus : int, optional
-        Number of CPUs to use, by default 4
+        CPU parallelism for the unwrap loop, by default 4.
     debug : bool, optional
-        Debug mode, by default False
+        Skip the temporal consistency pass and dump intermediate files, by
+        default False.
+    wrap_limit : bool, optional
+        Disable some MCPC-3D-S heuristics, by default False.
 
     Returns
     -------
+    list[nib.Nifti1Image]
+        Per-echo unwrapped phase images (radians), each of shape
+        ``(x, y, z, n_frames)``.
     nib.Nifti1Image
-        Field maps in Hz
+        Per-frame masks, shape ``(x, y, z, n_frames)``, dtype int8. 0 = outside,
+        1 = brain core, 2 = dilated border (consumed by SVD filtering in
+        :func:`compute_field_maps`).
     """
     # check tes if < 0.1, tell user they probably need to convert to ms
     if np.min(tes) < 0.1:
@@ -725,8 +720,6 @@ def unwrap_and_compute_field_maps(
 
     # check if data is 4D or 3D
     if len(phase[0].shape) == 3:
-        # set total number of frames to 1
-        n_frames = 1
         # convert data to 4D
         phase = [
             nib.Nifti1Image(p.get_fdata()[..., np.newaxis], p.affine, p.header)
@@ -736,12 +729,12 @@ def unwrap_and_compute_field_maps(
             nib.Nifti1Image(m.get_fdata()[..., np.newaxis], m.affine, m.header)
             for m in mag
         ]
+        if frames is None:
+            frames = [0]
     elif len(phase[0].shape) == 4:
         # if frames is None, set it to all frames
         if frames is None:
             frames = list(range(phase[0].shape[-1]))
-        # get the total number of frames
-        n_frames = len(frames)
     else:
         raise ValueError("Data must be 3D or 4D.")
     # frames should be a list at this point
@@ -753,10 +746,8 @@ def unwrap_and_compute_field_maps(
             "Number of echo times must equal number of mag and phase images."
         )
 
-    # allocate space for field maps and unwrapped
-    field_maps = np.zeros((*phase[0].shape[:3], n_frames), dtype=np.float32)
-    unwrapped = np.zeros((*phase[0].shape[:3], len(tes), n_frames), dtype=np.float32)
-    # array for storing auto-generated masks
+    # allocate space for unwrapped phases and per-frame masks
+    unwrapped = np.zeros((*phase[0].shape[:3], len(tes), len(frames)), dtype=np.float32)
     new_masks = np.zeros((*mag[0].shape[:3], len(frames)), dtype=np.int8)
 
     # FOR DEBUGGING
@@ -885,13 +876,90 @@ def unwrap_and_compute_field_maps(
             "masks.nii"
         )
 
-    # compute field maps on temporally consistent unwrapped phase
-    def field_map_iterator(field_maps, unwrapped, mag, tes):
+    # split the (x, y, z, echo, frame) array into a list of 4D Niftis (one per echo)
+    unwrapped_imgs = [
+        nib.Nifti1Image(unwrapped[:, :, :, i_echo, :], phase[0].affine, phase[0].header)
+        for i_echo in range(unwrapped.shape[-2])
+    ]
+    masks_img = nib.Nifti1Image(new_masks, mag[0].affine, mag[0].header)
+    return unwrapped_imgs, masks_img
+
+
+def compute_field_maps(
+    unwrapped: list[nib.Nifti1Image],
+    masks: nib.Nifti1Image,
+    mag: list[nib.Nifti1Image],
+    tes: list[float] | tuple[float] | npt.NDArray[np.float32],
+    border_filt: tuple[int, int] = (1, 5),
+    svd_filt: int = 10,
+    n_cpus: int = 4,
+) -> nib.Nifti1Image:
+    """Compute native-space B0 field maps from unwrapped phases.
+
+    Performs the second half of MEDIC: weighted echo regression per frame to
+    yield a field map in Hz, followed by border-aware + global SVD filtering
+    using the per-frame masks from :func:`unwrap_phases`.
+
+    Parameters
+    ----------
+    unwrapped : list[nib.Nifti1Image]
+        Per-echo unwrapped phase images (radians), each shape
+        ``(x, y, z, n_frames)``. Order must match ``mag`` and ``tes``.
+    masks : nib.Nifti1Image
+        Per-frame masks, shape ``(x, y, z, n_frames)``, with values 0/1/2 as
+        produced by :func:`unwrap_phases`.
+    mag : list[nib.Nifti1Image]
+        Magnitude images, used as regression weights.
+    tes : list[float] | tuple[float] | npt.NDArray
+        Echo times in milliseconds.
+    border_filt : tuple[int, int], optional
+        SVD components for the two-pass border filter, by default ``(1, 5)``.
+    svd_filt : int, optional
+        SVD components for global denoising, by default 10.
+    n_cpus : int, optional
+        CPU parallelism for the field map loop, by default 4.
+
+    Returns
+    -------
+    nib.Nifti1Image
+        Native-space field map in Hz, shape ``(x, y, z, n_frames)``.
+    """
+    if len(unwrapped) != len(mag) or len(unwrapped) != len(tes):
+        raise ValueError(
+            "Number of unwrapped phase images, magnitude images, and echo "
+            "times must all match."
+        )
+
+    tes = cast(npt.NDArray[np.float32], np.array(tes, dtype=np.float32))
+
+    # stack per-echo 4D unwrapped images into (x, y, z, n_echoes, n_frames)
+    unwrapped_arr = np.stack(
+        [np.asarray(u.dataobj, dtype=np.float32) for u in unwrapped], axis=-2
+    )
+    new_masks = np.asarray(masks.dataobj, dtype=np.int8)
+    n_frames = unwrapped_arr.shape[-1]
+
+    if (
+        new_masks.ndim != 4
+        or new_masks.shape[:3] != unwrapped_arr.shape[:3]
+        or new_masks.shape[-1] != n_frames
+    ):
+        raise ValueError(
+            "masks must have shape (x, y, z, n_frames) matching the spatial "
+            "dimensions and frame count of the unwrapped data; got masks shape "
+            f"{new_masks.shape} and expected "
+            f"({unwrapped_arr.shape[0]}, {unwrapped_arr.shape[1]}, "
+            f"{unwrapped_arr.shape[2]}, {n_frames})."
+        )
+
+    # allocate output
+    field_maps = np.zeros((*unwrapped_arr.shape[:3], n_frames), dtype=np.float32)
+
+    def field_map_iterator(unwrapped_arr, mag, tes):
         logging.info("Running field map computation...")
-        # convert tes to a matrix
         tes_mat = tes[:, np.newaxis]
-        for frame_num in range(unwrapped.shape[-1]):
-            yield (unwrapped[..., frame_num], mag, tes.shape[0], tes_mat, frame_num)
+        for frame_num in range(unwrapped_arr.shape[-1]):
+            yield (unwrapped_arr[..., frame_num], mag, tes.shape[0], tes_mat, frame_num)
 
     def post_field_map(idx, result):
         logging.info(f"Field map computation for frame {idx} complete.")
@@ -901,22 +969,64 @@ def unwrap_and_compute_field_maps(
         ncpus=n_cpus,
         type="thread",
         fn=compute_field_map,
-        iterator=field_map_iterator(field_maps, unwrapped, mag, tes),
+        iterator=field_map_iterator(unwrapped_arr, mag, tes),
         post_fn=post_field_map,
     )
 
-    # if border voxels defined, use that information to stabilize border regions using SVD filtering
-    # this will probably kill any respiration signals in these voxels but improve the
-    # temporal stability of the field maps in these regions (and could we really resolve
-    # respiration in those voxels any way? probably not...)
+    # border-aware + global SVD filtering of the field maps
     svd_filtering(
         field_maps,
         new_masks,
-        phase[0].header.get_zooms()[0],  # type: ignore
+        unwrapped[0].header.get_zooms()[0],  # type: ignore
         n_frames,
         border_filt,
         svd_filt,
     )
 
-    # return the field map as a nifti image
-    return nib.Nifti1Image(field_maps[..., frames], phase[0].affine, phase[0].header)
+    return nib.Nifti1Image(field_maps, unwrapped[0].affine, unwrapped[0].header)
+
+
+def unwrap_and_compute_field_maps(
+    phase: list[nib.Nifti1Image],
+    mag: list[nib.Nifti1Image],
+    tes: list[float] | tuple[float] | npt.NDArray[np.float32],
+    mask: nib.Nifti1Image | SimpleNamespace | None = None,
+    automask: bool = True,
+    automask_dilation: int = 3,
+    border_size: int = 5,
+    border_filt: tuple[int, int] = (1, 5),
+    svd_filt: int = 10,
+    frames: list[int] | None = None,
+    n_cpus: int = 4,
+    debug: bool = False,
+    wrap_limit: bool = False,
+) -> nib.Nifti1Image:
+    """Unwrap phase and compute native-space field maps in a single call.
+
+    Thin wrapper around :func:`unwrap_phases` followed by
+    :func:`compute_field_maps`. See those functions for parameter and return
+    semantics. ``border_size`` is accepted for backwards compatibility but is
+    currently unused. Returns the native-space field map in Hz.
+    """
+    del border_size  # accepted for back-compat; not consumed by either stage
+    unwrapped_imgs, masks_img = unwrap_phases(
+        phase,
+        mag,
+        tes,
+        mask=mask,
+        automask=automask,
+        automask_dilation=automask_dilation,
+        frames=frames,
+        n_cpus=n_cpus,
+        debug=debug,
+        wrap_limit=wrap_limit,
+    )
+    return compute_field_maps(
+        unwrapped_imgs,
+        masks_img,
+        mag,
+        tes,
+        border_filt=border_filt,
+        svd_filt=svd_filt,
+        n_cpus=n_cpus,
+    )
