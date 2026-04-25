@@ -1693,14 +1693,12 @@ def test_bundle_frames_to_3d_series_clears_vector_intent():
 
 def test_write_output_per_frame_map_clears_vector_intent(tmp_path):
     """Per-frame map outputs must round-trip without a stale vector intent."""
-    import argparse
-
     from warpkit.scripts._warp_io import write_output
 
     frames = [_vector_intent_frame() for _ in range(2)]
     out_paths = [str(tmp_path / "f1.nii"), str(tmp_path / "f2.nii")]
 
-    write_output(frames, out_paths, "map", argparse.ArgumentParser())
+    write_output(frames, out_paths, "map")
 
     for p in out_paths:
         loaded = _load(p)
