@@ -19,34 +19,6 @@ from ._warp_io import read_input_frames, write_output
 PE_DIRECTIONS = tuple(AXIS_MAP)
 
 
-def _resolve_in_type(
-    from_arg: str,
-    shape_type: str,
-    to_type: str,
-    parser: argparse.ArgumentParser,
-) -> str:
-    """Disambiguate the input type given ``--from``, the shape-based
-    classification (``"map"`` for 1-channel, ``"field"`` for 3-channel),
-    and ``--to``."""
-    if from_arg != "auto":
-        if from_arg == "field" and shape_type != "field":
-            parser.error(
-                "--from=field expects a 3-channel input but got 1-channel "
-                "data; pass --from map or --from fieldmap instead."
-            )
-        if from_arg in ("map", "fieldmap") and shape_type != "map":
-            parser.error(
-                f"--from={from_arg} expects a 1-channel input but got "
-                "3-channel field data; pass --from field instead."
-            )
-        return from_arg
-    if shape_type == "field":
-        return "field"
-    # 1-channel input: 'map' (mm) and 'fieldmap' (Hz) look the same on
-    # disk, so disambiguate by which side --to is on.
-    return "map" if to_type == "fieldmap" else "fieldmap"
-
-
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -82,12 +54,11 @@ def main():
     parser.add_argument(
         "--from",
         dest="from_type",
-        choices=("auto", "map", "field", "fieldmap"),
-        default="auto",
+        choices=("map", "field", "fieldmap"),
+        required=True,
         help=(
-            "Input type. 'auto' uses the shape (3-channel = field) plus "
-            "--to to disambiguate map (mm) from fieldmap (Hz) for "
-            "1-channel inputs."
+            "Input type: 'map' (1-channel mm), 'field' (3-channel mm), or "
+            "'fieldmap' (1-channel Hz)."
         ),
     )
     parser.add_argument(
@@ -141,10 +112,10 @@ def main():
     args = parser.parse_args()
     setup_logging()
 
-    # The shape-based classifier in _warp_io knows about map/field only;
-    # remap "fieldmap" to "map" for the splitter's purposes.
+    # _warp_io.read_input_frames knows about map/field only; remap "fieldmap"
+    # to "map" since on disk a Hz field map is shaped like a 1-channel map.
     from_arg_for_io = "map" if args.from_type == "fieldmap" else args.from_type
-    frames, shape_type = read_input_frames(args.input, from_arg_for_io, parser)
+    frames = read_input_frames(args.input, from_arg_for_io, parser)
 
     if args.frame is not None:
         if args.frame < 0 or args.frame >= len(frames):
@@ -154,7 +125,7 @@ def main():
             )
         frames = [frames[args.frame]]
 
-    in_type = _resolve_in_type(args.from_type, shape_type, args.to_type, parser)
+    in_type = args.from_type
 
     if in_type == args.to_type:
         parser.error(

@@ -380,7 +380,7 @@ def test_displacement_map_field_roundtrip_all_formats(axis, fmt):
 
 def test_displacement_field_to_map_clears_vector_intent():
     """The 1-channel result must not carry the input field's vector intent,
-    or downstream auto-classifiers will mistake it for a field."""
+    or downstream type checks may mistake it for a field."""
     affine = np.eye(4)
     data = np.zeros((4, 4, 4), dtype=np.float32)
     dmap = nib.Nifti1Image(data, affine)

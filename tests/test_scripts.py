@@ -285,6 +285,8 @@ def test_convert_warp_requires_axis_for_map_to_field(argv, capsys, tmp_path):
             maps,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "map",
             "--to",
             "field",
         ]
@@ -306,6 +308,8 @@ def test_convert_warp_requires_axis_for_field_to_map(argv, capsys, tmp_path):
             field,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "field",
             "--to",
             "map",
         ]
@@ -326,6 +330,8 @@ def test_convert_warp_frame_out_of_range(argv, capsys, tmp_path):
             maps,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "map",
             "--frame",
             "10",
         ]
@@ -348,6 +354,8 @@ def test_convert_warp_output_count_mismatch(argv, capsys, tmp_path):
             "--output",
             str(tmp_path / "o1.nii"),
             str(tmp_path / "o2.nii"),  # only 2 outputs for 5 frames
+            "--from",
+            "map",
         ]
     )
     with pytest.raises(SystemExit) as exc:
@@ -368,6 +376,8 @@ def test_convert_warp_invert_single_map_requires_axis(argv, capsys, tmp_path):
             single_map,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "map",
             "--invert",
             # no --axis, no --to=field
         ]
@@ -391,6 +401,8 @@ def test_convert_warp_invert_multi_frame_field_requires_axis(argv, capsys, tmp_p
             *fields,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "field",
             "--invert",
             # no --axis
         ]
@@ -401,27 +413,6 @@ def test_convert_warp_invert_multi_frame_field_requires_axis(argv, capsys, tmp_p
     err = capsys.readouterr().err
     assert "--axis is required" in err
     assert "multi-frame" in err
-
-
-def test_convert_warp_rejects_mixed_input_types(argv, capsys, tmp_path):
-    """All inputs must classify to the same map/field type."""
-    maps = _write_nifti(tmp_path / "maps.nii", (4, 4, 4, 5))  # auto -> map
-    field = _write_nifti(tmp_path / "field.nii", (4, 4, 4, 3))  # auto -> field
-    argv(
-        [
-            "wk-convert-warp",
-            "--input",
-            maps,
-            field,
-            "--output",
-            str(tmp_path / "out.nii"),
-        ]
-    )
-    with pytest.raises(SystemExit) as exc:
-        convert_warp_main()
-    assert exc.value.code == 2
-    err = capsys.readouterr().err
-    assert "mixed map/field" in err
 
 
 # ---------------------------------------------------------------------------
@@ -705,7 +696,7 @@ def test_apply_warp_help(argv, capsys):
 def test_apply_warp_requires_phase_encoding_axis_for_map(argv, capsys, tmp_path):
     """Map-type transforms require --phase-encoding-axis."""
     inp = _write_nifti(tmp_path / "in.nii", (4, 4, 4))
-    # 4D 1-channel map (last dim != 3 ensures auto-classifies as 'map')
+    # 4D 1-channel map series
     tx = _write_nifti(tmp_path / "tx.nii", (4, 4, 4, 5))
     argv(
         [
@@ -714,6 +705,8 @@ def test_apply_warp_requires_phase_encoding_axis_for_map(argv, capsys, tmp_path)
             inp,
             "--transform",
             tx,
+            "--transform-type",
+            "map",
             "--output",
             str(tmp_path / "out.nii"),
         ]
@@ -782,6 +775,8 @@ def test_apply_warp_3d_input_with_series_transform_errors(argv, capsys, tmp_path
             inp,
             "--transform",
             tx,
+            "--transform-type",
+            "map",
             "--phase-encoding-axis",
             "j",
             "--output",
@@ -806,6 +801,8 @@ def test_apply_warp_frame_count_mismatch_errors(argv, capsys, tmp_path):
             inp,
             "--transform",
             tx,
+            "--transform-type",
+            "map",
             "--phase-encoding-axis",
             "j",
             "--output",
@@ -833,6 +830,8 @@ def test_apply_warp_series_files_must_be_3channel(argv, capsys, tmp_path):
             "--transform",
             bad1,
             bad2,
+            "--transform-type",
+            "field",
             "--output",
             str(tmp_path / "out.nii"),
         ]
@@ -958,7 +957,7 @@ def test_apply_warp_happy_path_zero_displacement(argv, tmp_path):
     in_path = tmp_path / "img.nii"
     nib.Nifti1Image(img_data, affine).to_filename(str(in_path))
 
-    # a 4D 1-channel zero displacement map (will auto-classify as 'map')
+    # a 4D 1-channel zero displacement map
     zero_map = np.zeros((8, 8, 8, 1), dtype=np.float32)
     map_path = tmp_path / "map.nii"
     nib.Nifti1Image(zero_map, affine).to_filename(str(map_path))
@@ -971,6 +970,8 @@ def test_apply_warp_happy_path_zero_displacement(argv, tmp_path):
             str(in_path),
             "--transform",
             str(map_path),
+            "--transform-type",
+            "map",
             "--phase-encoding-axis",
             "j",
             "--output",
@@ -997,8 +998,7 @@ def test_apply_warp_happy_path_4d_image_with_zero_field(argv, tmp_path):
     in_path = tmp_path / "img.nii"
     nib.Nifti1Image(img_data, affine).to_filename(str(in_path))
 
-    # single 4D 3-channel zero field with the "vector" intent set so the
-    # auto-classifier uses the intent path (not the shape fallback).
+    # single 4D 3-channel zero field
     zero_field = np.zeros((8, 8, 8, 3), dtype=np.float32)
     field_img = nib.Nifti1Image(zero_field, affine)
     field_img.header.set_intent("vector", (), "")
@@ -1013,6 +1013,8 @@ def test_apply_warp_happy_path_4d_image_with_zero_field(argv, tmp_path):
             str(in_path),
             "--transform",
             str(field_path),
+            "--transform-type",
+            "field",
             "--output",
             str(out_path),
         ]
@@ -1048,6 +1050,8 @@ def test_apply_warp_happy_path_field_series(argv, tmp_path):
             str(in_path),
             "--transform",
             *field_paths,
+            "--transform-type",
+            "field",
             "--output",
             str(out_path),
         ]
@@ -1076,6 +1080,8 @@ def test_convert_warp_happy_path_map_field_roundtrip(argv, tmp_path):
             str(map_path),
             "--output",
             str(field_path),
+            "--from",
+            "map",
             "--to",
             "field",
             "--axis",
@@ -1096,6 +1102,8 @@ def test_convert_warp_happy_path_map_field_roundtrip(argv, tmp_path):
             str(field_path),
             "--output",
             str(back_path),
+            "--from",
+            "field",
             "--to",
             "map",
             "--axis",
@@ -1125,6 +1133,8 @@ def test_convert_warp_happy_path_format_conversion(argv, tmp_path):
             str(in_path),
             "--output",
             str(out_path),
+            "--from",
+            "field",
             "--to-format",
             "ants",
         ]
@@ -1156,6 +1166,8 @@ def test_convert_warp_happy_path_invert_zero_map(argv, tmp_path):
             str(in_path),
             "--output",
             str(out_path),
+            "--from",
+            "map",
             "--invert",
             "--axis",
             "j",
@@ -1194,6 +1206,8 @@ def test_compute_jacobian_requires_axis_for_map(argv, capsys, tmp_path):
             maps,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "map",
         ]
     )
     with pytest.raises(SystemExit) as exc:
@@ -1212,6 +1226,8 @@ def test_compute_jacobian_rejects_bad_format(argv, capsys, tmp_path):
             field,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "field",
             "--from-format",
             "matlab",  # not a valid choice
         ]
@@ -1232,6 +1248,8 @@ def test_compute_jacobian_frame_out_of_range(argv, capsys, tmp_path):
             maps,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "map",
             "--axis",
             "j",
             "--frame",
@@ -1260,6 +1278,8 @@ def test_compute_jacobian_single_field_zero(argv, tmp_path):
             str(field_path),
             "--output",
             str(out_path),
+            "--from",
+            "field",
         ]
     )
     compute_jacobian_main()
@@ -1284,6 +1304,8 @@ def test_compute_jacobian_map_series_zero(argv, tmp_path):
             str(map_path),
             "--output",
             str(out_path),
+            "--from",
+            "map",
             "--axis",
             "j",
         ]
@@ -1295,8 +1317,7 @@ def test_compute_jacobian_map_series_zero(argv, tmp_path):
 
 
 def test_compute_jacobian_per_frame_outputs(argv, tmp_path):
-    """N output paths → one Jacobian volume per frame. Uses 4 frames so the
-    last-dim-3 heuristic doesn't auto-classify the input as a single field."""
+    """N output paths → one Jacobian volume per frame."""
     affine = np.diag([2.0, 2.0, 2.0, 1.0])
     map_data = np.zeros((6, 6, 6, 4), dtype=np.float32)
     map_path = tmp_path / "maps.nii"
@@ -1310,6 +1331,8 @@ def test_compute_jacobian_per_frame_outputs(argv, tmp_path):
             str(map_path),
             "--output",
             *out_paths,
+            "--from",
+            "map",
             "--axis",
             "j",
         ]
@@ -1349,6 +1372,8 @@ def test_convert_fieldmap_requires_to(argv, capsys, tmp_path):
             fmap,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "fieldmap",
         ]
     )
     with pytest.raises(SystemExit) as exc:
@@ -1367,6 +1392,8 @@ def test_convert_fieldmap_rejects_bad_pe_direction(argv, capsys, tmp_path):
             fmap,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "fieldmap",
             "--to",
             "map",
             "--total-readout-time",
@@ -1391,6 +1418,8 @@ def test_convert_fieldmap_requires_trt_and_pe(argv, capsys, tmp_path):
             fmap,
             "--output",
             str(tmp_path / "out.nii"),
+            "--from",
+            "fieldmap",
             "--to",
             "map",
         ]
@@ -1459,8 +1488,7 @@ def test_convert_fieldmap_rejects_same_from_to(argv, capsys, tmp_path):
 
 def test_convert_fieldmap_map_to_fieldmap_roundtrip(argv, tmp_path):
     """mm displacement map -> Hz fieldmap -> mm displacement map preserves
-    the original (within float roundtrip jitter). Also asserts that the
-    'auto' classifier picks 'map' for 1-channel input + --to=fieldmap."""
+    the original (within float roundtrip jitter)."""
     affine = np.diag([2.0, 2.0, 2.0, 1.0])
     rng = np.random.default_rng(0)
     map_data = rng.random((6, 6, 6, 4), dtype=np.float32) - 0.5
@@ -1475,6 +1503,8 @@ def test_convert_fieldmap_map_to_fieldmap_roundtrip(argv, tmp_path):
             str(map_path),
             "--output",
             str(fmap_path),
+            "--from",
+            "map",
             "--to",
             "fieldmap",
             "--total-readout-time",
@@ -1496,6 +1526,8 @@ def test_convert_fieldmap_map_to_fieldmap_roundtrip(argv, tmp_path):
             str(fmap_path),
             "--output",
             str(back_path),
+            "--from",
+            "fieldmap",
             "--to",
             "map",
             "--total-readout-time",
@@ -1528,6 +1560,8 @@ def test_convert_fieldmap_field_to_fieldmap(argv, tmp_path):
             str(field_path),
             "--output",
             str(out_path),
+            "--from",
+            "field",
             "--to",
             "fieldmap",
             "--total-readout-time",
@@ -1546,8 +1580,7 @@ def test_convert_fieldmap_field_to_fieldmap(argv, tmp_path):
 
 
 def test_convert_fieldmap_fieldmap_to_field(argv, tmp_path):
-    """Hz fieldmap -> mm 3-channel field (auto-classify 1-channel as
-    fieldmap because --to is on the mm side)."""
+    """Hz fieldmap -> mm 3-channel field."""
     affine = np.diag([2.0, 2.0, 2.0, 1.0])
     rng = np.random.default_rng(2)
     fmap_data = rng.random((6, 6, 6), dtype=np.float32) - 0.5
@@ -1562,6 +1595,8 @@ def test_convert_fieldmap_fieldmap_to_field(argv, tmp_path):
             str(fmap_path),
             "--output",
             str(field_path),
+            "--from",
+            "fieldmap",
             "--to",
             "field",
             "--total-readout-time",

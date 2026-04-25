@@ -18,35 +18,27 @@ from warpkit.utilities import (
 from . import epilog
 
 
-def _classify_single_transform(img: nib.Nifti1Image, override: str) -> str:
-    """Classify a single-file transform as 'map' (1-channel) or 'field' (3-channel)."""
-    if override != "auto":
-        return override
-    intent = img.header.get_intent() if img.header is not None else (None,)
-    if intent and intent[0] == "vector":
-        return "field"
-    if img.ndim == 5:
-        return "field"
-    if img.ndim == 4 and img.shape[-1] == 3:
-        return "field"
-    return "map"
-
-
 def _build_transform_getter(
     transforms: list[nib.Nifti1Image],
-    transform_type_override: str,
+    transform_type: str,
     phase_encoding_axis: str | None,
     in_format: str,
     parser: argparse.ArgumentParser,
 ) -> tuple[int, str, Callable[[int], nib.Nifti1Image]]:
     """Validate and wrap the user-supplied transform inputs.
 
-    Returns (frame_count, classified_type, getter). The getter is a callable
+    Returns (frame_count, transform_type, getter). The getter is a callable
     that takes a 0-indexed frame number and returns an itk-format
     ``Nifti1Image`` ready for ``resample_image``. Single-frame transforms are
     cached on first access.
     """
     if len(transforms) > 1:
+        if transform_type != "field":
+            parser.error(
+                "--transform-type=map is incompatible with a multi-file "
+                "--transform series (each file must be a 3-channel field). "
+                "Pass a single 4D map series or use --transform-type field."
+            )
         for t in transforms:
             if t.ndim != 4 or t.shape[-1] != 3:
                 parser.error(
@@ -65,7 +57,6 @@ def _build_transform_getter(
         return len(transforms), "field", get_series
 
     t = transforms[0]
-    transform_type = _classify_single_transform(t, transform_type_override)
 
     if transform_type == "map":
         if not phase_encoding_axis:
@@ -146,10 +137,11 @@ def main():
         nargs="+",
         required=True,
         help=(
-            "One or more displacement transforms. A single file is auto-"
-            "classified as displacement maps (1-channel) or a displacement "
-            "field (3-channel); pass multiple 4D fields (X,Y,Z,3) to apply "
-            "a per-frame field series to a 4D input."
+            "One or more displacement transforms. A single file may be a "
+            "displacement map (1-channel along --phase-encoding-axis) or a "
+            "displacement field (3-channel); the type must be declared via "
+            "--transform-type. Pass multiple 4D fields (X,Y,Z,3) to apply a "
+            "per-frame field series to a 4D input."
         ),
     )
     parser.add_argument(
@@ -159,13 +151,12 @@ def main():
     )
     parser.add_argument(
         "--transform-type",
-        choices=("auto", "map", "field"),
-        default="auto",
+        choices=("map", "field"),
+        required=True,
         help=(
-            "Override the single-file classifier. 'map' = 1-channel "
-            "displacement magnitudes along --phase-encoding-axis. 'field' = "
-            "3-channel displacement vectors. Ignored when --transform has "
-            "more than one file (always treated as a field series)."
+            "Transform type. 'map' = 1-channel displacement magnitudes along "
+            "--phase-encoding-axis. 'field' = 3-channel displacement vectors. "
+            "Multi-file --transform must be 'field'."
         ),
     )
     parser.add_argument(
@@ -209,7 +200,7 @@ def main():
     # build a per-frame transform getter
     n_transform, transform_type, get_transform = _build_transform_getter(
         transforms,
-        transform_type_override=args.transform_type,
+        transform_type=args.transform_type,
         phase_encoding_axis=args.phase_encoding_axis,
         in_format=args.format,
         parser=parser,

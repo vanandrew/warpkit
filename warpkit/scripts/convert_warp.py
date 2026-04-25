@@ -148,9 +148,9 @@ def main():
     parser.add_argument(
         "--from",
         dest="from_type",
-        choices=("auto", "map", "field"),
-        default="auto",
-        help="Input type. Default 'auto' uses the NIfTI intent code and shape.",
+        choices=("map", "field"),
+        required=True,
+        help="Input type: 'map' (1-channel along --axis) or 'field' (3-channel).",
     )
     parser.add_argument(
         "--to",
@@ -204,7 +204,8 @@ def main():
     args = parser.parse_args()
     setup_logging()
 
-    frames, in_type = read_input_frames(args.input, args.from_type, parser)
+    frames = read_input_frames(args.input, args.from_type, parser)
+    in_type = args.from_type
     out_type = args.to_type or in_type
 
     if args.frame is not None:

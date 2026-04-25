@@ -2,8 +2,8 @@
 
 Both ``wk-convert-warp`` and ``wk-compute-jacobian`` accept the same
 "1+ files of maps or fields" input model and the same "1 bundled file or N
-per-frame files" output model. This module hosts the classification, frame
-splitting, and bundling helpers that the scripts share.
+per-frame files" output model. This module hosts the frame splitting and
+bundling helpers that the scripts share.
 """
 
 from __future__ import annotations
@@ -15,44 +15,23 @@ import nibabel as nib
 import numpy as np
 
 
-def classify(img: nib.Nifti1Image, override: str) -> str:
-    """Classify a NIfTI as a 1-channel map or a 3-channel field.
-
-    ``override`` may be ``"auto"``, ``"map"``, or ``"field"``. The auto path
-    uses the NIfTI ``intent_code`` (``"vector"`` → field) and shape (5D or
-    4D-with-last==3 → field, else map).
-    """
-    if override != "auto":
-        return override
-    intent = img.header.get_intent() if img.header is not None else (None,)
-    if intent and intent[0] == "vector":
-        return "field"
-    if img.ndim == 5:
-        return "field"
-    if img.ndim == 4 and img.shape[-1] == 3:
-        return "field"
-    return "map"
-
-
 def read_input_frames(
     input_paths: list[str],
-    from_override: str,
+    from_type: str,
     parser: argparse.ArgumentParser,
-) -> tuple[list[nib.Nifti1Image], str]:
+) -> list[nib.Nifti1Image]:
     """Load input file(s) and split into a flat list of single-frame images.
 
-    Each input may be a single 3D map, a 4D map series, a 4D field, or a 5D
-    field (singleton or multi-frame). The returned frames are 3D for maps
-    and 4D ``(X, Y, Z, 3)`` for fields. All inputs must classify to the
-    same type.
+    ``from_type`` is ``"map"`` (1-channel) or ``"field"`` (3-channel) — the
+    user-supplied input type from ``--from``. Each input may be a single 3D
+    map, a 4D map series, a 4D field, or a 5D field (singleton or
+    multi-frame). The returned frames are 3D for maps and 4D
+    ``(X, Y, Z, 3)`` for fields.
     """
-    type_choices: list[str] = []
     frames: list[nib.Nifti1Image] = []
     for p in input_paths:
         img = cast(nib.Nifti1Image, nib.load(p))
-        ftype = classify(img, from_override)
-        type_choices.append(ftype)
-        if ftype == "map":
+        if from_type == "map":
             if img.ndim == 3:
                 frames.append(img)
             elif img.ndim == 4:
@@ -76,12 +55,7 @@ def read_input_frames(
                     "field input must be 4D (X,Y,Z,3) or 5D (X,Y,Z,T,3); "
                     f"got shape {img.shape} for {p}"
                 )
-    if len(set(type_choices)) > 1:
-        parser.error(
-            f"mixed map/field inputs: {type_choices}; all input files must "
-            "classify as the same type (use --from to override)"
-        )
-    return frames, type_choices[0]
+    return frames
 
 
 def bundle_frames_to_3d_series(frames: list[nib.Nifti1Image]) -> nib.Nifti1Image:
@@ -89,8 +63,8 @@ def bundle_frames_to_3d_series(frames: list[nib.Nifti1Image]) -> nib.Nifti1Image
 
     Used for both 1-channel displacement maps and scalar Jacobian fields.
     The frame headers may have inherited a vector intent code from an upstream
-    field operation; clear it so the bundled scalar series isn't later
-    misclassified as a field.
+    field operation; clear it so downstream tools don't misread the bundled
+    scalar series as a field.
     """
     data = np.stack([f.get_fdata() for f in frames], axis=-1).astype(np.float32)
     header = cast(nib.Nifti1Header, frames[0].header.copy())
@@ -138,8 +112,8 @@ def write_output(
     elif n_out == n:
         for path, img in zip(out_paths, frames, strict=True):
             # Per-frame map outputs may carry a vector intent inherited from an
-            # upstream field operation — drop it so the file isn't later
-            # auto-classified as a field.
+            # upstream field operation — drop it so downstream tools don't
+            # misread the file as a field.
             if out_type == "map":
                 header = cast(nib.Nifti1Header, img.header.copy())
                 header.set_intent("none", (), "")
