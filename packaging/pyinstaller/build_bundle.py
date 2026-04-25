@@ -71,24 +71,35 @@ def adhoc_sign_macos(bundle: Path) -> None:
     if platform.system().lower() != "darwin":
         return
     # Ad-hoc sign every Mach-O in the bundle. `codesign -s -` is sufficient to
-    # let users override Gatekeeper after the first launch (right-click → Open,
-    # or `xattr -d com.apple.quarantine`).
+    # let users override Gatekeeper after recursively clearing the
+    # com.apple.quarantine xattr (see bundle_README.md).
     targets = [bundle / name for name in SCRIPTS]
     targets.extend(p for p in bundle.rglob("*.dylib") if p.is_file())
     targets.extend(p for p in (bundle / "_internal").rglob("*.so") if p.is_file())
+    failures: list[str] = []
     for t in targets:
-        subprocess.run(
+        result = subprocess.run(
             ["codesign", "--force", "--sign", "-", "--timestamp=none", str(t)],
-            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            failures.append(f"{t} (exit {result.returncode}): {result.stderr.rstrip()}")
+    if failures:
+        raise RuntimeError(
+            "ad-hoc codesign failed for one or more targets:\n  "
+            + "\n  ".join(failures)
         )
 
 
 def write_readme(bundle: Path, version: str, target: str) -> None:
     template = Path(__file__).parent / "bundle_README.md"
     body = (
-        template.read_text().replace("@VERSION@", version).replace("@TARGET@", target)
+        template.read_text(encoding="utf-8")
+        .replace("@VERSION@", version)
+        .replace("@TARGET@", target)
     )
-    (bundle / "README.md").write_text(body)
+    (bundle / "README.md").write_text(body, encoding="utf-8")
 
 
 def make_zip(bundle: Path, out_zip: Path) -> None:
