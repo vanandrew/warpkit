@@ -98,7 +98,7 @@ omit = ["tests/*"]
 [tool.cibuildwheel]
 # Skip musllinux (we ship manylinux only) and free-threaded CPython builds
 # (cp31Xt-*) — our pybind11 bindings + ITK haven't been audited for the no-GIL ABI.
-skip = "*musllinux* cp313t-* cp314t-*"
+skip = "*musllinux* cp314t-*"
 build-frontend = "build"
 
 [tool.cibuildwheel.linux]
