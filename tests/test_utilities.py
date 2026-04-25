@@ -511,6 +511,75 @@ def test_convert_warp_lps_affine_itk_roundtrip():
 # ---------------------------------------------------------------------------
 
 
+def test_convert_warp_rejects_unknown_output_type():
+    """A bogus out_type triggers the post-flip ValueError (separate from the
+    in_type unknown branch)."""
+    affine = np.eye(4)
+    warp = nib.Nifti1Image(np.zeros((4, 4, 4, 3), dtype=np.float32), affine)
+    with pytest.raises(ValueError, match="not recognized"):
+        convert_warp(warp, in_type="itk", out_type="bogus")
+
+
+def test_resample_image_rejects_transform_with_wrong_last_axis():
+    """resample_image checks the transform data has size 3 in the last axis
+    after the optional 5D squeeze."""
+    from warpkit.utilities import resample_image
+
+    affine = np.eye(4)
+    ref = nib.Nifti1Image(np.zeros((4, 4, 4), dtype=np.float32), affine)
+    inp = nib.Nifti1Image(np.zeros((4, 4, 4), dtype=np.float32), affine)
+    bad_transform = nib.Nifti1Image(np.zeros((4, 4, 4, 7), dtype=np.float32), affine)
+    with pytest.raises(ValueError, match="size 3 in last axis"):
+        resample_image(ref, inp, bad_transform)
+
+
+def test_resample_image_squeezes_5d_transform():
+    """A 5D ANTs/AFNI transform (X,Y,Z,1,3) is squeezed to 4D before resample.
+    Identity transform → output equals input."""
+    from warpkit.utilities import resample_image
+
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    img_data = rng.random((6, 6, 6), dtype=np.float32)
+    inp = nib.Nifti1Image(img_data, affine)
+    ref = nib.Nifti1Image(np.zeros((6, 6, 6), dtype=np.float32), affine)
+    transform = nib.Nifti1Image(np.zeros((6, 6, 6, 1, 3), dtype=np.float32), affine)
+    out = resample_image(ref, inp, transform)
+    assert_allclose(out.get_fdata().squeeze(), img_data, atol=1e-3)
+
+
+def test_create_brain_mask_negative_extra_dilation_erodes():
+    """A negative extra_dilation triggers the erosion branch in
+    create_brain_mask."""
+    rng = np.random.default_rng(0)
+    shape = (16, 16, 16)
+    coords = np.indices(shape).astype(np.float32)
+    center = np.array([7.5, 7.5, 7.5])
+    r2 = sum((coords[i] - center[i]) ** 2 for i in range(3))
+    mag = np.exp(-r2 / 30.0).astype(np.float32) + rng.normal(0, 0.01, shape).astype(
+        np.float32
+    )
+    mask_default = create_brain_mask(mag)
+    mask_eroded = create_brain_mask(mag, extra_dilation=-2)
+    # Erosion strictly shrinks the mask.
+    assert mask_eroded.sum() < mask_default.sum()
+
+
+def test_create_brain_mask_extra_dilation_grows_mask():
+    """A positive extra_dilation strictly grows the mask."""
+    rng = np.random.default_rng(0)
+    shape = (16, 16, 16)
+    coords = np.indices(shape).astype(np.float32)
+    center = np.array([7.5, 7.5, 7.5])
+    r2 = sum((coords[i] - center[i]) ** 2 for i in range(3))
+    mag = np.exp(-r2 / 30.0).astype(np.float32) + rng.normal(0, 0.01, shape).astype(
+        np.float32
+    )
+    mask_default = create_brain_mask(mag)
+    mask_dilated = create_brain_mask(mag, extra_dilation=3)
+    assert mask_dilated.sum() > mask_default.sum()
+
+
 def test_compute_jacobian_determinant_constant_translation_is_one():
     """A spatially constant displacement is a pure translation and has unit
     Jacobian determinant. Complements the all-zero test by exercising the

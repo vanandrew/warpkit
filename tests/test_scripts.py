@@ -2009,3 +2009,751 @@ def test_convert_warp_double_invert_recovers_input(argv, tmp_path):
     # border and use a loose tolerance.
     interior = (slice(2, -2),) * 3
     np.testing.assert_allclose(recovered[interior], map_data[interior], atol=5e-2)
+
+
+# ---------------------------------------------------------------------------
+# wk-apply-warp coverage gaps: 3D map, 5D ANTs single field, 5D field series,
+# --reference, multi-file + --transform-type=map error, non-itk --format.
+# ---------------------------------------------------------------------------
+
+
+def test_apply_warp_multi_file_with_transform_type_map_errors(argv, capsys, tmp_path):
+    """A multi-file --transform with --transform-type=map is incompatible
+    (only fields can be passed as a multi-file series)."""
+    inp = _write_nifti(tmp_path / "in.nii", (4, 4, 4, 2))
+    f1 = _write_nifti(tmp_path / "f1.nii", (4, 4, 4, 3))
+    f2 = _write_nifti(tmp_path / "f2.nii", (4, 4, 4, 3))
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            inp,
+            "--transform",
+            f1,
+            f2,
+            "--transform-type",
+            "map",
+            "--phase-encoding-axis",
+            "j",
+            "--output",
+            str(tmp_path / "out.nii"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        apply_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "incompatible" in err and "field" in err
+
+
+def test_apply_warp_invalid_map_shape_errors(argv, capsys, tmp_path):
+    """A 5D --transform with --transform-type=map is rejected (maps are 3D
+    or 4D scalar)."""
+    inp = _write_nifti(tmp_path / "in.nii", (4, 4, 4))
+    bad_map = _write_nifti(tmp_path / "bad.nii", (4, 4, 4, 1, 3))
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            inp,
+            "--transform",
+            bad_map,
+            "--transform-type",
+            "map",
+            "--phase-encoding-axis",
+            "j",
+            "--output",
+            str(tmp_path / "out.nii"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        apply_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "displacement map must be 3D or 4D" in err
+
+
+def test_apply_warp_invalid_input_shape_errors(argv, capsys, tmp_path):
+    """A 5D --input is rejected (input must be 3D or 4D)."""
+    inp = _write_nifti(tmp_path / "in.nii", (4, 4, 4, 2, 2))  # 5D
+    tx = _write_nifti(tmp_path / "tx.nii", (4, 4, 4, 3))
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            inp,
+            "--transform",
+            tx,
+            "--transform-type",
+            "field",
+            "--output",
+            str(tmp_path / "out.nii"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        apply_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "input image must be 3D or 4D" in err
+
+
+def test_apply_warp_3d_map_transform(argv, tmp_path):
+    """A 3D single-frame displacement map (not 4D) routes through the cached
+    single-frame branch."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    img_data = rng.random((6, 6, 6), dtype=np.float32)
+    in_path = tmp_path / "img.nii"
+    nib.Nifti1Image(img_data, affine).to_filename(str(in_path))
+
+    map_path = tmp_path / "map.nii"
+    nib.Nifti1Image(np.zeros((6, 6, 6), dtype=np.float32), affine).to_filename(
+        str(map_path)
+    )
+
+    out_path = tmp_path / "out.nii"
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            str(in_path),
+            "--transform",
+            str(map_path),
+            "--transform-type",
+            "map",
+            "--phase-encoding-axis",
+            "j",
+            "--output",
+            str(out_path),
+        ]
+    )
+    apply_warp_main()
+    out = _load(str(out_path))
+    np.testing.assert_allclose(out.get_fdata(), img_data, atol=1e-3)
+
+
+def test_apply_warp_5d_ants_single_field(argv, tmp_path):
+    """5D (X,Y,Z,1,3) zero ANTs single-warp file. Identity resample preserves
+    the input."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    img_data = rng.random((6, 6, 6), dtype=np.float32)
+    in_path = tmp_path / "img.nii"
+    nib.Nifti1Image(img_data, affine).to_filename(str(in_path))
+
+    field_5d = np.zeros((6, 6, 6, 1, 3), dtype=np.float32)
+    field_path = tmp_path / "ants.nii"
+    field_img = nib.Nifti1Image(field_5d, affine)
+    cast(nib.Nifti1Header, field_img.header).set_intent("vector", (), "")
+    field_img.to_filename(str(field_path))
+
+    out_path = tmp_path / "out.nii"
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            str(in_path),
+            "--transform",
+            str(field_path),
+            "--transform-type",
+            "field",
+            "--format",
+            "ants",
+            "--output",
+            str(out_path),
+        ]
+    )
+    apply_warp_main()
+    out = _load(str(out_path))
+    np.testing.assert_allclose(out.get_fdata().squeeze(), img_data, atol=1e-3)
+
+
+def test_apply_warp_5d_field_series_per_frame(argv, tmp_path):
+    """A 5D (X,Y,Z,T,3) field series in a single file applied to a 4D input;
+    each frame uses its own field. Zero fields → identity per frame."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    img_data = rng.random((5, 5, 5, 3), dtype=np.float32)
+    in_path = tmp_path / "img.nii"
+    nib.Nifti1Image(img_data, affine).to_filename(str(in_path))
+
+    field_5d = np.zeros((5, 5, 5, 3, 3), dtype=np.float32)
+    field_img = nib.Nifti1Image(field_5d, affine)
+    cast(nib.Nifti1Header, field_img.header).set_intent("vector", (), "")
+    field_path = tmp_path / "field5d.nii"
+    field_img.to_filename(str(field_path))
+
+    out_path = tmp_path / "out.nii"
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            str(in_path),
+            "--transform",
+            str(field_path),
+            "--transform-type",
+            "field",
+            "--output",
+            str(out_path),
+        ]
+    )
+    apply_warp_main()
+    out = _load(str(out_path))
+    assert out.shape == img_data.shape
+    np.testing.assert_allclose(out.get_fdata(), img_data, atol=1e-3)
+
+
+def test_apply_warp_with_explicit_reference(argv, tmp_path):
+    """--reference uses an explicit grid (not the input). The output adopts
+    the reference's shape and affine."""
+    in_affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    ref_affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    ref_affine[:3, 3] = [1.0, 2.0, 3.0]  # different origin
+
+    rng = np.random.default_rng(0)
+    img = rng.random((6, 6, 6), dtype=np.float32)
+    in_path = tmp_path / "img.nii"
+    nib.Nifti1Image(img, in_affine).to_filename(str(in_path))
+
+    ref = np.zeros((4, 4, 4), dtype=np.float32)
+    ref_path = tmp_path / "ref.nii"
+    nib.Nifti1Image(ref, ref_affine).to_filename(str(ref_path))
+
+    field = np.zeros((6, 6, 6, 3), dtype=np.float32)
+    field_img = nib.Nifti1Image(field, in_affine)
+    cast(nib.Nifti1Header, field_img.header).set_intent("vector", (), "")
+    field_path = tmp_path / "field.nii"
+    field_img.to_filename(str(field_path))
+
+    out_path = tmp_path / "out.nii"
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            str(in_path),
+            "--reference",
+            str(ref_path),
+            "--transform",
+            str(field_path),
+            "--transform-type",
+            "field",
+            "--output",
+            str(out_path),
+        ]
+    )
+    apply_warp_main()
+    out = _load(str(out_path))
+    # Output adopts the reference grid shape (4,4,4), not the input (6,6,6).
+    assert out.shape == (4, 4, 4)
+
+
+def test_apply_warp_field_with_non_itk_format(argv, tmp_path):
+    """A zero field in fsl/ants/afni format should still resample to identity
+    after the format conversion in convert_warp."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    img_data = rng.random((5, 5, 5), dtype=np.float32)
+    in_path = tmp_path / "img.nii"
+    nib.Nifti1Image(img_data, affine).to_filename(str(in_path))
+
+    field_path = tmp_path / "field_fsl.nii"
+    nib.Nifti1Image(np.zeros((5, 5, 5, 3), dtype=np.float32), affine).to_filename(
+        str(field_path)
+    )
+
+    out_path = tmp_path / "out.nii"
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            str(in_path),
+            "--transform",
+            str(field_path),
+            "--transform-type",
+            "field",
+            "--format",
+            "fsl",
+            "--output",
+            str(out_path),
+        ]
+    )
+    apply_warp_main()
+    out = _load(str(out_path))
+    np.testing.assert_allclose(out.get_fdata().squeeze(), img_data, atol=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# wk-compute-jacobian coverage gaps: non-itk format, --frame, 5D series.
+# ---------------------------------------------------------------------------
+
+
+def test_compute_jacobian_field_with_ants_format(argv, tmp_path):
+    """ANTs-format zero field still routes through convert_warp before the
+    Jacobian computation; result is identically 1."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    field_5d = np.zeros((6, 6, 6, 1, 3), dtype=np.float32)
+    field_img = nib.Nifti1Image(field_5d, affine)
+    cast(nib.Nifti1Header, field_img.header).set_intent("vector", (), "")
+    field_path = tmp_path / "ants.nii"
+    field_img.to_filename(str(field_path))
+
+    out_path = tmp_path / "jdet.nii"
+    argv(
+        [
+            "wk-compute-jacobian",
+            "--input",
+            str(field_path),
+            "--output",
+            str(out_path),
+            "--from",
+            "field",
+            "--from-format",
+            "ants",
+        ]
+    )
+    compute_jacobian_main()
+    np.testing.assert_allclose(_load(str(out_path)).get_fdata(), 1.0, atol=1e-5)
+
+
+def test_compute_jacobian_with_frame(argv, tmp_path):
+    """--frame N picks the Nth field of a 5D field series."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    field_5d = np.zeros((5, 5, 5, 3, 3), dtype=np.float32)
+    field_img = nib.Nifti1Image(field_5d, affine)
+    cast(nib.Nifti1Header, field_img.header).set_intent("vector", (), "")
+    field_path = tmp_path / "field5d.nii"
+    field_img.to_filename(str(field_path))
+
+    out_path = tmp_path / "jdet.nii"
+    argv(
+        [
+            "wk-compute-jacobian",
+            "--input",
+            str(field_path),
+            "--output",
+            str(out_path),
+            "--from",
+            "field",
+            "--frame",
+            "1",
+        ]
+    )
+    compute_jacobian_main()
+    j = _load(str(out_path))
+    assert j.shape == (5, 5, 5)
+    np.testing.assert_allclose(j.get_fdata(), 1.0, atol=1e-5)
+
+
+def test_compute_jacobian_bundled_vs_per_frame_outputs_match(argv, tmp_path):
+    """Bundled (single output) and per-frame (N outputs) writes of the same
+    input produce identical data."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    map_data = (rng.standard_normal((5, 5, 5, 3)) * 0.1).astype(np.float32)
+    map_path = tmp_path / "maps.nii"
+    nib.Nifti1Image(map_data, affine).to_filename(str(map_path))
+
+    bundled_path = tmp_path / "jdet_bundled.nii"
+    argv(
+        [
+            "wk-compute-jacobian",
+            "--input",
+            str(map_path),
+            "--output",
+            str(bundled_path),
+            "--from",
+            "map",
+            "--axis",
+            "j",
+        ]
+    )
+    compute_jacobian_main()
+    bundled = _load(str(bundled_path)).get_fdata()
+    assert bundled.shape == (5, 5, 5, 3)
+
+    per_frame_paths = [tmp_path / f"jdet_{i}.nii" for i in range(3)]
+    argv(
+        [
+            "wk-compute-jacobian",
+            "--input",
+            str(map_path),
+            "--output",
+            *[str(p) for p in per_frame_paths],
+            "--from",
+            "map",
+            "--axis",
+            "j",
+        ]
+    )
+    compute_jacobian_main()
+    for i, p in enumerate(per_frame_paths):
+        np.testing.assert_allclose(_load(str(p)).get_fdata(), bundled[..., i], atol=0)
+
+
+# ---------------------------------------------------------------------------
+# wk-convert-warp coverage gaps: invert + format conversion + axis combo,
+# multi-frame field series invert.
+# ---------------------------------------------------------------------------
+
+
+def test_convert_warp_invert_field_with_format_conversion(argv, tmp_path):
+    """Single-frame field input in fsl format + --invert. Routes through
+    convert_warp(fsl→itk) before inversion. Zero field inverts to zero."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    field = np.zeros((5, 5, 5, 3), dtype=np.float32)
+    in_path = tmp_path / "field_fsl.nii"
+    nib.Nifti1Image(field, affine).to_filename(str(in_path))
+
+    out_path = tmp_path / "field_inv.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(in_path),
+            "--output",
+            str(out_path),
+            "--from",
+            "field",
+            "--from-format",
+            "fsl",
+            "--to-format",
+            "itk",
+            "--invert",
+        ]
+    )
+    convert_warp_main()
+    out = _load(str(out_path))
+    np.testing.assert_allclose(out.get_fdata(), 0.0, atol=1e-5)
+
+
+def test_convert_warp_multi_frame_field_invert_routes_through_map_inverter(
+    argv, tmp_path
+):
+    """Multi-frame field input + --invert: route extracts per-frame channel
+    along --axis, runs the 1D map inverter, then promotes maps back to fields
+    for the field output (default --to matches --from). Zero in, zero out."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    fields = []
+    for i in range(3):
+        path = tmp_path / f"f{i}.nii"
+        nib.Nifti1Image(np.zeros((5, 5, 5, 3), dtype=np.float32), affine).to_filename(
+            str(path)
+        )
+        fields.append(str(path))
+
+    out_path = tmp_path / "inv.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            *fields,
+            "--output",
+            str(out_path),
+            "--from",
+            "field",
+            "--invert",
+            "--axis",
+            "j",
+        ]
+    )
+    convert_warp_main()
+    loaded = _load(str(out_path))
+    # Output is a 5D field series (3 frames, 3 channels).
+    assert loaded.shape == (5, 5, 5, 3, 3)
+    assert loaded.header.get_intent()[0] == "vector"
+    np.testing.assert_allclose(loaded.get_fdata(), 0.0, atol=1e-5)
+
+
+def test_convert_warp_multi_frame_field_invert_to_map_output(argv, tmp_path):
+    """Multi-frame field input + --invert + --to=map: maps come out of the
+    inverter (1-channel along --axis) and stay as a map series. Zero in, zero
+    out, and the map series header has no vector intent."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    fields = []
+    for i in range(3):
+        path = tmp_path / f"f{i}.nii"
+        nib.Nifti1Image(np.zeros((5, 5, 5, 3), dtype=np.float32), affine).to_filename(
+            str(path)
+        )
+        fields.append(str(path))
+
+    out_path = tmp_path / "inv_maps.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            *fields,
+            "--output",
+            str(out_path),
+            "--from",
+            "field",
+            "--to",
+            "map",
+            "--invert",
+            "--axis",
+            "j",
+        ]
+    )
+    convert_warp_main()
+    loaded = _load(str(out_path))
+    # Map series: (X, Y, Z, T) without channel dim; intent is not 'vector'.
+    assert loaded.shape == (5, 5, 5, 3)
+    assert loaded.header.get_intent()[0] != "vector"
+    np.testing.assert_allclose(loaded.get_fdata(), 0.0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# wk-convert-fieldmap coverage gaps: multi-file fieldmap input, 5D field input.
+# ---------------------------------------------------------------------------
+
+
+def test_convert_fieldmap_multi_file_input(argv, tmp_path):
+    """Multiple --input fieldmap files are flattened into a frame series."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    fmaps = []
+    for i in range(3):
+        path = tmp_path / f"fmap_{i}.nii"
+        nib.Nifti1Image(
+            np.full((4, 4, 4), 10.0 * (i + 1), dtype=np.float32), affine
+        ).to_filename(str(path))
+        fmaps.append(str(path))
+
+    out_path = tmp_path / "dmap.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            *fmaps,
+            "--output",
+            str(out_path),
+            "--from",
+            "fieldmap",
+            "--to",
+            "map",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "k",  # voxel z=2, no LPS flip → disp = +fmap*0.05*2
+        ]
+    )
+    convert_fieldmap_main()
+    bundled = _load(str(out_path)).get_fdata()
+    # Three 1-channel maps stacked into a 4D series; frame i has fmap=10*(i+1).
+    assert bundled.shape == (4, 4, 4, 3)
+    for i in range(3):
+        np.testing.assert_allclose(
+            bundled[..., i], 10.0 * (i + 1) * 0.05 * 2.0, atol=1e-5
+        )
+
+
+def test_convert_fieldmap_5d_field_input(argv, tmp_path):
+    """5D (X,Y,Z,T,3) field series input gets split into per-frame fields
+    before unit conversion."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    field_5d = np.zeros((4, 4, 4, 2, 3), dtype=np.float32)
+    field_5d[..., 0, 1] = 1.0  # frame 0: 1mm displacement on j channel
+    field_5d[..., 1, 1] = 2.0  # frame 1: 2mm displacement on j channel
+    field_path = tmp_path / "field5d.nii"
+    img = nib.Nifti1Image(field_5d, affine)
+    cast(nib.Nifti1Header, img.header).set_intent("vector", (), "")
+    img.to_filename(str(field_path))
+
+    out_path = tmp_path / "fmap.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(field_path),
+            "--output",
+            str(out_path),
+            "--from",
+            "field",
+            "--to",
+            "fieldmap",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+        ]
+    )
+    convert_fieldmap_main()
+    fmap = _load(str(out_path)).get_fdata()
+    # Two frames bundled into 4D scalar series.
+    assert fmap.shape == (4, 4, 4, 2)
+    # |fmap[i]| / |dmap[i]| = 1 / (trt * voxel) = 1 / 0.1 = 10 Hz/mm
+    # frame 0: 1mm → 10 Hz; frame 1: 2mm → 20 Hz (sign depends on PE convention)
+    np.testing.assert_allclose(np.abs(fmap[..., 0]), 10.0, atol=1e-4)
+    np.testing.assert_allclose(np.abs(fmap[..., 1]), 20.0, atol=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# input-shape error messages from _warp_io
+# ---------------------------------------------------------------------------
+
+
+def test_warp_io_map_input_5d_errors(argv, capsys, tmp_path):
+    """--from=map with a 5D file errors out (maps are 3D or 4D)."""
+    bad = _write_nifti(tmp_path / "bad.nii", (4, 4, 4, 1, 3))
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            bad,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--from",
+            "map",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "map input must be 3D or 4D" in err
+
+
+def test_warp_io_field_input_4d_wrong_channel_errors(argv, capsys, tmp_path):
+    """--from=field with a 4D file whose last dim isn't 3 errors out."""
+    bad = _write_nifti(tmp_path / "bad.nii", (4, 4, 4, 7))
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            bad,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--from",
+            "field",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "field input must be 4D" in err
+
+
+def test_apply_warp_invalid_field_shape_errors(argv, capsys, tmp_path):
+    """A 4D --transform whose last dim != 3 with --transform-type=field is
+    rejected (fields must be 4D X,Y,Z,3 or 5D X,Y,Z,T,3)."""
+    inp = _write_nifti(tmp_path / "in.nii", (4, 4, 4))
+    bad_field = _write_nifti(tmp_path / "bad.nii", (4, 4, 4, 7))
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            inp,
+            "--transform",
+            bad_field,
+            "--transform-type",
+            "field",
+            "--output",
+            str(tmp_path / "out.nii"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        apply_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "displacement field must be 4D" in err
+
+
+def test_convert_fieldmap_frame_out_of_range_errors(argv, capsys, tmp_path):
+    """wk-convert-fieldmap --frame N where N >= number of frames is rejected."""
+    fmap = _write_nifti(tmp_path / "fmap.nii", (4, 4, 4, 3))
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            fmap,
+            "--output",
+            str(tmp_path / "out.nii"),
+            "--from",
+            "fieldmap",
+            "--to",
+            "map",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "j",
+            "--frame",
+            "10",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        convert_fieldmap_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "out of range" in err
+
+
+def test_unwrap_phase_noiseframes_strips_trailing_volumes(
+    argv, test_data_paths, tmp_path
+):
+    """--noiseframes N drops the last N volumes from each input. Run on the
+    bundled fixture (15 volumes) with -f 1 and assert the unwrapped output
+    has 14 volumes."""
+    out_prefix = tmp_path / "noise"
+    argv(
+        [
+            "wk-unwrap-phase",
+            "--magnitude",
+            *test_data_paths["mag"],
+            "--phase",
+            *test_data_paths["phase"],
+            "--metadata",
+            *test_data_paths["metadata"],
+            "--out-prefix",
+            str(out_prefix),
+            "-n",
+            "1",
+            "-f",
+            "1",  # drop last frame
+        ]
+    )
+    unwrap_phase_main()
+    unwrapped = sorted(tmp_path.glob("noise_unwrapped_echo-*.nii"))
+    assert len(unwrapped) == 3
+    for u in unwrapped:
+        assert _load(str(u)).shape == (64, 64, 40, 14)  # was 15, minus 1
+
+
+def test_bundle_frames_to_field_series_squeezes_5d_singleton_input(tmp_path):
+    """When per-frame fields are themselves 5D (X,Y,Z,1,3), the bundler must
+    squeeze the singleton 4th axis before stacking — otherwise the result
+    would be 6D."""
+    from warpkit.scripts._warp_io import bundle_frames_to_field_series
+
+    frames = []
+    for _ in range(2):
+        data = np.zeros((4, 4, 4, 1, 3), dtype=np.float32)
+        frames.append(nib.Nifti1Image(data, np.eye(4)))
+    bundled = bundle_frames_to_field_series(frames)
+    assert bundled.shape == (4, 4, 4, 2, 3)
+
+
+def test_apply_warp_with_5d_field_with_unsupported_last_axis_errors(
+    argv, capsys, tmp_path
+):
+    """A 5D --transform whose last dim != 3 with --transform-type=field is
+    rejected. Covers the 5D-but-not-3-channel branch in the field validator."""
+    inp = _write_nifti(tmp_path / "in.nii", (4, 4, 4))
+    bad = _write_nifti(tmp_path / "bad5d.nii", (4, 4, 4, 1, 7))
+    argv(
+        [
+            "wk-apply-warp",
+            "--input",
+            inp,
+            "--transform",
+            bad,
+            "--transform-type",
+            "field",
+            "--output",
+            str(tmp_path / "out.nii"),
+        ]
+    )
+    with pytest.raises(SystemExit) as exc:
+        apply_warp_main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "displacement field must be 4D" in err
