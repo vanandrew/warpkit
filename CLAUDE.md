@@ -47,7 +47,28 @@ uv sync --group dev --config-setting editable_mode=strict
 
 # tests
 uv run pytest -q
+```
 
+### Speeding up `uv sync` rebuilds
+
+`uv sync` invokes the build backend in a fresh tempdir each time, so by
+default CMake re-fetches and re-builds ITK from scratch on every sync.
+Two env vars cut that down to seconds for incremental work:
+
+```bash
+# brew install ccache  (or apt install ccache, etc.)
+export FETCHCONTENT_BASE_DIR=$HOME/.cache/warpkit-fetchcontent
+export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+```
+
+`FETCHCONTENT_BASE_DIR` survives the tempdir churn, so ITK is fetched
++ extracted once total. `ccache` hashes compiler inputs, so re-compiling
+the same ITK files in a fresh build dir is a cache hit. CMake still
+re-*configures* per sync (no way to avoid that without a persistent
+build dir, which setuptools / PEP-517 doesn't expose), but the heavy
+download + compile work is amortized.
+
+```bash
 # coverage (matches the CI `coverage` job)
 uv run coverage run && uv run coverage report -m
 
