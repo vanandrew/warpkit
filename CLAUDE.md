@@ -53,12 +53,21 @@ uv run pytest -q
 
 `uv sync` invokes the build backend in a fresh tempdir each time, so by
 default CMake re-fetches and re-builds ITK from scratch on every sync.
-Two env vars cut that down to seconds for incremental work:
+The repo ships an `.envrc` that sets two env vars to cut this down to
+seconds for incremental work:
 
 ```bash
-# brew install ccache  (or apt install ccache, etc.)
-export FETCHCONTENT_BASE_DIR=$HOME/.cache/warpkit-fetchcontent
+# .envrc
+export FETCHCONTENT_BASE_DIR="$HOME/.cache/warpkit-fetchcontent"
 export CMAKE_CXX_COMPILER_LAUNCHER=ccache
+```
+
+To pick it up automatically on `cd` into the repo, install [direnv](https://direnv.net):
+
+```bash
+brew install direnv ccache         # or apt / dnf equivalents
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc   # or bash, fish, etc.
+direnv allow                        # one-time approval for this repo
 ```
 
 `FETCHCONTENT_BASE_DIR` survives the tempdir churn, so ITK is fetched
@@ -67,6 +76,11 @@ the same ITK files in a fresh build dir is a cache hit. CMake still
 re-*configures* per sync (no way to avoid that without a persistent
 build dir, which setuptools / PEP-517 doesn't expose), but the heavy
 download + compile work is amortized.
+
+Without direnv, source the file manually (`source .envrc`) before
+running `uv sync` — VS Code's `terminal.integrated.env.*` setting is
+not reliable here because Claude Code / extension-spawned shells often
+bypass it.
 
 ```bash
 # coverage (matches the CI `coverage` job)
