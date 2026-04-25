@@ -138,16 +138,11 @@ dmypy.json
 tests/bidsdata_sustest/
 tests/test_outputs/
 
-# ignore vscode
-.vscode/
-
 # ignore test data
 # download is via box
 tests/data/bidsdata
 tests/data/bidsdata.zip
 
-# ignore setuptools-scm generated version file
-warpkit/_version.py
 
 # ignore build-tmp
 warpkit/build-tmp*/

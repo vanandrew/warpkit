@@ -36,14 +36,28 @@ Pre-print: <https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1>.
 - `src/warpkit.cpp` — pybind11 bindings. C++ headers (and the vendored ROMEO
   port) live under `include/`. CMake fetches and statically links ITK 5.4 and
   pybind11 3.0 — first build is slow (~1m+), subsequent rebuilds are quick.
+- The build backend is **scikit-build-core** (configured in
+  `[tool.scikit-build]` in `pyproject.toml`). There is no `setup.py`. The
+  CMake build directory is persisted at `build/{wheel_tag}/` so ITK
+  FetchContent + object files survive across `uv sync` invocations.
+- We provide Eigen3 to ITK ourselves via `FetchContent` + `OVERRIDE_FIND_PACKAGE`
+  + `ITK_USE_SYSTEM_EIGEN=ON` (see `CMakeLists.txt`). Without this, ITK runs
+  a nested `execute_process(COMMAND ${CMAKE_COMMAND} ...)` for its bundled
+  `ITKInternalEigen3`, whose inner `CMakeCache.txt` would cache the build
+  env's ninja path; once uv tears that env down between syncs, the inner
+  cache dangles and breaks incremental rebuilds. Routing ITK through
+  `find_package(Eigen3)` skips the nested configure entirely.
 - `tests/` — pytest tests. `conftest.py` loads MEDIC sample data from
   `tests/data/test_data/`. ROMEO port-validation goldens in `tests/data/romeo/`.
 
 ## Build & dev workflow
 
 ```bash
-# editable install (rebuilds the CMake extension on demand)
-uv sync --group dev --config-setting editable_mode=strict
+# editable install — first sync builds the CMake extension (~80s cold).
+# After C++ edits, force a rebuild with --reinstall-package warpkit;
+# without it uv treats the package as already installed and skips CMake.
+# Subsequent rebuilds hit the persistent build/{wheel_tag}/ CMake cache.
+uv sync --group dev --reinstall-package warpkit
 
 # tests
 uv run pytest -q
@@ -56,7 +70,7 @@ uvx ruff check
 uvx ruff format
 uvx pyright
 
-# regenerate the .pyi after touching src/warpkit.cpp
+# regenerate the .pyi after touching src/warpkit.cpp (rebuild first)
 scripts/regen-stub.sh
 
 # install pre-commit hooks (incl. the commit-msg gitmoji check)

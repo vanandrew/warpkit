@@ -30,7 +30,7 @@ jobs:
       - name: Ruff format check
         run: uvx ruff format --check
       - name: Install dev dependencies
-        run: uv sync --group dev --config-setting editable_mode=strict -v
+        run: uv sync --group dev -v
       - name: Pyright
         run: uvx pyright
   wheels-build:
@@ -93,7 +93,7 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
       - name: Build extension + install dev deps
-        run: uv sync --group dev --config-setting editable_mode=strict -v
+        run: uv sync --group dev -v
       - name: Install PyInstaller
         run: uv pip install --python .venv/bin/python pyinstaller
       - name: Build bundle
@@ -134,7 +134,7 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
       - name: Build extension + install dev deps
-        run: uv sync --group dev --config-setting editable_mode=strict -v
+        run: uv sync --group dev -v
       - name: Install PyInstaller
         run: uv pip install --python .venv/bin/python pyinstaller
       - name: Build bundle
@@ -194,7 +194,7 @@ jobs:
         run: uv python install 3.11
       - name: Install in dev mode and test with coverage
         run: |
-          uv sync --group dev --config-setting editable_mode=strict -v
+          uv sync --group dev -v
           uv run coverage run
           uv run coverage report -m
           uv run coverage xml
