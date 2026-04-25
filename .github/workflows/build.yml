@@ -42,7 +42,7 @@ jobs:
     needs: [test]
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
         python-versions: [
           {version: '3.11', glob: cp311*},
           {version: '3.12', glob: cp312*},
