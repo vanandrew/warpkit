@@ -20,7 +20,7 @@ include(FetchContent)
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11
-    GIT_TAG v2.11.1
+    GIT_TAG v3.0.4
     OVERRIDE_FIND_PACKAGE
 )
 find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
@@ -48,7 +48,7 @@ set(ITK_INSTALL_PACKAGE_DIR ${PYTHON_INSTALL_TMPDIR}/package CACHE STRING "" FOR
 FetchContent_Declare(
     ITK
     GIT_REPOSITORY https://github.com/InsightSoftwareConsortium/ITK.git
-    GIT_TAG v5.4rc01
+    GIT_TAG v5.4.5
 )
 
 # itk with fetchcontent is a bit weird, OVERRIDE_FIND_PACKAGE does not work
@@ -66,32 +66,15 @@ set_target_properties(ITKLIB PROPERTIES
 
 # add compile options based on architecture
 message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-    # we need minimum of gcc 11 for -march=x86-64-v3
-    if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 11)
-            add_compile_options(-Wall -O3 -march=x86-64)
-            message(STATUS "Using -march=x86-64")
-        else()
-            add_compile_options(-Wall -O3 -march=x86-64-v3)
-            message(STATUS "Using -march=x86-64-v3")
-        endif()
-
-    # else if clang
-    elseif("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-        if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12)
-            add_compile_options(-Wall -O3 -march=x86-64)
-            message(STATUS "Using -march=x86-64")
-        else()
-            add_compile_options(-Wall -O3 -march=x86-64-v3)
-            message(STATUS "Using -march=x86-64-v3")
-        endif()
-    endif()
-
-# else if arm
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    # add_compile_options(-Wall -O3 -march=armv8.4-a)
-    message(STATUS "Using -march=armv8.4-a")
+if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
+    add_compile_options(-O3 -mcpu=apple-m1)
+    message(STATUS "Using -mcpu=apple-m1")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+    add_compile_options(-O3 -march=armv8.2-a)
+    message(STATUS "Using -march=armv8.2-a")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    add_compile_options(-O3 -march=x86-64-v3)
+    message(STATUS "Using -march=x86-64-v3")
 endif()
 
 # compile pybind11 interface
@@ -100,6 +83,7 @@ target_include_directories(warpkit_cpp
     PUBLIC ${PROJECT_SOURCE_DIR}/include
     PRIVATE ${PROJECT_SOURCE_DIR}/include/itk
 )
+target_compile_options(warpkit_cpp PRIVATE -Wall)
 target_link_libraries(warpkit_cpp PRIVATE ITKLIB)
 
 # install target

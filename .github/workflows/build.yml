@@ -14,7 +14,7 @@ on:
 jobs:
   test:
     name: Test and Coverage
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -42,6 +42,7 @@ jobs:
           {version: '3.11', glob: cp311*},
           {version: '3.12', glob: cp312*},
           {version: '3.13', glob: cp313*},
+          {version: '3.14', glob: cp314*}
           ]
     name: Python ${{ matrix.python-versions.version }} wheel on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -68,7 +69,7 @@ jobs:
   sdist-build:
     needs: [test]
     name: Make sdist
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -86,7 +87,7 @@ jobs:
     name: Publish to PyPI
     if: github.event_name == 'release' && github.event.action == 'published'
     needs: [wheels-build, sdist-build]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     environment:
       name: release
       url: https://pypi.org/project/warpkit/
@@ -102,7 +103,7 @@ jobs:
     name: Build Docker image
     if: github.event_name == 'release' && github.event.action == 'published'
     needs: [wheels-build, sdist-build]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       packages: write
     environment:

@@ -1,18 +1,12 @@
 import numpy as np
-import pytest
-
 from warpkit.distortion import medic
 
-pytestmark = pytest.mark.skip(
-    reason="Needs the BIDS test dataset, which was hosted at a wustl.box.com link that is no longer reachable."
-)
 
-
-def test_medic(bids_test_data):
+def test_medic(test_data):
     # this just tests for if the overall medic pipeline errors out
     # should add some assertion checks in the future
     _, _, fmap = medic(
-        **bids_test_data,
+        **test_data,
         n_cpus=1,
     )
     # compute correlations between first frame and all other frames
@@ -23,4 +17,6 @@ def test_medic(bids_test_data):
         framei = data[..., i]
         corr = np.corrcoef(frame1.ravel(), framei.ravel())[0, 1]
         print(corr)
-        assert corr > 0.98, f"Correlation between frame 1 and frame {i} is only {corr} < 0.98"
+        assert corr > 0.98, (
+            f"Correlation between frame 1 and frame {i} is only {corr} < 0.98"
+        )

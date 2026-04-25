@@ -36,20 +36,33 @@ zip-safe = true
 [tool.setuptools.packages.find]
 exclude = ["tests"]
 
+# ── Ruff (linter + formatter) ────────────────────────────────────────
 [tool.ruff]
-line-length = 120
-target-version = "py311"
+target-version = "py311" # minimum supported Python version
+line-length = 88         # matches Black's default
+src = ["warpkit"]        # treat warpkit/ as the source root for import sorting
 extend-exclude = ["warpkit/build-tmp*"]
 
 [tool.ruff.lint]
-# E/W = pycodestyle, F = pyflakes, I = isort. Matches the old toolchain scope.
-# Consider adding "UP" (pyupgrade) and "B" (bugbear) in a follow-up.
-select = ["E", "W", "F", "I"]
-# E203: whitespace before ':' — conflicts with the formatter on slices.
-ignore = ["E203"]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort (import ordering)
+    "N",   # pep8-naming
+    "UP",  # pyupgrade (modernize syntax)
+    "B",   # flake8-bugbear (common pitfalls)
+    "SIM", # flake8-simplify
+    "RUF", # Ruff-specific rules
+]
+ignore = [
+    "E501", # line too long (handled by the formatter, not the linter)
+]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["E501"]
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true # format code blocks inside docstrings
 
 [tool.pyright]
 include = ["warpkit"]
