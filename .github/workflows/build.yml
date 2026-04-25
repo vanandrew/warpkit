@@ -112,6 +112,7 @@ jobs:
     - uses: actions/download-artifact@v8
       with:
         path: dist
+        pattern: '{wheel-*,sdist}'
         merge-multiple: true
     - uses: pypa/gh-action-pypi-publish@release/v1
   docker-build:
