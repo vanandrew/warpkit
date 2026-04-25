@@ -116,6 +116,7 @@ omit = ["tests/*"]
 # (cp31Xt-*) — our pybind11 bindings + ITK haven't been audited for the no-GIL ABI.
 skip = "*musllinux* cp314t-*"
 build-frontend = "build"
+build-verbosity = 3
 
 [tool.cibuildwheel.linux]
 archs = ["auto"]
