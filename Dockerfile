@@ -1,5 +1,5 @@
 FROM ubuntu:26.04 AS base
-LABEL maintainer="Andrew Van <vanandrew@wustl.edu>"
+LABEL maintainer="Andrew Van <vanandrew77@gmail.com>"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

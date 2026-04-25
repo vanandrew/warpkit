@@ -3,7 +3,7 @@ name = "warpkit"
 description = "A python library for neuroimaging transformations"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "Andrew Van", email = "vanandrew@wustl.edu" }]
+authors = [{ name = "Andrew Van", email = "vanandrew77@gmail.com" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
 urls = { github = "https://github.com/vanandrew/warpkit" }

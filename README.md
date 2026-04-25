@@ -131,4 +131,4 @@ Run `medic --help` for the full option list (noise-frame trimming, CPU count, de
 
 ## Authors
 
-Vahdeta Suljic &lt;suljic@wustl.edu&gt;, Andrew Van &lt;vanandrew@wustl.edu&gt;
+Vahdeta Suljic &lt;suljic@wustl.edu&gt;, Andrew Van &lt;vanandrew77@gmail.com&gt;
