@@ -389,3 +389,139 @@ def test_displacement_field_to_map_clears_vector_intent():
     assert field.header.get_intent()[0] == "vector"
     back = displacement_field_to_map(field, axis="y", format="itk")
     assert back.header.get_intent()[0] != "vector"
+
+
+# ---------------------------------------------------------------------------
+# Quantitative Hz <-> mm tests with hand-computed expected values.
+# Formula: displacement = fieldmap * total_readout_time * voxel_size, where
+# voxel_size carries the LPS-x/y sign flip (axes 0/1) and the negative-PE flip.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "pe_dir, expected_sign",
+    [
+        ("i", -1.0),  # axis 0: itk LPS x flip
+        ("i-", +1.0),  # axis 0: "-" cancels itk flip
+        ("j", -1.0),  # axis 1: itk LPS y flip
+        ("j-", +1.0),  # axis 1: "-" cancels itk flip
+        ("k", +1.0),  # axis 2: no LPS flip
+        ("k-", -1.0),  # axis 2: just "-"
+    ],
+)
+def test_field_maps_to_displacement_maps_known_value(pe_dir, expected_sign):
+    """For a constant fmap with isotropic voxels, the displacement equals
+    fmap * trt * voxel * (sign per PE convention)."""
+    voxel = 2.0
+    affine = np.diag([voxel, voxel, voxel, 1.0])
+    fmap_value = 10.0  # Hz
+    trt = 0.05  # s
+    fmap_data = np.full((4, 4, 4), fmap_value, dtype=np.float32)
+    fmap = nib.Nifti1Image(fmap_data, affine)
+    dmap = field_maps_to_displacement_maps(fmap, trt, pe_dir)
+    expected = fmap_value * trt * voxel * expected_sign
+    assert_allclose(dmap.get_fdata(), expected, atol=1e-5)
+
+
+@pytest.mark.parametrize("axis", ["i", "j", "k"])
+def test_field_maps_to_displacement_maps_anisotropic_voxels(axis):
+    """The voxel size used for scaling must come from the PE-axis dimension,
+    not a different axis."""
+    voxels = (1.0, 2.0, 3.0)
+    affine = np.diag([*voxels, 1.0])
+    fmap = nib.Nifti1Image(np.full((4, 4, 4), 10.0, dtype=np.float32), affine)
+    dmap = field_maps_to_displacement_maps(fmap, 0.05, axis)
+    axis_idx = AXIS_MAP[axis]
+    expected_mag = 10.0 * 0.05 * voxels[axis_idx]
+    assert_allclose(np.abs(dmap.get_fdata()), expected_mag, atol=1e-5)
+
+
+@pytest.mark.parametrize("axis", ["i", "j", "k"])
+def test_field_maps_to_displacement_maps_pe_sign_negation(axis):
+    """For the same fmap and voxels, '<axis>' and '<axis>-' produce results
+    that are exact negations of each other."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    fmap = nib.Nifti1Image(rng.standard_normal((4, 4, 4)).astype(np.float32), affine)
+    pos = field_maps_to_displacement_maps(fmap, 0.05, axis)
+    neg = field_maps_to_displacement_maps(fmap, 0.05, f"{axis}-")
+    assert_allclose(pos.get_fdata(), -neg.get_fdata(), atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# displacement_map_to_field frame selection
+# ---------------------------------------------------------------------------
+
+
+def test_displacement_map_to_field_frame_selects_correct_frame():
+    """A 4D displacement map series + frame=N yields a 4D field whose
+    PE-axis channel matches frame N of the source."""
+    affine = np.eye(4)
+    rng = np.random.default_rng(0)
+    map_data = rng.standard_normal((3, 3, 3, 4)).astype(np.float32)
+    dmap = nib.Nifti1Image(map_data, affine)
+    for frame in range(map_data.shape[-1]):
+        field = displacement_map_to_field(dmap, axis="z", format="itk", frame=frame)
+        # itk format with axis=z (no sign flips) → channel 2 == source frame
+        assert_allclose(field.get_fdata()[..., 2], map_data[..., frame], atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# displacement_field_to_map drops off-axis channels (documented behavior)
+# ---------------------------------------------------------------------------
+
+
+def test_displacement_field_to_map_drops_off_axis_channels():
+    """For an EPI distortion warp all displacement is along the PE axis, so
+    extracting one channel is exact. Confirm that a field with non-zero values
+    on every channel has the off-axis values dropped."""
+    affine = np.eye(4)
+    rng = np.random.default_rng(0)
+    field_data = rng.standard_normal((4, 4, 4, 3)).astype(np.float32)
+    field = nib.Nifti1Image(field_data, affine)
+    # itk format = identity → extracted map equals the chosen channel verbatim.
+    extracted_y = displacement_field_to_map(field, axis="y", format="itk").get_fdata()
+    assert_allclose(extracted_y, field_data[..., 1], atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# convert_warp roundtrip across non-canonical orientations
+# ---------------------------------------------------------------------------
+
+
+def test_convert_warp_lps_affine_itk_roundtrip():
+    """itk -> itk on an image with an LPS affine must preserve data exactly
+    (the as_reoriented round trip should land back on the original grid)."""
+    # LPS affine: x and y axes flipped vs RAS
+    affine = np.diag([-2.0, -2.0, 2.0, 1.0])
+    affine[:3, 3] = [10.0, 20.0, -5.0]
+    rng = np.random.default_rng(0)
+    data = rng.standard_normal((4, 4, 4, 3)).astype(np.float32)
+    warp = nib.Nifti1Image(data, affine)
+    out = convert_warp(warp, in_type="itk", out_type="itk")
+    assert_allclose(out.get_fdata(), data, atol=1e-5)
+    # Affine and shape must be preserved on the round trip.
+    assert out.affine is not None and warp.affine is not None
+    assert_allclose(out.affine, warp.affine)
+    assert out.shape == warp.shape
+
+
+# ---------------------------------------------------------------------------
+# compute_jacobian_determinant on a non-zero translation field
+# ---------------------------------------------------------------------------
+
+
+def test_compute_jacobian_determinant_constant_translation_is_one():
+    """A spatially constant displacement is a pure translation and has unit
+    Jacobian determinant. Complements the all-zero test by exercising the
+    non-zero code path."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    field = np.zeros((8, 8, 8, 3), dtype=np.float32)
+    field[..., 0] = 3.5  # constant x-shift
+    field[..., 1] = -1.0  # constant y-shift
+    field[..., 2] = 0.5  # constant z-shift
+    img = nib.Nifti1Image(field, affine)
+    jdet = compute_jacobian_determinant(img)
+    # Trim a 1-voxel border to skip any boundary differencing artifacts.
+    interior = jdet.get_fdata()[1:-1, 1:-1, 1:-1]
+    assert_allclose(interior, 1.0, atol=1e-4)

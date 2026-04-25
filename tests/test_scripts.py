@@ -1651,3 +1651,361 @@ def test_write_output_per_frame_map_clears_vector_intent(tmp_path):
     for p in out_paths:
         loaded = _load(p)
         assert loaded.header.get_intent()[0] != "vector"
+
+
+# ---------------------------------------------------------------------------
+# CLI frame selection: --frame extracts the right frame, per-frame outputs
+# preserve frame ordering.
+# ---------------------------------------------------------------------------
+
+
+def test_convert_warp_frame_extracts_right_frame(argv, tmp_path):
+    """--frame N picks the Nth frame of a 4D map series (not just any frame)."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    map_data = np.stack(
+        [np.full((4, 4, 4), float(i), dtype=np.float32) for i in range(5)],
+        axis=-1,
+    )
+    map_path = tmp_path / "maps.nii"
+    nib.Nifti1Image(map_data, affine).to_filename(str(map_path))
+
+    out_path = tmp_path / "frame.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(map_path),
+            "--output",
+            str(out_path),
+            "--from",
+            "map",
+            "--frame",
+            "3",
+        ]
+    )
+    convert_warp_main()
+    out = _load(str(out_path))
+    np.testing.assert_allclose(out.get_fdata(), 3.0, atol=1e-6)
+
+
+def test_convert_warp_per_frame_outputs_preserve_ordering(argv, tmp_path):
+    """N --output paths for a 4D map series produce one file per frame with
+    frame i landing in the i-th output path (not shuffled)."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    map_data = np.stack(
+        [np.full((4, 4, 4), float(i), dtype=np.float32) for i in range(4)],
+        axis=-1,
+    )
+    map_path = tmp_path / "maps.nii"
+    nib.Nifti1Image(map_data, affine).to_filename(str(map_path))
+
+    out_paths = [tmp_path / f"f{i}.nii" for i in range(4)]
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(map_path),
+            "--output",
+            *[str(p) for p in out_paths],
+            "--from",
+            "map",
+        ]
+    )
+    convert_warp_main()
+    for i, p in enumerate(out_paths):
+        np.testing.assert_allclose(_load(str(p)).get_fdata(), float(i), atol=1e-6)
+
+
+def test_convert_fieldmap_frame_extracts_right_frame(argv, tmp_path):
+    """wk-convert-fieldmap --frame N selects the Nth frame before the Hz->mm
+    conversion."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    fmap_data = np.stack(
+        [np.full((4, 4, 4), 10.0 * (i + 1), dtype=np.float32) for i in range(3)],
+        axis=-1,
+    )
+    fmap_path = tmp_path / "fmap.nii"
+    nib.Nifti1Image(fmap_data, affine).to_filename(str(fmap_path))
+
+    out_path = tmp_path / "dmap.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(fmap_path),
+            "--output",
+            str(out_path),
+            "--from",
+            "fieldmap",
+            "--to",
+            "map",
+            "--total-readout-time",
+            "0.05",
+            "--phase-encoding-direction",
+            "k",  # axis 2 → no LPS-x/y flip; positive sign for "k"
+            "--frame",
+            "1",
+        ]
+    )
+    convert_fieldmap_main()
+    # Frame 1 has fmap=20 Hz; voxel=2mm, trt=0.05s → expected disp = 20*0.05*2 = +2.0 mm
+    np.testing.assert_allclose(_load(str(out_path)).get_fdata(), 2.0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# CLI flip-sign behavior: --flip-sign exactly negates the no-flip output
+# ---------------------------------------------------------------------------
+
+
+def test_convert_fieldmap_flip_sign_exact_negation(argv, tmp_path):
+    """Running map -> fieldmap twice (with and without --flip-sign) on the
+    same input must produce results that are exact negations."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    map_data = (rng.standard_normal((6, 6, 6)) * 1.5).astype(np.float32)
+    map_path = tmp_path / "map.nii"
+    nib.Nifti1Image(map_data, affine).to_filename(str(map_path))
+
+    common = [
+        "--input",
+        str(map_path),
+        "--from",
+        "map",
+        "--to",
+        "fieldmap",
+        "--total-readout-time",
+        "0.05",
+        "--phase-encoding-direction",
+        "j",
+    ]
+
+    out_plain = tmp_path / "fmap_plain.nii"
+    argv(["wk-convert-fieldmap", *common, "--output", str(out_plain)])
+    convert_fieldmap_main()
+    out_flip = tmp_path / "fmap_flip.nii"
+    argv(["wk-convert-fieldmap", *common, "--output", str(out_flip), "--flip-sign"])
+    convert_fieldmap_main()
+
+    np.testing.assert_allclose(
+        _load(str(out_flip)).get_fdata(),
+        -_load(str(out_plain)).get_fdata(),
+        atol=1e-6,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CLI 5D ANTs/AFNI single-warp file roundtrip
+# ---------------------------------------------------------------------------
+
+
+def test_convert_warp_5d_ants_file_roundtrip(argv, tmp_path):
+    """A 5D ANTs single-warp file (X,Y,Z,1,3) must load through wk-convert-warp,
+    convert to itk, and convert back to ants without losing data."""
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    ants_5d = rng.standard_normal((5, 5, 5, 1, 3)).astype(np.float32)
+    in_path = tmp_path / "ants.nii"
+    img = nib.Nifti1Image(ants_5d, affine)
+    cast(nib.Nifti1Header, img.header).set_intent("vector", (), "")
+    img.to_filename(str(in_path))
+
+    itk_path = tmp_path / "itk.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(in_path),
+            "--output",
+            str(itk_path),
+            "--from",
+            "field",
+            "--from-format",
+            "ants",
+            "--to-format",
+            "itk",
+        ]
+    )
+    convert_warp_main()
+
+    back_path = tmp_path / "ants_back.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(itk_path),
+            "--output",
+            str(back_path),
+            "--from",
+            "field",
+            "--from-format",
+            "itk",
+            "--to-format",
+            "ants",
+        ]
+    )
+    convert_warp_main()
+    back = _load(str(back_path)).get_fdata()
+    # Result should match the original 5D ANTs file (within orient-roundtrip noise).
+    assert back.shape == ants_5d.shape
+    np.testing.assert_allclose(back, ants_5d, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# CLI medic-chain reconstruction:
+#   fieldmap_native (Hz, distorted) -> mm -> invert -> Hz (with --flip-sign)
+# must reproduce the medic non-native fieldmap output bit-for-bit.
+# ---------------------------------------------------------------------------
+
+
+def test_cli_chain_reproduces_medic_non_native_fieldmap(argv, tmp_path):
+    """Hz->mm->invert->Hz(--flip-sign) chain via the CLIs matches what
+    warpkit.distortion.medic does internally (distortion.py:122-149).
+    Skips the correlation-based safety negation, which doesn't fire on
+    smooth synthetic input."""
+    from scipy.ndimage import gaussian_filter
+    from warpkit.utilities import (
+        displacement_maps_to_field_maps,
+        field_maps_to_displacement_maps,
+        invert_displacement_maps,
+    )
+
+    pe = "j"
+    trt = 0.05
+    affine = np.diag([2.5, 2.5, 2.5, 1.0])
+    rng = np.random.default_rng(0)
+    base = gaussian_filter(rng.standard_normal((10, 10, 10)) * 20.0, sigma=2.0)
+    fmap_data = np.stack([base, 0.95 * base], axis=-1).astype(np.float32)
+    fmap_path = tmp_path / "fmap_native.nii"
+    nib.Nifti1Image(fmap_data, affine).to_filename(str(fmap_path))
+
+    # 1) Reference: medic's internal chain, frame-by-frame.
+    medic_frames = []
+    for i in range(fmap_data.shape[-1]):
+        frame_4d = nib.Nifti1Image(fmap_data[..., i : i + 1], affine)
+        inv_disp = field_maps_to_displacement_maps(frame_4d, trt, pe)
+        disp = invert_displacement_maps(inv_disp, pe)
+        recon = displacement_maps_to_field_maps(disp, trt, pe, flip_sign=True)
+        medic_frames.append(recon.get_fdata())
+    medic_out = np.stack(medic_frames, axis=-1).squeeze()
+
+    # 2) CLI chain: Hz -> mm
+    dmap_distorted = tmp_path / "dmap_distorted.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(fmap_path),
+            "--output",
+            str(dmap_distorted),
+            "--from",
+            "fieldmap",
+            "--to",
+            "map",
+            "--total-readout-time",
+            str(trt),
+            "--phase-encoding-direction",
+            pe,
+        ]
+    )
+    convert_fieldmap_main()
+
+    # 3) invert
+    dmap_undistorted = tmp_path / "dmap_undistorted.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(dmap_distorted),
+            "--output",
+            str(dmap_undistorted),
+            "--from",
+            "map",
+            "--invert",
+            "--axis",
+            pe,
+        ]
+    )
+    convert_warp_main()
+
+    # 4) mm -> Hz with --flip-sign
+    fmap_recon = tmp_path / "fmap_recon.nii"
+    argv(
+        [
+            "wk-convert-fieldmap",
+            "--input",
+            str(dmap_undistorted),
+            "--output",
+            str(fmap_recon),
+            "--from",
+            "map",
+            "--to",
+            "fieldmap",
+            "--flip-sign",
+            "--total-readout-time",
+            str(trt),
+            "--phase-encoding-direction",
+            pe,
+        ]
+    )
+    convert_fieldmap_main()
+
+    cli_out = _load(str(fmap_recon)).get_fdata()
+    assert cli_out.shape == medic_out.shape
+    np.testing.assert_allclose(cli_out, medic_out, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# CLI inverse self-consistency: invert(invert(disp)) ≈ disp on small smooth disp.
+# ---------------------------------------------------------------------------
+
+
+def test_convert_warp_double_invert_recovers_input(argv, tmp_path):
+    """Double inversion of a small smooth displacement map approximately
+    recovers the original (an invertibility / discretization sanity check)."""
+    from scipy.ndimage import gaussian_filter
+
+    affine = np.diag([2.0, 2.0, 2.0, 1.0])
+    rng = np.random.default_rng(0)
+    base = gaussian_filter(rng.standard_normal((12, 12, 12)) * 0.3, sigma=2.5)
+    map_data = base.astype(np.float32)
+    in_path = tmp_path / "map.nii"
+    nib.Nifti1Image(map_data, affine).to_filename(str(in_path))
+
+    inv_path = tmp_path / "map_inv.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(in_path),
+            "--output",
+            str(inv_path),
+            "--from",
+            "map",
+            "--invert",
+            "--axis",
+            "j",
+        ]
+    )
+    convert_warp_main()
+
+    inv2_path = tmp_path / "map_inv2.nii"
+    argv(
+        [
+            "wk-convert-warp",
+            "--input",
+            str(inv_path),
+            "--output",
+            str(inv2_path),
+            "--from",
+            "map",
+            "--invert",
+            "--axis",
+            "j",
+        ]
+    )
+    convert_warp_main()
+    recovered = _load(str(inv2_path)).get_fdata()
+    # Discretization error grows with displacement magnitude; trim a 2-voxel
+    # border and use a loose tolerance.
+    interior = (slice(2, -2),) * 3
+    np.testing.assert_allclose(recovered[interior], map_data[interior], atol=5e-2)
