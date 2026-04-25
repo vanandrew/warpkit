@@ -1,5 +1,19 @@
+"""``wk-apply-warp`` — resample an image through a displacement transform.
+
+Public surface:
+
+* :func:`apply_warp` — typed Python entry point. Returns an
+  :class:`ApplyWarpResult` with the absolute path of the written NIfTI.
+* :func:`main` — argparse CLI shim.
+"""
+
+from __future__ import annotations
+
 import argparse
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from os import PathLike
+from pathlib import Path
 from typing import cast
 
 import nibabel as nib
@@ -16,6 +30,12 @@ from warpkit.utilities import (
 )
 
 from . import epilog
+from ._metadata import ensure_image, ensure_images
+
+
+@dataclass(frozen=True, slots=True)
+class ApplyWarpResult:
+    output: Path
 
 
 def _build_transform_getter(
@@ -23,26 +43,25 @@ def _build_transform_getter(
     transform_type: str,
     phase_encoding_axis: str | None,
     in_format: str,
-    parser: argparse.ArgumentParser,
 ) -> tuple[int, str, Callable[[int], nib.Nifti1Image]]:
     """Validate and wrap the user-supplied transform inputs.
 
-    Returns (frame_count, transform_type, getter). The getter is a callable
-    that takes a 0-indexed frame number and returns an itk-format
-    ``Nifti1Image`` ready for ``resample_image``. Single-frame transforms are
-    cached on first access.
+    Returns (frame_count, transform_type, getter). The getter takes a
+    0-indexed frame number and returns an itk-format ``Nifti1Image`` ready
+    for ``resample_image``. Single-frame transforms are cached on first
+    access. Validation errors raise :class:`ValueError`.
     """
     if len(transforms) > 1:
         if transform_type != "field":
-            parser.error(
-                "--transform-type=map is incompatible with a multi-file "
-                "--transform series (each file must be a 3-channel field). "
-                "Pass a single 4D map series or use --transform-type field."
+            raise ValueError(
+                "transform_type='map' is incompatible with a multi-file "
+                "transform series (each file must be a 3-channel field). "
+                "Pass a single 4D map series or use transform_type='field'."
             )
         for t in transforms:
             if t.ndim != 4 or t.shape[-1] != 3:
-                parser.error(
-                    "when --transform is a series, each file must be a 4D "
+                raise ValueError(
+                    "when transform is a series, each file must be a 4D "
                     f"3-channel field (X,Y,Z,3); got shape {t.shape}"
                 )
         cache: list[nib.Nifti1Image | None] = [None] * len(transforms)
@@ -60,8 +79,8 @@ def _build_transform_getter(
 
     if transform_type == "map":
         if not phase_encoding_axis:
-            parser.error(
-                "--phase-encoding-axis is required when the transform is a "
+            raise ValueError(
+                "phase_encoding_axis is required when the transform is a "
                 "1-channel displacement map."
             )
         axis = cast(str, phase_encoding_axis)
@@ -80,7 +99,7 @@ def _build_transform_getter(
                     t, axis=axis, format="itk", frame=i
                 ),
             )
-        parser.error(
+        raise ValueError(
             f"displacement map must be 3D or 4D; got {t.ndim}D shape {t.shape}"
         )
 
@@ -101,10 +120,114 @@ def _build_transform_getter(
             return convert_warp(frame_img, in_type=in_format, out_type="itk")
 
         return n, "field", get_5d_frame
-    parser.error(
+    raise ValueError(
         "displacement field must be 4D (X,Y,Z,3) or 5D (X,Y,Z,T,3); "
         f"got shape {t.shape}"
     )
+
+
+def apply_warp(
+    *,
+    input: PathLike[str] | str | nib.Nifti1Image,
+    transform: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    output: PathLike[str] | str,
+    transform_type: str,
+    reference: PathLike[str] | str | nib.Nifti1Image | None = None,
+    phase_encoding_axis: str | None = None,
+    format: str = "itk",
+) -> ApplyWarpResult:
+    """Resample ``input`` through one or more displacement transforms and
+    write the result to ``output``.
+
+    ``transform_type`` is ``"map"`` (1-channel along ``phase_encoding_axis``)
+    or ``"field"`` (3-channel). A multi-file transform must be ``"field"``;
+    a single-frame transform broadcasts across all frames of a 4D input.
+
+    ``format`` is the input format of 3-channel fields and must be one of
+    ``itk`` / ``fsl`` / ``ants`` / ``afni`` (default ``itk``).
+    """
+    if transform_type not in ("map", "field"):
+        raise ValueError(
+            f"transform_type must be 'map' or 'field'; got {transform_type!r}"
+        )
+    if format not in WARP_ITK_FLIPS:
+        raise ValueError(
+            f"format must be one of {tuple(WARP_ITK_FLIPS)}; got {format!r}"
+        )
+    if phase_encoding_axis is not None and phase_encoding_axis not in AXIS_MAP:
+        raise ValueError(
+            f"phase_encoding_axis must be one of {tuple(AXIS_MAP)}; "
+            f"got {phase_encoding_axis!r}"
+        )
+
+    input_img = ensure_image(input)
+    transforms = ensure_images(transform)
+
+    reference_img: nib.Nifti1Image
+    if reference is not None:
+        reference_img = ensure_image(reference)
+    elif input_img.ndim == 3:
+        reference_img = input_img
+    else:
+        reference_img = nib.Nifti1Image(
+            np.asarray(input_img.dataobj[..., 0]),
+            input_img.affine,
+            input_img.header,
+        )
+
+    n_transform, post_transform_type, get_transform = _build_transform_getter(
+        transforms,
+        transform_type=transform_type,
+        phase_encoding_axis=phase_encoding_axis,
+        in_format=format,
+    )
+
+    if input_img.ndim == 3:
+        n_input = 1
+    elif input_img.ndim == 4:
+        n_input = input_img.shape[-1]
+    else:
+        raise ValueError(
+            f"input image must be 3D or 4D; got {input_img.ndim}D shape "
+            f"{input_img.shape}"
+        )
+
+    if n_transform > 1 and n_input == 1:
+        raise ValueError(
+            f"got a {n_transform}-frame transform but input is 3D; input "
+            "must be 4D when applying a series of transforms."
+        )
+    if n_transform > 1 and n_transform != n_input:
+        raise ValueError(
+            f"transform has {n_transform} frame(s) but input has {n_input}; "
+            "they must match (or pass a single-frame transform to broadcast)."
+        )
+
+    print(
+        f"  input frames: {n_input}; transform frames: {n_transform} "
+        f"(type={post_transform_type})"
+    )
+
+    if n_input == 1:
+        out_img = resample_image(reference_img, input_img, get_transform(0))
+    else:
+        out_frames = []
+        for i in range(n_input):
+            frame_data = np.asarray(input_img.dataobj[..., i])
+            frame_img = nib.Nifti1Image(frame_data, input_img.affine, input_img.header)
+            t_idx = i if n_transform > 1 else 0
+            resampled = resample_image(reference_img, frame_img, get_transform(t_idx))
+            out_frames.append(resampled.get_fdata())
+            if (i + 1) % 10 == 0 or (i + 1) == n_input:
+                print(f"  resampled frame {i + 1}/{n_input}")
+        out_data = np.stack(out_frames, axis=-1).astype(np.float32)
+        out_img = nib.Nifti1Image(out_data, reference_img.affine, reference_img.header)
+
+    output_path = Path(str(output)).resolve()
+    print(f"Saving resampled image to {output_path}...")
+    out_img.to_filename(str(output_path))
+    print("Done.")
+    return ApplyWarpResult(output=output_path)
 
 
 def main():
@@ -177,78 +300,23 @@ def main():
     )
 
     args = parser.parse_args()
-
     setup_logging()
     print(f"wk-apply-warp: {args}")
 
-    input_img = cast(nib.Nifti1Image, nib.load(args.input))
-    transforms = [cast(nib.Nifti1Image, nib.load(p)) for p in args.transform]
-
-    # determine the reference grid
-    reference_img: nib.Nifti1Image
-    if args.reference:
-        reference_img = cast(nib.Nifti1Image, nib.load(args.reference))
-    elif input_img.ndim == 3:
-        reference_img = input_img
-    else:
-        reference_img = nib.Nifti1Image(
-            np.asarray(input_img.dataobj[..., 0]),
-            input_img.affine,
-            input_img.header,
+    # Map ValueError messages onto the dash-form CLI flags so existing
+    # parser.error-style error text continues to make sense to CLI users.
+    try:
+        apply_warp(
+            input=args.input,
+            transform=args.transform,
+            output=args.output,
+            transform_type=args.transform_type,
+            reference=args.reference,
+            phase_encoding_axis=args.phase_encoding_axis,
+            format=args.format,
         )
-
-    # build a per-frame transform getter
-    n_transform, transform_type, get_transform = _build_transform_getter(
-        transforms,
-        transform_type=args.transform_type,
-        phase_encoding_axis=args.phase_encoding_axis,
-        in_format=args.format,
-        parser=parser,
-    )
-
-    # input frame count
-    if input_img.ndim == 3:
-        n_input = 1
-    elif input_img.ndim == 4:
-        n_input = input_img.shape[-1]
-    else:
-        parser.error(
-            f"input image must be 3D or 4D; got {input_img.ndim}D shape {input_img.shape}"
-        )
-
-    # compatibility checks
-    if n_transform > 1 and n_input == 1:
-        parser.error(
-            f"got a {n_transform}-frame transform but input is 3D; input "
-            "must be 4D when applying a series of transforms."
-        )
-    if n_transform > 1 and n_transform != n_input:
-        parser.error(
-            f"transform has {n_transform} frame(s) but input has {n_input}; "
-            "they must match (or pass a single-frame transform to broadcast)."
-        )
-
-    print(
-        f"  input frames: {n_input}; transform frames: {n_transform} "
-        f"(type={transform_type})"
-    )
-
-    # resample
-    if n_input == 1:
-        out_img = resample_image(reference_img, input_img, get_transform(0))
-    else:
-        out_frames = []
-        for i in range(n_input):
-            frame_data = np.asarray(input_img.dataobj[..., i])
-            frame_img = nib.Nifti1Image(frame_data, input_img.affine, input_img.header)
-            t_idx = i if n_transform > 1 else 0
-            resampled = resample_image(reference_img, frame_img, get_transform(t_idx))
-            out_frames.append(resampled.get_fdata())
-            if (i + 1) % 10 == 0 or (i + 1) == n_input:
-                print(f"  resampled frame {i + 1}/{n_input}")
-        out_data = np.stack(out_frames, axis=-1).astype(np.float32)
-        out_img = nib.Nifti1Image(out_data, reference_img.affine, reference_img.header)
-
-    print(f"Saving resampled image to {args.output}...")
-    out_img.to_filename(args.output)
-    print("Done.")
+    except ValueError as e:
+        msg = str(e)
+        msg = msg.replace("transform_type=", "--transform-type=")
+        msg = msg.replace("phase_encoding_axis", "--phase-encoding-axis")
+        parser.error(msg)

@@ -1,6 +1,21 @@
+"""``wk-unwrap-phase`` — ROMEO multi-echo phase unwrapping (the unwrap stage of
+MEDIC).
+
+Public surface:
+
+* :func:`unwrap_phase` — typed Python entry point. Returns an
+  :class:`UnwrapPhaseResult` with the per-echo unwrapped-phase paths and the
+  per-frame masks path.
+* :func:`main` — argparse CLI shim.
+"""
+
+from __future__ import annotations
+
 import argparse
-import json
-from typing import cast
+from collections.abc import Sequence
+from dataclasses import dataclass
+from os import PathLike
+from pathlib import Path
 
 import nibabel as nib
 
@@ -9,6 +24,83 @@ from warpkit.unwrap import unwrap_phases
 from warpkit.utilities import setup_logging
 
 from . import epilog
+from ._metadata import ensure_images, resolve_acquisition, trim_noise_frames
+
+
+@dataclass(frozen=True, slots=True)
+class UnwrapPhaseResult:
+    unwrapped: list[Path]
+    masks: Path
+
+
+def unwrap_phase(
+    *,
+    phase: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    magnitude: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    out_prefix: PathLike[str] | str,
+    tes: Sequence[float] | None = None,
+    metadata: Sequence[PathLike[str] | str] | None = None,
+    noise_frames: int = 0,
+    n_cpus: int = 4,
+    wrap_limit: bool = False,
+    debug: bool = False,
+) -> UnwrapPhaseResult:
+    """Run ROMEO multi-echo phase unwrapping.
+
+    Either pass ``metadata`` (one BIDS sidecar per echo) or ``tes`` directly
+    (echo times in ms). The two are mutually exclusive.
+
+    Returns absolute paths of one unwrapped-phase NIfTI per echo
+    (``<prefix>_unwrapped_echo-NN.nii``) plus the per-frame masks NIfTI
+    (``<prefix>_masks.nii``).
+    """
+    if len(magnitude) != len(phase):
+        raise ValueError(
+            f"got {len(magnitude)} magnitude file(s) but {len(phase)} phase "
+            "file(s); they must match (one mag/phase pair per echo)."
+        )
+    if metadata is not None and len(metadata) != len(phase):
+        raise ValueError(
+            f"got {len(metadata)} metadata file(s) but {len(phase)} phase "
+            "file(s); they must match (one sidecar per echo)."
+        )
+
+    tes_ms, _, _ = resolve_acquisition(metadata=metadata, tes=tes, require_trt_pe=False)
+
+    if len(tes_ms) != len(phase):
+        raise ValueError(
+            f"got {len(tes_ms)} echo time(s) but --phase has {len(phase)} "
+            "file(s); they must match."
+        )
+
+    mag_data = ensure_images(magnitude)
+    phase_data = ensure_images(phase)
+
+    if noise_frames > 0:
+        print(f"Removing {noise_frames} noise frames from the end of each file...")
+    mag_data = trim_noise_frames(mag_data, noise_frames)
+    phase_data = trim_noise_frames(phase_data, noise_frames)
+
+    unwrapped_imgs, masks_img = unwrap_phases(
+        phase_data,
+        mag_data,
+        list(tes_ms),
+        n_cpus=n_cpus,
+        debug=debug,
+        wrap_limit=wrap_limit,
+    )
+
+    out_prefix_str = str(out_prefix)
+    print("Saving unwrapped phase images and masks to file...")
+    unwrapped_paths: list[Path] = []
+    for i_echo, img in enumerate(unwrapped_imgs, start=1):
+        out_path = Path(f"{out_prefix_str}_unwrapped_echo-{i_echo:02d}.nii").resolve()
+        img.to_filename(str(out_path))
+        unwrapped_paths.append(out_path)
+    masks_path = Path(f"{out_prefix_str}_masks.nii").resolve()
+    masks_img.to_filename(str(masks_path))
+    print("Done.")
+    return UnwrapPhaseResult(unwrapped=unwrapped_paths, masks=masks_path)
 
 
 def main():
@@ -67,86 +159,20 @@ def main():
     )
 
     args = parser.parse_args()
-
-    if args.metadata and args.tes is not None:
-        parser.error(
-            "--metadata is mutually exclusive with --TEs; pass one or the "
-            "other, not both."
-        )
-    if not args.metadata and args.tes is None:
-        parser.error("either --metadata or --TEs must be provided.")
-
-    if len(args.magnitude) != len(args.phase):
-        parser.error(
-            f"got {len(args.magnitude)} --magnitude file(s) but "
-            f"{len(args.phase)} --phase file(s); they must match (one "
-            "mag/phase pair per echo)."
-        )
-    if args.metadata is not None and len(args.metadata) != len(args.phase):
-        parser.error(
-            f"got {len(args.metadata)} --metadata file(s) but "
-            f"{len(args.phase)} --phase file(s); they must match (one "
-            "sidecar per echo)."
-        )
-
-    echo_times: list[float]
-    if args.metadata:
-        metadatas = []
-        for j in args.metadata:
-            with open(j) as f:
-                metadatas.append(json.load(f))
-        echo_times = [float(m["EchoTime"]) * 1000 for m in metadatas]
-    else:
-        echo_times = cast(list[float], args.tes)
-
-    if len(echo_times) != len(args.phase):
-        parser.error(
-            f"got {len(echo_times)} echo time(s) but --phase has "
-            f"{len(args.phase)} file(s); they must match."
-        )
-
     setup_logging()
     print(f"wk-unwrap-phase: {args}")
 
-    mag_data = [cast(nib.Nifti1Image, nib.load(m)) for m in args.magnitude]
-    phase_data = [cast(nib.Nifti1Image, nib.load(p)) for p in args.phase]
-
-    if args.noiseframes < 0:
-        parser.error(f"--noiseframes must be non-negative; got {args.noiseframes}.")
-    if args.noiseframes > 0:
-        for label, imgs, paths in (
-            ("phase", phase_data, args.phase),
-            ("magnitude", mag_data, args.magnitude),
-        ):
-            for img, path in zip(imgs, paths, strict=True):
-                n_frames = img.shape[-1] if img.ndim == 4 else 1
-                if args.noiseframes >= n_frames:
-                    parser.error(
-                        f"--noiseframes={args.noiseframes} would leave 0 "
-                        f"frames in {label} file '{path}' (has {n_frames} "
-                        "frame(s))."
-                    )
-        print(f"Removing {args.noiseframes} noise frames from the end of each file...")
-        mag_data = [
-            nib.Nifti1Image(m.dataobj[..., : -args.noiseframes], m.affine, m.header)
-            for m in mag_data
-        ]
-        phase_data = [
-            nib.Nifti1Image(p.dataobj[..., : -args.noiseframes], p.affine, p.header)
-            for p in phase_data
-        ]
-
-    unwrapped_imgs, masks_img = unwrap_phases(
-        phase_data,
-        mag_data,
-        echo_times,
-        n_cpus=args.n_cpus,
-        debug=args.debug,
-        wrap_limit=args.wrap_limit,
-    )
-
-    print("Saving unwrapped phase images and masks to file...")
-    for i_echo, img in enumerate(unwrapped_imgs, start=1):
-        img.to_filename(f"{args.out_prefix}_unwrapped_echo-{i_echo:02d}.nii")
-    masks_img.to_filename(f"{args.out_prefix}_masks.nii")
-    print("Done.")
+    try:
+        unwrap_phase(
+            phase=args.phase,
+            magnitude=args.magnitude,
+            out_prefix=args.out_prefix,
+            tes=args.tes,
+            metadata=args.metadata,
+            noise_frames=args.noiseframes,
+            n_cpus=args.n_cpus,
+            wrap_limit=args.wrap_limit,
+            debug=args.debug,
+        )
+    except ValueError as e:
+        parser.error(str(e))

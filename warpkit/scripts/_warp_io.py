@@ -4,33 +4,42 @@ Both ``wk-convert-warp`` and ``wk-compute-jacobian`` accept the same
 "1+ files of maps or fields" input model and the same "1 bundled file or N
 per-frame files" output model. This module hosts the frame splitting and
 bundling helpers that the scripts share.
+
+Validation errors are raised as :class:`ValueError`. The CLI shims catch
+``ValueError`` and forward to ``parser.error`` so the user-visible behaviour
+(``SystemExit(2)`` with ``error: ...`` on stderr) is preserved.
 """
 
 from __future__ import annotations
 
-import argparse
+from collections.abc import Sequence
+from os import PathLike
 from typing import cast
 
 import nibabel as nib
 import numpy as np
 
+from ._metadata import ensure_image
+
 
 def read_input_frames(
-    input_paths: list[str],
+    inputs: Sequence[PathLike[str] | str | nib.Nifti1Image],
     from_type: str,
-    parser: argparse.ArgumentParser,
 ) -> list[nib.Nifti1Image]:
     """Load input file(s) and split into a flat list of single-frame images.
 
     ``from_type`` is ``"map"`` (1-channel) or ``"field"`` (3-channel) — the
-    user-supplied input type from ``--from``. Each input may be a single 3D
-    map, a 4D map series, a 4D field, or a 5D field (singleton or
-    multi-frame). The returned frames are 3D for maps and 4D
-    ``(X, Y, Z, 3)`` for fields.
+    user-supplied input type. Each input may be a single 3D map, a 4D map
+    series, a 4D field, or a 5D field (singleton or multi-frame). The
+    returned frames are 3D for maps and 4D ``(X, Y, Z, 3)`` for fields.
+
+    Inputs may be paths, ``str`` paths, or already-loaded ``Nifti1Image``
+    objects.
     """
     frames: list[nib.Nifti1Image] = []
-    for p in input_paths:
-        img = cast(nib.Nifti1Image, nib.load(p))
+    for idx, p in enumerate(inputs):
+        img = ensure_image(p)
+        label = str(p) if not isinstance(p, nib.Nifti1Image) else f"input #{idx}"
         if from_type == "map":
             if img.ndim == 3:
                 frames.append(img)
@@ -39,8 +48,8 @@ def read_input_frames(
                     fd = np.asarray(img.dataobj[..., i])
                     frames.append(nib.Nifti1Image(fd, img.affine, img.header))
             else:
-                parser.error(
-                    f"map input must be 3D or 4D; got shape {img.shape} for {p}"
+                raise ValueError(
+                    f"map input must be 3D or 4D; got shape {img.shape} for {label}"
                 )
         else:  # field
             if img.ndim == 4 and img.shape[-1] == 3:
@@ -51,9 +60,9 @@ def read_input_frames(
                     fd = np.asarray(img.dataobj[..., i, :])
                     frames.append(nib.Nifti1Image(fd, img.affine, img.header))
             else:
-                parser.error(
+                raise ValueError(
                     "field input must be 4D (X,Y,Z,3) or 5D (X,Y,Z,T,3); "
-                    f"got shape {img.shape} for {p}"
+                    f"got shape {img.shape} for {label}"
                 )
     return frames
 
@@ -89,9 +98,8 @@ def bundle_frames_to_field_series(frames: list[nib.Nifti1Image]) -> nib.Nifti1Im
 
 def write_output(
     frames: list[nib.Nifti1Image],
-    out_paths: list[str],
+    out_paths: list[str] | list[PathLike[str]],
     out_type: str,
-    parser: argparse.ArgumentParser,
 ) -> None:
     """Write per-frame images either bundled into one file (when exactly one
     output path is given for >1 frames) or one file per frame.
@@ -108,7 +116,7 @@ def write_output(
             if out_type == "map"
             else bundle_frames_to_field_series(frames)
         )
-        bundled.to_filename(out_paths[0])
+        bundled.to_filename(str(out_paths[0]))
     elif n_out == n:
         for path, img in zip(out_paths, frames, strict=True):
             # Per-frame map outputs may carry a vector intent inherited from an
@@ -118,9 +126,9 @@ def write_output(
                 header = cast(nib.Nifti1Header, img.header.copy())
                 header.set_intent("none", (), "")
                 img = nib.Nifti1Image(np.asarray(img.dataobj), img.affine, header)
-            img.to_filename(path)
+            img.to_filename(str(path))
     else:
-        parser.error(
+        raise ValueError(
             f"got {n_out} --output path(s) for {n} frame(s); must be 1 "
             f"(bundle into a single file) or {n} (one per frame)"
         )

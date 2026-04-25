@@ -1,16 +1,145 @@
+"""``wk-medic`` — full Multi-Echo DIstortion Correction pipeline.
+
+This module exposes two surfaces:
+
+* :func:`medic` — the typed Python entry point. Takes paths or in-memory
+  ``Nifti1Image`` objects, runs MEDIC, writes outputs, and returns a
+  :class:`MedicResult` with the absolute paths of the three NIfTIs written
+  (``<prefix>_fieldmaps_native.nii``, ``_displacementmaps.nii`` and
+  ``_fieldmaps.nii``). Library/integration code (e.g. nipype interfaces)
+  should call this.
+* :func:`main` — the argparse CLI entry point. Parses ``sys.argv``, then
+  defers to :func:`medic`. ``ValueError`` from the latter is forwarded to
+  ``parser.error`` so CLI behaviour (``SystemExit(2)``, ``error: ...`` on
+  stderr) is preserved.
+"""
+
+from __future__ import annotations
+
 import argparse
-import json
-from typing import cast
+from collections.abc import Sequence
+from dataclasses import dataclass
+from os import PathLike
+from pathlib import Path
 
 import nibabel as nib
 
 from warpkit import __version__
-from warpkit.distortion import medic
+from warpkit.distortion import medic as _medic_distortion
 from warpkit.utilities import setup_logging
 
 from . import epilog
+from ._metadata import ensure_images, resolve_acquisition, trim_noise_frames
 
 PE_DIRECTIONS = ("i", "j", "k", "i-", "j-", "k-", "x", "y", "z", "x-", "y-", "z-")
+
+
+@dataclass(frozen=True, slots=True)
+class MedicResult:
+    """Absolute paths of the three NIfTIs written by :func:`medic`."""
+
+    fieldmap_native: Path
+    displacement_map: Path
+    fieldmap: Path
+
+
+def medic(
+    *,
+    phase: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    magnitude: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    out_prefix: PathLike[str] | str,
+    tes: Sequence[float] | None = None,
+    total_readout_time: float | None = None,
+    phase_encoding_direction: str | None = None,
+    metadata: Sequence[PathLike[str] | str] | None = None,
+    noise_frames: int = 0,
+    n_cpus: int = 4,
+    wrap_limit: bool = False,
+    debug: bool = False,
+) -> MedicResult:
+    """Run the full MEDIC pipeline and write the three output NIfTIs.
+
+    Either pass ``metadata`` (one BIDS sidecar per echo) or all three of
+    ``tes`` (ms), ``total_readout_time`` (s) and ``phase_encoding_direction``
+    (``i``/``j``/``k``/``x``/``y``/``z`` with optional trailing ``-``). The
+    two are mutually exclusive.
+
+    ``noise_frames`` trims that many frames from the end of every
+    phase/magnitude file before unwrapping (matches the CLI's ``-f``).
+
+    Returns a :class:`MedicResult` with absolute paths of the three written
+    NIfTIs.
+    """
+    if len(phase) != len(magnitude):
+        raise ValueError(
+            f"got {len(phase)} phase file(s) but {len(magnitude)} magnitude "
+            "file(s); they must match (one mag/phase pair per echo)."
+        )
+
+    tes_ms, trt, ped = resolve_acquisition(
+        metadata=metadata,
+        tes=tes,
+        total_readout_time=total_readout_time,
+        phase_encoding_direction=phase_encoding_direction,
+        require_trt_pe=True,
+    )
+    # require_trt_pe=True guarantees both are populated.
+    assert trt is not None and ped is not None
+
+    if len(tes_ms) != len(phase):
+        raise ValueError(
+            f"got {len(tes_ms)} echo time(s) but --phase has {len(phase)} "
+            "file(s); they must match."
+        )
+
+    mag_data = ensure_images(magnitude)
+    phase_data = ensure_images(phase)
+
+    if noise_frames > 0:
+        print(f"Removing {noise_frames} noise frames from the end of each file...")
+    mag_data = trim_noise_frames(mag_data, noise_frames)
+    phase_data = trim_noise_frames(phase_data, noise_frames)
+
+    if debug:
+        fmaps_native, dmaps, fmaps = _medic_distortion(
+            phase_data,
+            mag_data,
+            tes_ms,
+            trt,
+            ped,
+            n_cpus=n_cpus,
+            border_filt=(1000, 1000),
+            svd_filt=1000,
+            debug=True,
+            wrap_limit=wrap_limit,
+        )
+    else:
+        fmaps_native, dmaps, fmaps = _medic_distortion(
+            phase_data,
+            mag_data,
+            tes_ms,
+            trt,
+            ped,
+            n_cpus=n_cpus,
+            svd_filt=10,
+            border_size=5,
+            wrap_limit=wrap_limit,
+        )
+
+    out_prefix_str = str(out_prefix)
+    print("Saving field maps and displacement maps to file...")
+    fmap_native_path = Path(f"{out_prefix_str}_fieldmaps_native.nii").resolve()
+    dmap_path = Path(f"{out_prefix_str}_displacementmaps.nii").resolve()
+    fmap_path = Path(f"{out_prefix_str}_fieldmaps.nii").resolve()
+    fmaps_native.to_filename(str(fmap_native_path))
+    dmaps.to_filename(str(dmap_path))
+    fmaps.to_filename(str(fmap_path))
+    print("Done.")
+    return MedicResult(
+        fieldmap_native=fmap_native_path,
+        displacement_map=dmap_path,
+        fieldmap=fmap_path,
+    )
 
 
 def main():
@@ -74,98 +203,23 @@ def main():
         help="Turns off some heuristics for phase unwrapping",
     )
 
-    # parse arguments
     args = parser.parse_args()
-
-    direct_args = {
-        "--TEs": args.tes,
-        "--total-readout-time": args.total_readout_time,
-        "--phase-encoding-direction": args.phase_encoding_direction,
-    }
-    direct_supplied = [name for name, val in direct_args.items() if val is not None]
-
-    if args.metadata and direct_supplied:
-        parser.error(
-            "--metadata is mutually exclusive with "
-            f"{', '.join(direct_supplied)}; pass one or the other, not both."
-        )
-    if not args.metadata and len(direct_supplied) != len(direct_args):
-        missing = [name for name in direct_args if name not in direct_supplied]
-        parser.error(
-            "either --metadata or all of --TEs, --total-readout-time, and "
-            f"--phase-encoding-direction must be provided (missing: {', '.join(missing)})."
-        )
-
-    if args.metadata:
-        metadatas = []
-        for j in args.metadata:
-            with open(j) as f:
-                metadatas.append(json.load(f))
-        echo_times = [float(m["EchoTime"]) * 1000 for m in metadatas]
-        total_readout_time = float(metadatas[0]["TotalReadoutTime"])
-        phase_encoding_direction = str(metadatas[0]["PhaseEncodingDirection"])
-    else:
-        echo_times = args.tes
-        total_readout_time = args.total_readout_time
-        phase_encoding_direction = args.phase_encoding_direction
-
-    if len(echo_times) != len(args.phase):
-        parser.error(
-            f"got {len(echo_times)} echo time(s) but --phase has {len(args.phase)} file(s); they must match."
-        )
-
-    # setup logging
     setup_logging()
-
-    # log arguments
     print(f"medic: {args}")
 
-    # load magnitude and phase data
-    mag_data = [cast(nib.Nifti1Image, nib.load(m)) for m in args.magnitude]
-    phase_data = [cast(nib.Nifti1Image, nib.load(p)) for p in args.phase]
-
-    # if noiseframes specified, remove them
-    if args.noiseframes > 0:
-        print(f"Removing {args.noiseframes} noise frames from the end of each file...")
-        mag_data = [
-            nib.Nifti1Image(m.dataobj[..., : -args.noiseframes], m.affine, m.header)
-            for m in mag_data
-        ]
-        phase_data = [
-            nib.Nifti1Image(p.dataobj[..., : -args.noiseframes], p.affine, p.header)
-            for p in phase_data
-        ]
-
-    # now run medic
-    if args.debug:
-        fmaps_native, dmaps, fmaps = medic(
-            phase_data,
-            mag_data,
-            echo_times,
-            total_readout_time,
-            phase_encoding_direction,
+    try:
+        medic(
+            phase=args.phase,
+            magnitude=args.magnitude,
+            out_prefix=args.out_prefix,
+            tes=args.tes,
+            total_readout_time=args.total_readout_time,
+            phase_encoding_direction=args.phase_encoding_direction,
+            metadata=args.metadata,
+            noise_frames=args.noiseframes,
             n_cpus=args.n_cpus,
-            border_filt=(1000, 1000),
-            svd_filt=1000,
-            debug=True,
             wrap_limit=args.wrap_limit,
+            debug=args.debug,
         )
-    else:
-        fmaps_native, dmaps, fmaps = medic(
-            phase_data,
-            mag_data,
-            echo_times,
-            total_readout_time,
-            phase_encoding_direction,
-            n_cpus=args.n_cpus,
-            svd_filt=10,
-            border_size=5,
-            wrap_limit=args.wrap_limit,
-        )
-
-    # save the fmaps and dmaps to file
-    print("Saving field maps and displacement maps to file...")
-    fmaps_native.to_filename(f"{args.out_prefix}_fieldmaps_native.nii")
-    dmaps.to_filename(f"{args.out_prefix}_displacementmaps.nii")
-    fmaps.to_filename(f"{args.out_prefix}_fieldmaps.nii")
-    print("Done.")
+    except ValueError as e:
+        parser.error(str(e))

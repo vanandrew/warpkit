@@ -1,4 +1,21 @@
+"""``wk-convert-warp`` — interconvert displacement maps and displacement
+fields, convert between ITK / FSL / ANTs / AFNI format conventions, and
+optionally invert the warp along the way.
+
+Public surface:
+
+* :func:`convert_warp` — typed Python entry point. Returns a
+  :class:`ConvertWarpResult` with the absolute paths of the written NIfTIs.
+* :func:`main` — argparse CLI shim.
+"""
+
+from __future__ import annotations
+
 import argparse
+from collections.abc import Sequence
+from dataclasses import dataclass
+from os import PathLike
+from pathlib import Path
 
 import nibabel as nib
 import numpy as np
@@ -7,16 +24,23 @@ from warpkit import __version__
 from warpkit.utilities import (
     AXIS_MAP,
     WARP_ITK_FLIPS,
-    convert_warp,
     displacement_field_to_map,
     displacement_map_to_field,
     invert_displacement_field,
     invert_displacement_maps,
     setup_logging,
 )
+from warpkit.utilities import (
+    convert_warp as _convert_warp_image,
+)
 
 from . import epilog
 from ._warp_io import read_input_frames, write_output
+
+
+@dataclass(frozen=True, slots=True)
+class ConvertWarpResult:
+    output: list[Path]
 
 
 def _invert_frames(
@@ -28,22 +52,8 @@ def _invert_frames(
 ) -> tuple[list[nib.Nifti1Image], str, str]:
     """Invert each frame and return ``(frames, post_type, post_format)``.
 
-    Routing is by frame count, not by input type, because the 1D map inverter
-    is markedly faster per frame than the full 3D field inverter:
-
-    * **Single frame** uses :func:`invert_displacement_field`. A map input is
-      first promoted to a 3-channel itk field via
-      :func:`displacement_map_to_field`. The result is always in itk field
-      form.
-    * **Multi-frame** stacks all frames into a single 4D ``(X, Y, Z, T)`` map
-      and runs :func:`invert_displacement_maps` once. A field input first has
-      its ``axis`` channel extracted (off-axis channels are dropped — fine
-      for the EPI-distortion case, where displacement is along the
-      phase-encoding axis). The result is always in 1-channel map form.
-
-    The returned ``post_type`` / ``post_format`` are the actual representation
-    of the inverted frames (which may differ from the input's), so the
-    downstream conversion stage can route correctly.
+    See module-level commentary in the original script for the routing
+    rationale (single-frame vs. multi-frame, map promotion to field, etc.).
     """
     n = len(frames)
     if n == 1:
@@ -55,7 +65,7 @@ def _invert_frames(
             field_itk = (
                 img
                 if in_format == "itk"
-                else convert_warp(img, in_type=in_format, out_type="itk")
+                else _convert_warp_image(img, in_type=in_format, out_type="itk")
             )
         return [invert_displacement_field(field_itk, verbose=verbose)], "field", "itk"
 
@@ -96,7 +106,7 @@ def _convert_frames(
                 converted.append(img)
             else:
                 converted.append(
-                    convert_warp(img, in_type=in_format, out_type=out_format)
+                    _convert_warp_image(img, in_type=in_format, out_type=out_format)
                 )
         elif in_type == "map" and out_type == "field":
             assert axis is not None
@@ -109,6 +119,97 @@ def _convert_frames(
                 displacement_field_to_map(img, axis=axis, format=in_format)
             )
     return converted
+
+
+def convert_warp(
+    *,
+    input: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    output: Sequence[PathLike[str] | str],
+    from_type: str,
+    to_type: str | None = None,
+    from_format: str = "itk",
+    to_format: str = "itk",
+    axis: str | None = None,
+    frame: int | None = None,
+    invert: bool = False,
+    verbose: bool = False,
+) -> ConvertWarpResult:
+    """Convert displacement transforms between map/field representations,
+    between field-format conventions, and optionally invert.
+
+    See ``wk-convert-warp --help`` for the full parameter description; the
+    Python kwargs are the snake_case equivalents of the CLI flags.
+    """
+    if from_type not in ("map", "field"):
+        raise ValueError(f"from_type must be 'map' or 'field'; got {from_type!r}")
+    if to_type is not None and to_type not in ("map", "field"):
+        raise ValueError(f"to_type must be 'map' or 'field'; got {to_type!r}")
+    if from_format not in WARP_ITK_FLIPS:
+        raise ValueError(
+            f"from_format must be one of {tuple(WARP_ITK_FLIPS)}; got {from_format!r}"
+        )
+    if to_format not in WARP_ITK_FLIPS:
+        raise ValueError(
+            f"to_format must be one of {tuple(WARP_ITK_FLIPS)}; got {to_format!r}"
+        )
+    if axis is not None and axis not in AXIS_MAP:
+        raise ValueError(f"axis must be one of {tuple(AXIS_MAP)}; got {axis!r}")
+
+    out_type = to_type or from_type
+    frames = read_input_frames(list(input), from_type)
+
+    if frame is not None:
+        if frame < 0 or frame >= len(frames):
+            raise ValueError(
+                f"frame {frame} is out of range; input has {len(frames)} frame(s)"
+            )
+        frames = [frames[frame]]
+
+    multi_frame = len(frames) > 1
+    needs_axis = (
+        (from_type == "map" and out_type == "field")
+        or (from_type == "field" and out_type == "map")
+        or (invert and (from_type == "map" or multi_frame))
+    )
+    if needs_axis and not axis:
+        raise ValueError(
+            "--axis is required when converting between maps and fields, "
+            "when inverting a single-frame map, or when inverting a "
+            "multi-frame series (the multi-frame inverter operates along a "
+            "single axis)."
+        )
+
+    in_fmt_label = from_format if from_type == "field" else "n/a"
+    out_fmt_label = to_format if out_type == "field" else "n/a"
+    invert_label = " (inverted)" if invert else ""
+    print(
+        f"wk-convert-warp: {len(frames)} frame(s); "
+        f"{from_type}({in_fmt_label}) -> {out_type}({out_fmt_label}){invert_label}"
+    )
+
+    post_type, post_format = from_type, from_format
+    if invert:
+        frames, post_type, post_format = _invert_frames(
+            frames,
+            in_type=from_type,
+            in_format=from_format,
+            axis=axis,
+            verbose=verbose,
+        )
+
+    converted = _convert_frames(
+        frames,
+        in_type=post_type,
+        out_type=out_type,
+        in_format=post_format,
+        out_format=to_format,
+        axis=axis,
+    )
+
+    out_paths_resolved = [Path(str(p)).resolve() for p in output]
+    write_output(converted, [str(p) for p in out_paths_resolved], out_type)
+    print("Done.")
+    return ConvertWarpResult(output=out_paths_resolved)
 
 
 def main():
@@ -210,65 +311,20 @@ def main():
     args = parser.parse_args()
     setup_logging()
 
-    frames = read_input_frames(args.input, args.from_type, parser)
-    in_type = args.from_type
-    out_type = args.to_type or in_type
-
-    if args.frame is not None:
-        if args.frame < 0 or args.frame >= len(frames):
-            parser.error(
-                f"--frame {args.frame} is out of range; input has "
-                f"{len(frames)} frame(s)"
-            )
-        frames = [frames[args.frame]]
-
-    # --axis is required for map<->field conversion AND for inversion when
-    # the chosen inversion routing needs it: the single-frame route promotes
-    # a map to a field (needs axis), and the multi-frame route always runs
-    # the 1D map inverter (needs axis for map<->axis-channel).
-    multi_frame = len(frames) > 1
-    needs_axis = (
-        (in_type == "map" and out_type == "field")
-        or (in_type == "field" and out_type == "map")
-        or (args.invert and (in_type == "map" or multi_frame))
-    )
-    if needs_axis and not args.axis:
-        parser.error(
-            "--axis is required when converting between maps and fields, "
-            "when inverting a single-frame map, or when inverting a "
-            "multi-frame series (the multi-frame inverter operates along a "
-            "single axis)."
-        )
-
-    in_fmt_label = args.from_format if in_type == "field" else "n/a"
-    out_fmt_label = args.to_format if out_type == "field" else "n/a"
-    invert_label = " (inverted)" if args.invert else ""
-    print(
-        f"wk-convert-warp: {len(frames)} frame(s); "
-        f"{in_type}({in_fmt_label}) -> {out_type}({out_fmt_label}){invert_label}"
-    )
-
-    # post_type / post_format track the actual representation of the frames
-    # after the inversion stage, which may differ from the user-declared
-    # input (e.g. multi-frame field input emerges as 1-channel maps).
-    post_type, post_format = in_type, args.from_format
-    if args.invert:
-        frames, post_type, post_format = _invert_frames(
-            frames,
-            in_type=in_type,
-            in_format=args.from_format,
+    try:
+        convert_warp(
+            input=args.input,
+            output=args.output,
+            from_type=args.from_type,
+            to_type=args.to_type,
+            from_format=args.from_format,
+            to_format=args.to_format,
             axis=args.axis,
+            frame=args.frame,
+            invert=args.invert,
             verbose=args.verbose,
         )
-
-    converted = _convert_frames(
-        frames,
-        in_type=post_type,
-        out_type=out_type,
-        in_format=post_format,
-        out_format=args.to_format,
-        axis=args.axis,
-    )
-
-    write_output(converted, args.output, out_type, parser)
-    print("Done.")
+    except ValueError as e:
+        msg = str(e)
+        msg = msg.replace("frame ", "--frame ", 1) if msg.startswith("frame ") else msg
+        parser.error(msg)

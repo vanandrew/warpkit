@@ -1,4 +1,19 @@
+"""``wk-compute-jacobian`` — compute the Jacobian determinant of a
+displacement warp.
+
+Public surface:
+
+* :func:`compute_jacobian` — typed Python entry point.
+* :func:`main` — argparse CLI shim.
+"""
+
+from __future__ import annotations
+
 import argparse
+from collections.abc import Sequence
+from dataclasses import dataclass
+from os import PathLike
+from pathlib import Path
 from typing import cast
 
 import nibabel as nib
@@ -17,6 +32,11 @@ from . import epilog
 from ._warp_io import read_input_frames, write_output
 
 
+@dataclass(frozen=True, slots=True)
+class ComputeJacobianResult:
+    output: list[Path]
+
+
 def _frame_to_itk_field(
     img: nib.Nifti1Image,
     in_type: str,
@@ -30,6 +50,58 @@ def _frame_to_itk_field(
     if in_format == "itk":
         return img
     return cast(nib.Nifti1Image, convert_warp(img, in_type=in_format, out_type="itk"))
+
+
+def compute_jacobian(
+    *,
+    input: Sequence[PathLike[str] | str | nib.Nifti1Image],
+    output: Sequence[PathLike[str] | str],
+    from_type: str,
+    from_format: str = "itk",
+    axis: str | None = None,
+    frame: int | None = None,
+) -> ComputeJacobianResult:
+    """Compute the per-frame Jacobian determinant of a displacement warp.
+
+    Output is one 3D scalar volume per input frame (bundled into a 4D series
+    if a single ``output`` path is given, or one per frame if N paths).
+    """
+    if from_type not in ("map", "field"):
+        raise ValueError(f"from_type must be 'map' or 'field'; got {from_type!r}")
+    if from_format not in WARP_ITK_FLIPS:
+        raise ValueError(
+            f"from_format must be one of {tuple(WARP_ITK_FLIPS)}; got {from_format!r}"
+        )
+    if axis is not None and axis not in AXIS_MAP:
+        raise ValueError(f"axis must be one of {tuple(AXIS_MAP)}; got {axis!r}")
+
+    frames = read_input_frames(list(input), from_type)
+
+    if frame is not None:
+        if frame < 0 or frame >= len(frames):
+            raise ValueError(
+                f"frame {frame} is out of range; input has {len(frames)} frame(s)"
+            )
+        frames = [frames[frame]]
+
+    if from_type == "map" and not axis:
+        raise ValueError("--axis is required when the input is a displacement map.")
+
+    in_fmt_label = from_format if from_type == "field" else "n/a"
+    print(
+        f"wk-compute-jacobian: {len(frames)} frame(s); {from_type}({in_fmt_label}) "
+        "-> jacobian"
+    )
+
+    jacobians: list[nib.Nifti1Image] = []
+    for img in frames:
+        field_itk = _frame_to_itk_field(img, from_type, from_format, axis)
+        jacobians.append(compute_jacobian_determinant(field_itk))
+
+    out_paths_resolved = [Path(str(p)).resolve() for p in output]
+    write_output(jacobians, [str(p) for p in out_paths_resolved], "map")
+    print("Done.")
+    return ComputeJacobianResult(output=out_paths_resolved)
 
 
 def main():
@@ -96,32 +168,16 @@ def main():
     args = parser.parse_args()
     setup_logging()
 
-    frames = read_input_frames(args.input, args.from_type, parser)
-    in_type = args.from_type
-
-    if args.frame is not None:
-        if args.frame < 0 or args.frame >= len(frames):
-            parser.error(
-                f"--frame {args.frame} is out of range; input has "
-                f"{len(frames)} frame(s)"
-            )
-        frames = [frames[args.frame]]
-
-    if in_type == "map" and not args.axis:
-        parser.error("--axis is required when the input is a displacement map.")
-
-    in_fmt_label = args.from_format if in_type == "field" else "n/a"
-    print(
-        f"wk-compute-jacobian: {len(frames)} frame(s); {in_type}({in_fmt_label}) "
-        "-> jacobian"
-    )
-
-    jacobians: list[nib.Nifti1Image] = []
-    for img in frames:
-        field_itk = _frame_to_itk_field(img, in_type, args.from_format, args.axis)
-        jacobians.append(compute_jacobian_determinant(field_itk))
-
-    # Output is a 3D scalar per frame, so use the same packing as 1-channel
-    # maps (4D series when bundled into a single file).
-    write_output(jacobians, args.output, "map", parser)
-    print("Done.")
+    try:
+        compute_jacobian(
+            input=args.input,
+            output=args.output,
+            from_type=args.from_type,
+            from_format=args.from_format,
+            axis=args.axis,
+            frame=args.frame,
+        )
+    except ValueError as e:
+        msg = str(e)
+        msg = msg.replace("frame ", "--frame ", 1) if msg.startswith("frame ") else msg
+        parser.error(msg)
