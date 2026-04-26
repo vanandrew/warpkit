@@ -139,9 +139,7 @@ py::array_t<T, py::array::f_style> invert_displacement_map(py::array_t<T, py::ar
 
     // Get output
     typename DisplacementMapType::Pointer inv_map = identity_filter->GetOutput();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     inv_map->Update();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     itk::ImageRegionConstIteratorWithIndex<DisplacementMapType> inv_map_it(inv_map,
                                                                            inv_map->GetLargestPossibleRegion());
     py::array_t<T, py::array::f_style> inverted_displacement_map(displacement_map);
@@ -170,7 +168,6 @@ py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::
                                                              py::array_t<T, py::array::f_style> direction,
                                                              py::array_t<T, py::array::f_style> spacing,
                                                              ssize_t iterations, bool verbose) {
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
     // Get the displacement field shape
     const ssize_t* shape = displacement_field.shape();
@@ -227,9 +224,7 @@ py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::
 
     // Get output
     typename DisplacementFieldType::Pointer inv_field = invert_displacement_filter->GetOutput();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     inv_field->Update();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     itk::ImageRegionConstIteratorWithIndex<DisplacementFieldType> inv_field_it(inv_field,
                                                                                inv_field->GetLargestPossibleRegion());
     py::array_t<T, py::array::f_style> inverted_displacement_field(displacement_field);
@@ -261,8 +256,6 @@ py::array_t<T, py::array::f_style> compute_jacobian_determinant(py::array_t<T, p
                                                                 py::array_t<T, py::array::f_style> origin,
                                                                 py::array_t<T, py::array::f_style> direction,
                                                                 py::array_t<T, py::array::f_style> spacing) {
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
-
     // Get the displacement field shape
     const ssize_t* shape = displacement_field.shape();
 
@@ -315,9 +308,7 @@ py::array_t<T, py::array::f_style> compute_jacobian_determinant(py::array_t<T, p
     // Get the jacobian determinant fields
     typename DisplacementFieldJacobianDeterminantFilterType::OutputImagePointer jacobian_determinant =
         jacobian_filter->GetOutput();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     jacobian_determinant->Update();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
     // Convert to numpy array
     py::array_t<T, py::array::f_style> jacobian_determinant_array({shape[0], shape[1], shape[2]});
@@ -461,9 +452,7 @@ py::array_t<T, py::array::f_style> resample(
 
     // Get the output
     typename OutputImageType::Pointer output_image = warp_filter->GetOutput();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     output_image->Update();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
     itk::ImageRegionConstIteratorWithIndex<OutputImageType> output_iterator(output_image,
                                                                             output_image->GetLargestPossibleRegion());
     py::array_t<T, py::array::f_style> output_array({output_shape.at(0), output_shape.at(1), output_shape.at(2)});
@@ -481,8 +470,6 @@ T compute_hausdorff_distance(
     py::array_t<T, py::array::f_style> image1_direction, py::array_t<T, py::array::f_style> image1_spacing,
     py::array_t<T, py::array::f_style> image2, py::array_t<T, py::array::f_style> image2_origin,
     py::array_t<T, py::array::f_style> image2_direction, py::array_t<T, py::array::f_style> image2_spacing) {
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
-
     // Setup types
     using ImageType = typename itk::Image<T, 3>;
 
@@ -545,7 +532,6 @@ T compute_hausdorff_distance(
     // Get the hausdorff distance
     hausdorff_filter->Update();
     T hausdorff_distance = hausdorff_filter->GetAverageHausdorffDistance();
-    if (PyErr_CheckSignals() != 0) throw py::error_already_set();
 
     // Return the hausdorff distance
     return hausdorff_distance;
