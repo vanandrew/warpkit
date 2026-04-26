@@ -122,8 +122,9 @@ command_line = "-m pytest"
 omit = ["tests/*"]
 
 [tool.cibuildwheel]
-# Skip musllinux (we ship manylinux only). Note: cp314t-* is allowed for testing.
-# If free-threaded support fails, add it back to skip list pending no-GIL audit.
+# Skip musllinux (we ship manylinux only).
+# Free-threaded support enabled: PyErr_CheckSignals() calls removed from warps.h
+# to allow no-GIL operation (tradeoff: Ctrl+C interruptibility during long ITK operations).
 skip = "*musllinux*"
 build-frontend = "build"
 build-verbosity = 3

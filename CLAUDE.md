@@ -131,12 +131,12 @@ and call out anything CI-relevant (wheel matrix, pybind11 ABI, ITK).
 
 ## CI specifics
 
-GitHub Actions builds wheels for Python 3.11–3.14 on `ubuntu-latest`,
+GitHub Actions builds wheels for Python 3.11–3.14 (both standard and free-threaded) on `ubuntu-latest`,
 `ubuntu-24.04-arm`, and `macos-latest` via cibuildwheel.
-`pyproject.toml`'s `[tool.cibuildwheel]` skips `*musllinux*` and the
-`cp314t-*` free-threaded build; re-enabling free-threaded support requires
-auditing the pybind11 + ITK code paths for the no-GIL ABI. The sdist job
-also runs `uv run coverage run` then `coverage report -m` — keep coverage
-healthy when adding code (the `[tool.coverage.report]` config in
+`pyproject.toml`'s `[tool.cibuildwheel]` skips only `*musllinux*` builds.
+Free-threaded support is enabled: `PyErr_CheckSignals()` calls were removed from
+`include/warps.h` to allow no-GIL operation (tradeoff: loses Ctrl+C interruptibility
+during long ITK operations). The sdist job also runs `uv run coverage run` then `coverage report -m` — keep
+coverage healthy when adding code (the `[tool.coverage.report]` config in
 `pyproject.toml` omits the test files). PyPI publish and the GHCR Docker
 image only run on a published GitHub release.

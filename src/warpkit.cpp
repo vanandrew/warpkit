@@ -5,7 +5,7 @@
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(warpkit_cpp, m) {
+PYBIND11_MODULE_GIL_NOT_USED(warpkit_cpp, m) {
     m.def("calculate_weights", &romeo::calculate_weights<float>,
           "ROMEO edge-weight map (3, nx, ny, nz) uint8. Exposed for port validation; not used by warpkit.",
           py::arg("phase"),
