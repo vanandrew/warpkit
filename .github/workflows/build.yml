@@ -41,7 +41,8 @@ jobs:
           {version: '3.11', glob: cp311*},
           {version: '3.12', glob: cp312*},
           {version: '3.13', glob: cp313*},
-          {version: '3.14', glob: cp314*}
+          {version: '3.14', glob: cp314-*},
+          {version: '3.14t', glob: cp314t*}
           ]
     name: Python ${{ matrix.python-versions.version }} wheel on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
