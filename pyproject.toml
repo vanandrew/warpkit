@@ -122,9 +122,9 @@ command_line = "-m pytest"
 omit = ["tests/*"]
 
 [tool.cibuildwheel]
-# Skip musllinux (we ship manylinux only).
-# Free-threaded support enabled: PyErr_CheckSignals() calls removed from warps.h
-# to allow no-GIL operation (tradeoff: Ctrl+C interruptibility during long ITK operations).
+# Skip musllinux (we ship manylinux only). Free-threaded (cp31Xt-*) builds
+# are kept: warps.h guards PyErr_CheckSignals() behind WARPKIT_CHECK_SIGNALS,
+# which is a no-op under Py_GIL_DISABLED.
 skip = "*musllinux*"
 build-frontend = "build"
 build-verbosity = 3
