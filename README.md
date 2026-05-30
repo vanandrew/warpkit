@@ -2,10 +2,9 @@
 
 [![Build](https://github.com/vanandrew/warpkit/actions/workflows/build.yml/badge.svg)](https://github.com/vanandrew/warpkit/actions)
 [![PyPI](https://img.shields.io/pypi/v/warpkit)](https://pypi.org/project/warpkit/)
-[![docker](https://ghcr-badge.egpl.dev/vanandrew/warpkit/latest_tag?trim=major&label=ghcr&nbsp;latest)](https://github.com/vanandrew/warpkit/pkgs/container/warpkit)
 [![codecov](https://codecov.io/gh/vanandrew/warpkit/graph/badge.svg?token=S6ZZKOAF8V)](https://codecov.io/gh/vanandrew/warpkit)
 
-A Python library for neuroimaging transforms, focused on the Multi-Echo DIstortion Correction (MEDIC) algorithm. The pre-print is available at <https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1>.
+A Python library for neuroimaging transforms, focused on the Multi-Echo DIstortion Correction (MEDIC) algorithm. The paper is published in *Imaging Neuroscience* at <https://doi.org/10.1162/IMAG.a.1262>.
 
 The phase-unwrapping core is a self-contained C++17 port of [ROMEO](https://github.com/korbinian90/ROMEO) — there is no Julia runtime to install, and binary wheels ship with the ITK pieces statically linked. If you used an older release of warpkit that required `julia` on `PATH`, that step is gone.
 
@@ -193,6 +192,15 @@ wk-convert-fieldmap \
   --phase-encoding-direction j- \
   --output sub-01_run-01_fieldmap.nii
 ```
+
+## Citation
+
+If you use warpkit, please cite:
+
+> Van AN, Montez DF, Laumann TO, Cho PN, Suljic V, Madison T, et al.
+> Frame-wise multi-echo distortion correction for superior functional MRI.
+> *Imaging Neuroscience* 2026; 4 IMAG.a.1262.
+> doi: <https://doi.org/10.1162/IMAG.a.1262>
 
 ## Authors
 

@@ -1,7 +1,10 @@
 Copyright (c) 2022 Washington University.
 Authored by: Andrew Van							
 
-Please cite https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1	
+Please cite:
+Van AN, Montez DF, Laumann TO, Cho PN, Suljic V, Madison T, et al.
+Frame-wise multi-echo distortion correction for superior functional MRI.
+Imaging Neuroscience 2026; 4 IMAG.a.1262. doi: https://doi.org/10.1162/IMAG.a.1262
 
 warpkit is free for non-commercial use by academic, government,
 and non-profit/not-for-profit institutions. A commercial version of the software is
