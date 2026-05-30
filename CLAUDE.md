@@ -10,7 +10,7 @@ DIstortion Correction). Phase unwrapping uses a self-contained C++17 port of
 **no Julia runtime is involved**; do not reintroduce one (no `julia.py`, no
 conda recipe, no `FindJulia.cmake`).
 
-Pre-print: <https://www.biorxiv.org/content/10.1101/2023.11.28.568744v1>.
+Paper (Imaging Neuroscience): <https://doi.org/10.1162/IMAG.a.1262>.
 
 ## Layout
 

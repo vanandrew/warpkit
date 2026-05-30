@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Andrew Van", email = "vanandrew77@gmail.com" }]
 keywords = ["neuroimaging"]
 classifiers = ["Programming Language :: Python :: 3"]
-urls = { github = "https://github.com/vanandrew/warpkit" }
+urls = { github = "https://github.com/vanandrew/warpkit", paper = "https://doi.org/10.1162/IMAG.a.1262" }
 # include/romeo/LICENSE is the upstream MIT notice for the ROMEO C++ port; it
 # travels with the headers in source distributions and (via PEP 639
 # license-files) gets bundled into wheels under *.dist-info/licenses/.
