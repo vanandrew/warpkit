@@ -235,19 +235,22 @@ def _zero_3vec_field(shape=(8, 8, 8)) -> nib.Nifti1Image:
     return nib.Nifti1Image(np.zeros((*shape, 3), dtype=np.float32), affine)
 
 
-def test_invert_displacement_field_zero():
+@pytest.mark.parametrize("ignore_rotation", [False, True])
+def test_invert_displacement_field_zero(ignore_rotation):
     """Inverting a zero field gives back zero (within numerical noise) and
-    preserves the 3-channel last axis."""
+    preserves the 3-channel last axis. Covers both the physical-space and the
+    ignore_rotation (voxel-grid frame) inversion paths."""
     field = _zero_3vec_field()
-    inverted = invert_displacement_field(field)
+    inverted = invert_displacement_field(field, ignore_rotation=ignore_rotation)
     assert inverted.shape == field.shape
     assert_allclose(inverted.get_fdata(), 0.0, atol=1e-5)
 
 
-def test_invert_displacement_maps_zero():
+@pytest.mark.parametrize("ignore_rotation", [False, True])
+def test_invert_displacement_maps_zero(ignore_rotation):
     affine = np.diag([2.0, 2.0, 2.0, 1.0])
     dmap = nib.Nifti1Image(np.zeros((6, 6, 6, 2), dtype=np.float32), affine)
-    inverted = invert_displacement_maps(dmap, axis="y")
+    inverted = invert_displacement_maps(dmap, axis="y", ignore_rotation=ignore_rotation)
     assert inverted.shape == dmap.shape
     assert_allclose(inverted.get_fdata(), 0.0, atol=1e-5)
 

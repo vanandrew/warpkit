@@ -126,12 +126,14 @@ def medic(
 
     # invert displacement maps (these are in undistorted space)
     displacement_maps = invert_displacement_maps(
-        inv_displacement_maps, phase_encoding_direction
+        inv_displacement_maps, phase_encoding_direction, ignore_rotation=True
     )
 
-    # convert correction maps back to undistorted space field map
+    # convert correction maps back to undistorted space field map. No
+    # flip_sign here: the correlation check below sets the sign relative to
+    # the native field map, which makes an up-front flip redundant.
     field_maps = displacement_maps_to_field_maps(
-        displacement_maps, total_readout_time, phase_encoding_direction, flip_sign=True
+        displacement_maps, total_readout_time, phase_encoding_direction
     )
 
     # check if we need to flip sign of field maps (this is done by comparing sign of correlation between
