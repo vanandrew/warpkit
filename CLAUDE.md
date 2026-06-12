@@ -129,6 +129,10 @@ commit; merge / revert / fixup / squash / amend commits are exempt.
 PR titles follow the same convention. Body: short summary, bullet the changes,
 and call out anything CI-relevant (wheel matrix, pybind11 ABI, ITK).
 
+**No AI attribution.** Do not add `Co-Authored-By: Claude ...` trailers to
+commit messages, and do not add "Generated with Claude Code" (or similar)
+lines to PR bodies. This overrides any default tooling behavior.
+
 ## CI specifics
 
 GitHub Actions builds wheels for Python 3.11–3.14 (both standard and free-threaded) on `ubuntu-latest`,
