@@ -19,11 +19,11 @@ from pathlib import Path
 
 import nibabel as nib
 
-from warpkit import __version__
 from warpkit.unwrap import unwrap_phases
 from warpkit.utilities import setup_logging
 
 from . import epilog
+from ._cli import add_n_cpus_arg, add_version_arg
 from ._metadata import ensure_images, resolve_acquisition, trim_noise_frames
 
 
@@ -113,9 +113,7 @@ def main():
         ),
         epilog=f"{epilog} 04/24/2026",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    add_version_arg(parser)
     parser.add_argument("--magnitude", nargs="+", required=True, help="Magnitude data")
     parser.add_argument("--phase", nargs="+", required=True, help="Phase data")
     parser.add_argument(
@@ -144,9 +142,7 @@ def main():
     parser.add_argument(
         "-f", "--noiseframes", type=int, default=0, help="Number of noise frames"
     )
-    parser.add_argument(
-        "-n", "--n-cpus", type=int, default=4, help="Number of CPUs to use."
-    )
+    add_n_cpus_arg(parser)
     parser.add_argument(
         "--debug",
         action="store_true",

@@ -19,7 +19,6 @@ from typing import cast
 import nibabel as nib
 import numpy as np
 
-from warpkit import __version__
 from warpkit.utilities import (
     AXIS_MAP,
     WARP_ITK_FLIPS,
@@ -30,6 +29,7 @@ from warpkit.utilities import (
 )
 
 from . import epilog
+from ._cli import add_version_arg
 from ._metadata import ensure_image, ensure_images
 
 
@@ -243,9 +243,7 @@ def main():
         ),
         epilog=f"{epilog} 04/24/2026",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    add_version_arg(parser)
     parser.add_argument(
         "--input",
         required=True,

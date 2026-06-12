@@ -12,35 +12,23 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-from dataclasses import dataclass
 from os import PathLike
-from pathlib import Path
 
 import nibabel as nib
-import numpy as np
 
-from warpkit import __version__
 from warpkit.unwrap import compute_field_maps
 from warpkit.utilities import (
-    displacement_maps_to_field_maps,
-    field_maps_to_displacement_maps,
-    invert_displacement_maps,
+    reconstruct_displacement_and_field_maps,
     setup_logging,
 )
 
 from . import epilog
+from ._cli import add_n_cpus_arg, add_trt_pe_args, add_version_arg
 from ._metadata import ensure_image, ensure_images, resolve_acquisition
+from ._outputs import MedicResult, write_medic_outputs
 
-PE_DIRECTIONS = ("i", "j", "k", "i-", "j-", "k-", "x", "y", "z", "x-", "y-", "z-")
-
-
-@dataclass(frozen=True, slots=True)
-class ComputeFieldmapResult:
-    """Same three-tuple as :class:`MedicResult`."""
-
-    fieldmap_native: Path
-    displacement_map: Path
-    fieldmap: Path
+# wk-compute-fieldmap writes and returns the same three NIfTIs as wk-medic.
+ComputeFieldmapResult = MedicResult
 
 
 def compute_fieldmap(
@@ -102,34 +90,10 @@ def compute_fieldmap(
 
     # Convert native-space field maps to displacement maps in distorted space,
     # invert to get distorted -> undistorted, then re-derive an undistorted-
-    # space field map. Mirrors warpkit.distortion.medic.
-    inv_displacement_maps = field_maps_to_displacement_maps(fmaps_native, trt, ped)
-    dmaps = invert_displacement_maps(inv_displacement_maps, ped)
-    fmaps = displacement_maps_to_field_maps(dmaps, trt, ped, flip_sign=True)
+    # space field map. Shared with warpkit.distortion.medic.
+    dmaps, fmaps = reconstruct_displacement_and_field_maps(fmaps_native, trt, ped)
 
-    if (
-        np.corrcoef(
-            fmaps.dataobj[..., 0].ravel(),
-            fmaps_native.dataobj[..., 0].ravel(),
-        )[0, 1]
-        < 0
-    ):
-        fmaps = nib.Nifti1Image(fmaps.get_fdata() * -1, fmaps.affine, fmaps.header)
-
-    out_prefix_str = str(out_prefix)
-    print("Saving field maps and displacement maps to file...")
-    fmap_native_path = Path(f"{out_prefix_str}_fieldmaps_native.nii").resolve()
-    dmap_path = Path(f"{out_prefix_str}_displacementmaps.nii").resolve()
-    fmap_path = Path(f"{out_prefix_str}_fieldmaps.nii").resolve()
-    fmaps_native.to_filename(str(fmap_native_path))
-    dmaps.to_filename(str(dmap_path))
-    fmaps.to_filename(str(fmap_path))
-    print("Done.")
-    return ComputeFieldmapResult(
-        fieldmap_native=fmap_native_path,
-        displacement_map=dmap_path,
-        fieldmap=fmap_path,
-    )
+    return write_medic_outputs(out_prefix, fmaps_native, dmaps, fmaps)
 
 
 def main():
@@ -144,9 +108,7 @@ def main():
         ),
         epilog=f"{epilog} 04/24/2026",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    add_version_arg(parser)
     parser.add_argument(
         "--magnitude",
         nargs="+",
@@ -184,20 +146,7 @@ def main():
             "--unwrapped order). Required unless --metadata is given."
         ),
     )
-    parser.add_argument(
-        "--total-readout-time",
-        type=float,
-        help="Total readout time in seconds. Required unless --metadata is given.",
-    )
-    parser.add_argument(
-        "--phase-encoding-direction",
-        choices=PE_DIRECTIONS,
-        metavar="DIR",
-        help=(
-            f"Phase encoding direction (one of: {', '.join(PE_DIRECTIONS)}). "
-            "Required unless --metadata is given."
-        ),
-    )
+    add_trt_pe_args(parser)
     parser.add_argument(
         "--out-prefix",
         required=True,
@@ -217,9 +166,7 @@ def main():
         default=10,
         help="SVD components for global denoising (default: 10).",
     )
-    parser.add_argument(
-        "-n", "--n-cpus", type=int, default=4, help="Number of CPUs to use."
-    )
+    add_n_cpus_arg(parser)
 
     args = parser.parse_args()
     setup_logging()

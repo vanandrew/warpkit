@@ -20,7 +20,6 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from warpkit import __version__
 from warpkit.utilities import (
     AXIS_MAP,
     WARP_ITK_FLIPS,
@@ -35,6 +34,7 @@ from warpkit.utilities import (
 )
 
 from . import epilog
+from ._cli import add_version_arg
 from ._warp_io import read_input_frames, write_output
 
 
@@ -227,9 +227,7 @@ def main():
         ),
         epilog=f"{epilog} 04/25/2026",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    add_version_arg(parser)
     parser.add_argument(
         "--input",
         nargs="+",

@@ -18,29 +18,17 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
-from dataclasses import dataclass
 from os import PathLike
-from pathlib import Path
 
 import nibabel as nib
 
-from warpkit import __version__
 from warpkit.distortion import medic as _medic_distortion
 from warpkit.utilities import setup_logging
 
 from . import epilog
+from ._cli import add_n_cpus_arg, add_trt_pe_args, add_version_arg
 from ._metadata import ensure_images, resolve_acquisition, trim_noise_frames
-
-PE_DIRECTIONS = ("i", "j", "k", "i-", "j-", "k-", "x", "y", "z", "x-", "y-", "z-")
-
-
-@dataclass(frozen=True, slots=True)
-class MedicResult:
-    """Absolute paths of the three NIfTIs written by :func:`medic`."""
-
-    fieldmap_native: Path
-    displacement_map: Path
-    fieldmap: Path
+from ._outputs import MedicResult, write_medic_outputs
 
 
 def medic(
@@ -126,29 +114,14 @@ def medic(
             wrap_limit=wrap_limit,
         )
 
-    out_prefix_str = str(out_prefix)
-    print("Saving field maps and displacement maps to file...")
-    fmap_native_path = Path(f"{out_prefix_str}_fieldmaps_native.nii").resolve()
-    dmap_path = Path(f"{out_prefix_str}_displacementmaps.nii").resolve()
-    fmap_path = Path(f"{out_prefix_str}_fieldmaps.nii").resolve()
-    fmaps_native.to_filename(str(fmap_native_path))
-    dmaps.to_filename(str(dmap_path))
-    fmaps.to_filename(str(fmap_path))
-    print("Done.")
-    return MedicResult(
-        fieldmap_native=fmap_native_path,
-        displacement_map=dmap_path,
-        fieldmap=fmap_path,
-    )
+    return write_medic_outputs(out_prefix, fmaps_native, dmaps, fmaps)
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Multi-Echo DIstortion Correction", epilog=f"{epilog}"
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    add_version_arg(parser)
     parser.add_argument("--magnitude", nargs="+", required=True, help="Magnitude data")
     parser.add_argument("--phase", nargs="+", required=True, help="Phase data")
     parser.add_argument(
@@ -171,20 +144,7 @@ def main():
             "Required unless --metadata is given."
         ),
     )
-    parser.add_argument(
-        "--total-readout-time",
-        type=float,
-        help="Total readout time in seconds. Required unless --metadata is given.",
-    )
-    parser.add_argument(
-        "--phase-encoding-direction",
-        choices=PE_DIRECTIONS,
-        metavar="DIR",
-        help=(
-            f"Phase encoding direction (one of: {', '.join(PE_DIRECTIONS)}). "
-            "Required unless --metadata is given."
-        ),
-    )
+    add_trt_pe_args(parser)
     parser.add_argument(
         "--out-prefix",
         required=True,
@@ -193,9 +153,7 @@ def main():
     parser.add_argument(
         "-f", "--noiseframes", type=int, default=0, help="Number of noise frames"
     )
-    parser.add_argument(
-        "-n", "--n-cpus", type=int, default=4, help="Number of CPUs to use."
-    )
+    add_n_cpus_arg(parser)
     parser.add_argument("--debug", action="store_true", help="Debug mode")
     parser.add_argument(
         "--wrap-limit",
