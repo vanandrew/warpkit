@@ -4,11 +4,7 @@ import nibabel as nib
 import numpy as np
 
 from warpkit.unwrap import unwrap_and_compute_field_maps
-from warpkit.utilities import (
-    displacement_maps_to_field_maps,
-    field_maps_to_displacement_maps,
-    invert_displacement_maps,
-)
+from warpkit.utilities import reconstruct_displacement_and_field_maps
 
 
 def medic(
@@ -119,36 +115,10 @@ def medic(
             ":("
         ) from e
 
-    # convert to displacement maps (these are in distorted space)
-    inv_displacement_maps = field_maps_to_displacement_maps(
+    # reconstruct displacement maps and undistorted-space field maps
+    displacement_maps, field_maps = reconstruct_displacement_and_field_maps(
         field_maps_native, total_readout_time, phase_encoding_direction
     )
-
-    # invert displacement maps (these are in undistorted space)
-    displacement_maps = invert_displacement_maps(
-        inv_displacement_maps, phase_encoding_direction, ignore_rotation=True
-    )
-
-    # convert correction maps back to undistorted space field map. No
-    # flip_sign here: the correlation check below sets the sign relative to
-    # the native field map, which makes an up-front flip redundant.
-    field_maps = displacement_maps_to_field_maps(
-        displacement_maps, total_readout_time, phase_encoding_direction
-    )
-
-    # check if we need to flip sign of field maps (this is done by comparing sign of correlation between
-    # native and undistorted field maps)
-    if (
-        np.corrcoef(
-            field_maps.dataobj[..., 0].ravel(),
-            field_maps_native.dataobj[..., 0].ravel(),
-        )[0, 1]
-        < 0
-    ):
-        field_map_data = field_maps.get_fdata() * -1
-        field_maps = nib.Nifti1Image(
-            field_map_data, field_maps.affine, field_maps.header
-        )
 
     # return correction maps
     return field_maps_native, displacement_maps, field_maps

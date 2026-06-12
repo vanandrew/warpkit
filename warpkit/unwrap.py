@@ -820,10 +820,12 @@ def unwrap_phases(
         # store in the captured unwrapped and new_mask_data arrays
         unwrapped[..., idx], new_masks[..., idx] = result
 
-    # unwrap the phase of each frame
+    # unwrap the phase of each frame. romeo_unwrap* releases the GIL around the
+    # C++ kernel, so threads parallelize it as well as processes while avoiding
+    # per-frame array pickling and per-worker memory copies.
     run_executor(
         ncpus=n_cpus,
-        type="process",
+        type="thread",
         fn=unwrap_phase,
         iterator=phase_iterator(
             phase, mag, tes, mask, frames, automask, automask_dilation

@@ -153,8 +153,13 @@ py::array_t<T, py::array::f_style> romeo_unwrap3D(py::array_t<T, py::array::f_st
     opts.correct_global = correctglobal;
     opts.maxseeds = maxseeds;
     opts.wrap_addition = T(0);
-    // Standalone 3D unwrap: no phase2/TEs.
-    unwrap_3d<T>(out_ptr, nx, ny, nz, opts);
+    // Standalone 3D unwrap: no phase2/TEs. The kernel touches only raw buffers
+    // (out_ptr and the pointers in opts), so release the GIL around it to let
+    // thread-pool callers unwrap frames concurrently.
+    {
+        py::gil_scoped_release release;
+        unwrap_3d<T>(out_ptr, nx, ny, nz, opts);
+    }
     return out;
 }
 
@@ -209,8 +214,15 @@ py::array_t<T, py::array::f_style> romeo_unwrap4D(py::array_t<T, py::array::f_st
     for (std::size_t i = 0; i < n_total; ++i) out_ptr[i] = phase_ptr[i];
 
     // Julia's default template echo is 1 (first echo). In 0-based: 0.
-    unwrap_4d<T>(out_ptr, nx, ny, nz, ne, TEs.data(), mag_ptr, mask_ptr, correctglobal, maxseeds,
-                 /*template_echo=*/0);
+    // Hoist the TEs pointer before releasing the GIL (.data() must run with the
+    // GIL held); the kernel then works purely on raw buffers, so release the
+    // GIL around it for concurrent thread-pool unwrapping.
+    const T* tes_ptr = TEs.data();
+    {
+        py::gil_scoped_release release;
+        unwrap_4d<T>(out_ptr, nx, ny, nz, ne, tes_ptr, mag_ptr, mask_ptr, correctglobal, maxseeds,
+                     /*template_echo=*/0);
+    }
     return out;
 }
 

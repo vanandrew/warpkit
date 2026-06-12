@@ -19,17 +19,12 @@
 
 namespace py = pybind11;
 
-// PyErr_CheckSignals() needs the GIL; free-threaded builds (Py_GIL_DISABLED)
-// declare `py::mod_gil_not_used()` and skip the check, trading Ctrl+C
-// interruptibility during long ITK operations for no-GIL execution.
-#ifdef Py_GIL_DISABLED
+// Signal checking is intentionally a no-op on all builds. PyErr_CheckSignals()
+// requires holding the GIL, which would block releasing it around the compute
+// kernels (see py::gil_scoped_release in the bindings). We trade in-call Ctrl+C
+// interruptibility for GIL-free execution; SIGINT is still handled between the
+// per-frame C++ calls dispatched from Python.
 #define WARPKIT_CHECK_SIGNALS() ((void)0)
-#else
-#define WARPKIT_CHECK_SIGNALS()                                  \
-    do {                                                         \
-        if (PyErr_CheckSignals() != 0) throw py::error_already_set(); \
-    } while (0)
-#endif
 
 /**
  * @brief Invert a displacement map

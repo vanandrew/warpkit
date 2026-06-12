@@ -44,6 +44,10 @@ AXIS_MAP = {
     "k-": 2,
 }
 
+# accepted phase-encoding direction strings (the keys of AXIS_MAP), shared by
+# the field-map conversions and the CLI ``choices=`` lists.
+PE_DIRECTIONS = tuple(AXIS_MAP)
+
 
 # warp_itk_flips
 WARP_ITK_FLIPS = {
@@ -242,6 +246,23 @@ def create_brain_mask(
     return mask_data.astype(np.bool_)
 
 
+def _signed_pe_voxel_size(img: nib.Nifti1Image, phase_encoding_direction: str) -> float:
+    """Voxel size (mm) along the phase-encoding axis, signed for the EPI
+    displacement <-> field-map conversions.
+
+    The sign carries two conventions: a trailing ``-`` in the phase-encoding
+    direction flips the displacement direction, and the x/y axes are flipped
+    for the ITK (LPS) frame relative to NIfTI RAS.
+    """
+    axis_code = AXIS_MAP[phase_encoding_direction]
+    voxel_size = img.header.get_zooms()[axis_code]  # type: ignore
+    if "-" in phase_encoding_direction:
+        voxel_size *= -1
+    if axis_code == 0 or axis_code == 1:
+        voxel_size *= -1
+    return voxel_size
+
+
 def field_maps_to_displacement_maps(
     field_maps: nib.Nifti1Image,
     total_readout_time: float,
@@ -263,20 +284,7 @@ def field_maps_to_displacement_maps(
     nib.Nifti1Image
         Displacment maps in mm
     """
-    # get number of phase encoding lines
-    axis_code = AXIS_MAP[phase_encoding_direction]
-
-    # get voxel size
-    voxel_size = field_maps.header.get_zooms()[axis_code]  # type: ignore
-
-    # if there is a negative sign in the phase encoding direction
-    # we need to flip the direction of the displacment map
-    if "-" in phase_encoding_direction:
-        voxel_size *= -1
-
-    # for itk form, we need to flip x/y axis
-    if axis_code == 0 or axis_code == 1:
-        voxel_size *= -1
+    voxel_size = _signed_pe_voxel_size(field_maps, phase_encoding_direction)
 
     # convert field maps to displacement maps
     data = field_maps.get_fdata()
@@ -311,20 +319,7 @@ def displacement_maps_to_field_maps(
     nib.Nifti1Image
         Field maps in Hz
     """
-    # get number of phase encoding lines
-    axis_code = AXIS_MAP[phase_encoding_direction]
-
-    # get voxel size
-    voxel_size = displacement_maps.header.get_zooms()[axis_code]  # type: ignore
-
-    # if there is a negative sign in the phase encoding direction
-    # we need to flip the direction of the displacment map
-    if "-" in phase_encoding_direction:
-        voxel_size *= -1
-
-    # for itk form, we need to flip x/y axis
-    if axis_code == 0 or axis_code == 1:
-        voxel_size *= -1
+    voxel_size = _signed_pe_voxel_size(displacement_maps, phase_encoding_direction)
 
     # convert displacement maps to field maps
     data = displacement_maps.get_fdata()
@@ -333,6 +328,81 @@ def displacement_maps_to_field_maps(
         new_data *= -1
 
     return nib.Nifti1Image(new_data, displacement_maps.affine, displacement_maps.header)
+
+
+def reconstruct_displacement_and_field_maps(
+    field_maps_native: nib.Nifti1Image,
+    total_readout_time: float,
+    phase_encoding_direction: str,
+) -> tuple[nib.Nifti1Image, nib.Nifti1Image]:
+    """Reconstruct correction maps from a native-space field map.
+
+    Converts native-space field maps (Hz) to displacement maps in distorted
+    space, inverts them to get distorted -> undistorted correction maps, and
+    re-derives an undistorted-space field map. This is the shared reconstruction
+    tail used by both :func:`warpkit.distortion.medic` and
+    :func:`warpkit.scripts.compute_fieldmap.compute_fieldmap`.
+
+    Parameters
+    ----------
+    field_maps_native : nib.Nifti1Image
+        Field maps in Hz (distorted/native space).
+    total_readout_time : float
+        Total readout time (in seconds).
+    phase_encoding_direction : str
+        Phase encoding direction.
+
+    Returns
+    -------
+    nib.Nifti1Image
+        Displacement maps (distorted -> undistorted) in mm.
+    nib.Nifti1Image
+        Field maps in Hz (undistorted space).
+    """
+    # Require a 4D (x, y, z, frame) series: invert_displacement_maps() iterates
+    # over the trailing axis as frames, so a 3D input would be silently treated
+    # as a stack of 2D slices and fed to the C++ inverter as such.
+    if field_maps_native.ndim != 4:
+        raise ValueError(
+            "field_maps_native must be 4D (x, y, z, frames); got "
+            f"{field_maps_native.ndim}D with shape {field_maps_native.shape}."
+        )
+
+    # convert to displacement maps (these are in distorted space)
+    inv_displacement_maps = field_maps_to_displacement_maps(
+        field_maps_native, total_readout_time, phase_encoding_direction
+    )
+
+    # invert displacement maps (these are in undistorted space). The maps are
+    # composed along the phase-encode voxel axis, so invert in the voxel grid
+    # frame (ignore_rotation=True) rather than the affine's physical frame —
+    # otherwise oblique acquisitions pick up an obliquity-dependent error.
+    displacement_maps = invert_displacement_maps(
+        inv_displacement_maps, phase_encoding_direction, ignore_rotation=True
+    )
+
+    # convert correction maps back to undistorted-space field map. No flip_sign
+    # here: the correlation check below sets the sign relative to the native
+    # field map, which makes an up-front flip redundant.
+    field_maps = displacement_maps_to_field_maps(
+        displacement_maps, total_readout_time, phase_encoding_direction
+    )
+
+    # flip sign of the field maps if needed, determined by the sign of the
+    # correlation between the native and undistorted field maps.
+    if (
+        np.corrcoef(
+            field_maps.dataobj[..., 0].ravel(),
+            field_maps_native.dataobj[..., 0].ravel(),
+        )[0, 1]
+        < 0
+    ):
+        field_map_data = field_maps.get_fdata() * -1
+        field_maps = nib.Nifti1Image(
+            field_map_data, field_maps.affine, field_maps.header
+        )
+
+    return displacement_maps, field_maps
 
 
 def displacement_map_to_field(
