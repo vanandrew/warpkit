@@ -493,7 +493,10 @@ def get_ras_orient_transform(
 
 
 def invert_displacement_maps(
-    displacement_maps: nib.Nifti1Image, axis: str = "y", verbose: bool = False
+    displacement_maps: nib.Nifti1Image,
+    axis: str = "y",
+    verbose: bool = False,
+    ignore_rotation: bool = False,
 ) -> nib.Nifti1Image:
     """Invert displacement maps
 
@@ -505,6 +508,13 @@ def invert_displacement_maps(
         Axis displacement maps are along, by default "y"
     verbose : bool, optional
         Print debugging information, by default False
+    ignore_rotation : bool, optional
+        Invert in data (voxel) space rather than physical space by passing an
+        identity rotation to the inverter instead of the affine's rotation, by
+        default False. The displacement map is composed along a voxel axis, so
+        for oblique acquisitions the affine's rotation makes ITK invert in a
+        physical frame that does not align with that axis; setting this keeps
+        the inversion in the grid frame the map is actually defined in.
 
     Returns
     -------
@@ -526,6 +536,11 @@ def invert_displacement_maps(
 
     # split affine into components
     translations, rotations, zooms, _ = decompose44(displacement_maps_ras.affine)
+
+    # invert in data space: drop the affine's rotation so ITK inverts in the
+    # voxel grid frame the map is composed along, not the physical orientation
+    if ignore_rotation:
+        rotations = np.eye(3)
 
     # invert maps
     new_data = np.zeros(data.shape, dtype=np.float32)
@@ -554,7 +569,9 @@ def invert_displacement_maps(
 
 
 def invert_displacement_field(
-    displacement_field: nib.Nifti1Image, verbose: bool = False
+    displacement_field: nib.Nifti1Image,
+    verbose: bool = False,
+    ignore_rotation: bool = False,
 ) -> nib.Nifti1Image:
     """Invert displacement field
 
@@ -564,6 +581,10 @@ def invert_displacement_field(
         Displacement field data in mm
     verbose : bool, optional
         Print debugging information, by default False
+    ignore_rotation : bool, optional
+        Invert in data (voxel) space rather than physical space by passing an
+        identity rotation to the inverter instead of the affine's rotation, by
+        default False. See :func:`invert_displacement_maps` for details.
 
     Returns
     -------
@@ -582,6 +603,11 @@ def invert_displacement_field(
 
     # split affine into components
     translations, rotations, zooms, _ = decompose44(displacement_field_ras.affine)
+
+    # invert in data space: drop the affine's rotation so ITK inverts in the
+    # voxel grid frame rather than the physical orientation
+    if ignore_rotation:
+        rotations = np.eye(3)
 
     # Pad spatial dims only — leaving the 3-channel axis at size 3 — so we
     # can avoid edge effects of the inverse without inflating the channel
