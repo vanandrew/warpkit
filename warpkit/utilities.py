@@ -359,6 +359,15 @@ def reconstruct_displacement_and_field_maps(
     nib.Nifti1Image
         Field maps in Hz (undistorted space).
     """
+    # Require a 4D (x, y, z, frame) series: invert_displacement_maps() iterates
+    # over the trailing axis as frames, so a 3D input would be silently treated
+    # as a stack of 2D slices and fed to the C++ inverter as such.
+    if field_maps_native.ndim != 4:
+        raise ValueError(
+            "field_maps_native must be 4D (x, y, z, frames); got "
+            f"{field_maps_native.ndim}D with shape {field_maps_native.shape}."
+        )
+
     # convert to displacement maps (these are in distorted space)
     inv_displacement_maps = field_maps_to_displacement_maps(
         field_maps_native, total_readout_time, phase_encoding_direction

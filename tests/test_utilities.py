@@ -23,6 +23,7 @@ from warpkit.utilities import (
     invert_displacement_field,
     invert_displacement_maps,
     normalize,
+    reconstruct_displacement_and_field_maps,
     rescale_phase,
     setup_logging,
 )
@@ -424,6 +425,15 @@ def test_field_maps_to_displacement_maps_known_value(pe_dir, expected_sign):
     dmap = field_maps_to_displacement_maps(fmap, trt, pe_dir)
     expected = fmap_value * trt * voxel * expected_sign
     assert_allclose(dmap.get_fdata(), expected, atol=1e-5)
+
+
+def test_reconstruct_displacement_and_field_maps_rejects_3d():
+    """The reconstruction tail iterates the trailing axis as frames, so a 3D
+    field map must be rejected up front rather than silently treated as a
+    stack of 2D slices."""
+    fmap_3d = nib.Nifti1Image(np.zeros((4, 4, 4), dtype=np.float32), np.eye(4))
+    with pytest.raises(ValueError, match="must be 4D"):
+        reconstruct_displacement_and_field_maps(fmap_3d, 0.05, "j")
 
 
 @pytest.mark.parametrize("axis", ["i", "j", "k"])
