@@ -6,7 +6,7 @@
 
 A Python library for neuroimaging transforms, focused on the Multi-Echo DIstortion Correction (MEDIC) algorithm. The paper is published in *Imaging Neuroscience* at <https://doi.org/10.1162/IMAG.a.1262>.
 
-The phase-unwrapping core is a self-contained C++17 port of [ROMEO](https://github.com/korbinian90/ROMEO) — there is no Julia runtime to install, and binary wheels ship with the ITK pieces statically linked. If you used an older release of warpkit that required `julia` on `PATH`, that step is gone.
+The phase-unwrapping core is a self-contained C++17 port of [ROMEO](https://github.com/korbinian90/ROMEO).
 
 ## Installation
 
