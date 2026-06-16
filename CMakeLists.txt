@@ -1,5 +1,8 @@
-# 3.28 floor: FetchContent_Declare(EXCLUDE_FROM_ALL) — keeps the
-# subprojects' targets and install rules out of the build unless linked.
+# 3.28 floor: FetchContent_Declare() gained the EXCLUDE_FROM_ALL keyword in
+# 3.28, which keeps the subprojects' targets out of the default ("all") build
+# unless something links them. Their install rules are still generated; those
+# get skipped via the component-scoped install (see install.components in
+# pyproject.toml and the COMPONENT tag on our install() below).
 cmake_minimum_required(VERSION 3.28)
 
 project(warpkit_cpp LANGUAGES CXX)
@@ -86,6 +89,9 @@ if(TARGET warpkit_eigen)
 endif()
 
 # Arch baseline for our extension only (ITK targets keep their own flags).
+# Optimization level is left to CMake's per-config flags (scikit-build-core
+# configures Release by default, i.e. -O3 -DNDEBUG); we don't hardcode -O3, so
+# Debug/RelWithDebInfo builds keep their intended flags.
 # x86_64 targets the v2 microarch level (Nehalem 2008 — SSE3/SSE4.1/SSE4.2/
 # popcnt). v2 features are universal in anything that can install a current
 # Linux distro, and it matches the "above baseline" stance taken on aarch64.
@@ -108,7 +114,7 @@ target_include_directories(warpkit_cpp PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/itk
 )
-target_compile_options(warpkit_cpp PRIVATE -Wall -O3 ${_warpkit_arch_flags})
+target_compile_options(warpkit_cpp PRIVATE -Wall ${_warpkit_arch_flags})
 target_link_libraries(warpkit_cpp PRIVATE
     ITK::ITKCommonModule
     ITK::ITKImageComposeModule
