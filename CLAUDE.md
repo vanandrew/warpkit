@@ -5,7 +5,7 @@ Guidance for Claude when working in this repo.
 ## What warpkit is
 
 A Python library for neuroimaging transforms, focused on MEDIC (Multi-Echo
-DIstortion Correction). Phase unwrapping uses a self-contained C++17 port of
+DIstortion Correction). Phase unwrapping uses a self-contained C++20 port of
 [ROMEO](https://github.com/korbinian90/ROMEO) under `include/romeo/` —
 **no Julia runtime is involved**; do not reintroduce one (no `julia.py`, no
 conda recipe, no `FindJulia.cmake`).
@@ -34,19 +34,27 @@ Paper (Imaging Neuroscience): <https://doi.org/10.1162/IMAG.a.1262>.
   scripts/regen-stub.sh
   ```
 - `src/warpkit.cpp` — pybind11 bindings. C++ headers (and the vendored ROMEO
-  port) live under `include/`. CMake fetches and statically links ITK 5.4 and
-  pybind11 3.0 — first build is slow (~1m+), subsequent rebuilds are quick.
+  port) live under `include/`. CMake fetches and statically links ITK 6.0
+  (currently `v6.0b02`) and pybind11 3.0 — first build is slow (~1m+),
+  subsequent rebuilds are quick. The extension TU is built at C++20
+  (`target_compile_features(... cxx_std_20)` in `CMakeLists.txt`); the ROMEO
+  port leans on `std::numbers`, `std::floating_point` constraints, designated
+  initializers, and `std::midpoint`.
 - The build backend is **scikit-build-core** (configured in
   `[tool.scikit-build]` in `pyproject.toml`). There is no `setup.py`. The
   CMake build directory is persisted at `build/{wheel_tag}/` so ITK
   FetchContent + object files survive across `uv sync` invocations.
-- We provide Eigen3 to ITK ourselves via `FetchContent` + `OVERRIDE_FIND_PACKAGE`
-  + `ITK_USE_SYSTEM_EIGEN=ON` (see `CMakeLists.txt`). Without this, ITK runs
-  a nested `execute_process(COMMAND ${CMAKE_COMMAND} ...)` for its bundled
-  `ITKInternalEigen3`, whose inner `CMakeCache.txt` would cache the build
-  env's ninja path; once uv tears that env down between syncs, the inner
-  cache dangles and breaks incremental rebuilds. Routing ITK through
-  `find_package(Eigen3)` skips the nested configure entirely.
+- We vendor Eigen3 ourselves (`ITK_USE_SYSTEM_EIGEN=ON` + `OVERRIDE_FIND_PACKAGE`
+  in `CMakeLists.txt`) so ITK doesn't build its bundled `ITKInternalEigen3`.
+  Keep this: ITK's internal-Eigen path runs a nested CMake configure that caches
+  uv's per-build ninja path, which goes stale when uv deletes that env, breaking
+  `uv sync --reinstall-package warpkit`. ITK's Eigen3 module needs an actual
+  `Eigen3::Eigen` target and `OVERRIDE_FIND_PACKAGE`'s stub provides none, so we
+  fetch Eigen source and define `Eigen3::Eigen` ourselves as an INTERFACE library
+  over the headers (Eigen is header-only). Because `ITKEigen3Module` links that
+  target and is in ITK's `ITKTargets` export set, we also register our target
+  with `ITKTargets` to satisfy CMake's export validator. The tag is the Eigen
+  snapshot ITK 6.0b02 bundles (`for/itk-20250707-master-6854da2e`, 3.4.90).
 - `tests/` — pytest tests. `conftest.py` loads MEDIC sample data from
   `tests/data/test_data/`. ROMEO port-validation goldens in `tests/data/romeo/`.
 
