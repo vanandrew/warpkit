@@ -64,7 +64,7 @@ endif()
 message(STATUS "warpkit arch flags for ${CMAKE_SYSTEM_PROCESSOR}: ${_warpkit_arch_flags}")
 
 pybind11_add_module(warpkit_cpp MODULE src/warpkit.cpp)
-target_compile_features(warpkit_cpp PRIVATE cxx_std_17)
+target_compile_features(warpkit_cpp PRIVATE cxx_std_20)
 target_include_directories(warpkit_cpp PRIVATE
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/include/itk

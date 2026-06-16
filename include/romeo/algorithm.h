@@ -3,8 +3,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <utility>
 #include <vector>
 
@@ -33,9 +35,9 @@ inline std::ptrdiff_t edge_index(std::ptrdiff_t vox, int dim) {
 // Voxel-to-voxel unwrap via 2π snapping. Ports `unwrapvoxel` / `unwrapedge!`.
 // ----------------------------------------------------------------------------
 
-template <typename T>
+template <std::floating_point T>
 inline T unwrap_voxel(T new_v, T old_v) {
-    constexpr T two_pi = static_cast<T>(2.0L * 3.141592653589793238462643383279502884L);
+    constexpr T two_pi = T(2) * std::numbers::pi_v<T>;
     return new_v - two_pi * std::round((new_v - old_v) / two_pi);
 }
 
@@ -43,7 +45,7 @@ inline T unwrap_voxel(T new_v, T old_v) {
 // `oldvox` (call it `oo = 2*oldvox - newvox`) is already visited, use the
 // oldvox→oo phase step as an extra bias (clipped to ±wrap_addition) when
 // predicting newvox's phase. Mirrors ROMEO.jl src/algorithm.jl.
-template <typename T>
+template <std::floating_point T>
 inline void unwrap_edge(T* wrapped, std::ptrdiff_t oldvox, std::ptrdiff_t newvox, const std::uint8_t* visited,
                         std::ptrdiff_t n, T wrap_addition) {
     const std::ptrdiff_t oo = 2 * oldvox - newvox;
@@ -67,7 +69,7 @@ inline void unwrap_edge(T* wrapped, std::ptrdiff_t oldvox, std::ptrdiff_t newvox
 // tail (warpkit never enables those).
 // ----------------------------------------------------------------------------
 
-template <typename T>
+template <std::floating_point T>
 struct GrowRegionContext {
     T* wrapped;
     std::size_t nx, ny, nz;
@@ -85,12 +87,12 @@ struct GrowRegionContext {
 
 namespace detail {
 
-template <typename T>
+template <std::floating_point T>
 inline bool in_bounds(const GrowRegionContext<T>& ctx, std::ptrdiff_t vox) {
     return vox >= 0 && vox < ctx.n;
 }
 
-template <typename T>
+template <std::floating_point T>
 inline bool not_visited(const GrowRegionContext<T>& ctx, std::ptrdiff_t vox) {
     return in_bounds(ctx, vox) && ctx.visited[vox] == 0;
 }
@@ -101,7 +103,7 @@ inline bool not_visited(const GrowRegionContext<T>& ctx, std::ptrdiff_t vox) {
 //
 // Julia uses 1..6 with `div(i+1,2)` for the dim and `iseven(i)` for direction.
 // In 0-based indexing here: dim = i/2, forward = (i & 1).
-template <typename T>
+template <std::floating_point T>
 inline std::ptrdiff_t get_new_edge(const GrowRegionContext<T>& ctx, std::ptrdiff_t vox, int i) {
     const int dim = i / 2;
     const std::ptrdiff_t step = ctx.strides[dim];
@@ -115,7 +117,7 @@ inline std::ptrdiff_t get_new_edge(const GrowRegionContext<T>& ctx, std::ptrdiff
 
 // Mirrors `getvoxelsfromedge(edge, visited, stridelist)` — returns
 // (oldvox, newvox), where oldvox is the already-visited endpoint.
-template <typename T>
+template <std::floating_point T>
 inline std::pair<std::ptrdiff_t, std::ptrdiff_t> get_voxels_from_edge(const GrowRegionContext<T>& ctx,
                                                                      std::ptrdiff_t edge) {
     const int dim = edge_dim(edge);
@@ -129,7 +131,7 @@ inline std::pair<std::ptrdiff_t, std::ptrdiff_t> get_voxels_from_edge(const Grow
 
 }  // namespace detail
 
-template <typename T>
+template <std::floating_point T>
 inline void grow_region_unwrap(GrowRegionContext<T>& ctx, int maxseeds) {
     if (maxseeds > 255) maxseeds = 255;  // Julia: stored in UInt8 → hard cap.
 
