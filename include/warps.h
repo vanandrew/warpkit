@@ -15,6 +15,7 @@
 #include <pybind11/pybind11.h>
 #include <utilities.h>
 
+#include <concepts>
 #include <iostream>
 
 namespace py = pybind11;
@@ -39,7 +40,7 @@ namespace py = pybind11;
  * @param verbose
  * @return py::array_t<T, py::array::f_style>
  */
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> invert_displacement_map(py::array_t<T, py::array::f_style> displacement_map,
                                                            py::array_t<T, py::array::f_style> origin,
                                                            py::array_t<T, py::array::f_style> direction,
@@ -171,7 +172,7 @@ py::array_t<T, py::array::f_style> invert_displacement_map(py::array_t<T, py::ar
  * @param verbose
  * @return py::array_t<T, py::array::f_style>
  */
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::array::f_style> displacement_field,
                                                              py::array_t<T, py::array::f_style> origin,
                                                              py::array_t<T, py::array::f_style> direction,
@@ -263,7 +264,7 @@ py::array_t<T, py::array::f_style> invert_displacement_field(py::array_t<T, py::
  * @param spacing
  * @return py::array_t<T, py::array::f_style>
  */
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> compute_jacobian_determinant(py::array_t<T, py::array::f_style> displacement_field,
                                                                 py::array_t<T, py::array::f_style> origin,
                                                                 py::array_t<T, py::array::f_style> direction,
@@ -358,7 +359,7 @@ py::array_t<T, py::array::f_style> compute_jacobian_determinant(py::array_t<T, p
  * @param transform_spacing
  * @return py::array_t<T, py::array::f_style>
  */
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> resample(
     py::array_t<T, py::array::f_style> input_image, py::array_t<T, py::array::f_style> input_origin,
     py::array_t<T, py::array::f_style> input_direction, py::array_t<T, py::array::f_style> input_spacing,
@@ -482,7 +483,7 @@ py::array_t<T, py::array::f_style> resample(
 }
 
 /* Compute the Hausdorff Distance between two images */
-template <typename T>
+template <std::floating_point T>
 T compute_hausdorff_distance(
     py::array_t<T, py::array::f_style> image1, py::array_t<T, py::array::f_style> image1_origin,
     py::array_t<T, py::array::f_style> image1_direction, py::array_t<T, py::array::f_style> image1_spacing,
