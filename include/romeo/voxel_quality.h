@@ -1,6 +1,7 @@
 #ifndef ROMEO_VOXEL_QUALITY_H
 #define ROMEO_VOXEL_QUALITY_H
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -27,7 +28,7 @@ namespace romeo {
 //
 // Raw weights come back in [0, 1] with NaNs already mapped to 0 by the
 // `raw` variant, so the qmap is finite by construction and lives in [0, 1].
-template <typename T>
+template <std::floating_point T>
 inline std::vector<T> voxel_quality(const T* phase4d, std::size_t nx, std::size_t ny, std::size_t nz, std::size_t ne,
                                     const T* TEs, const T* mag4d) {
     if (ne < 2) throw std::invalid_argument("voxel_quality: need at least 2 echoes");

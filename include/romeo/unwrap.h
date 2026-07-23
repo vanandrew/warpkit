@@ -3,8 +3,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
+#include <numeric>
 #include <stdexcept>
 #include <vector>
 
@@ -14,7 +17,7 @@
 
 namespace romeo {
 
-template <typename T>
+template <std::floating_point T>
 struct Unwrap3DOptions {
     const T* mag = nullptr;        // (nx, ny, nz) or null
     const bool* mask = nullptr;    // (nx, ny, nz) or null
@@ -35,7 +38,7 @@ namespace detail {
 // Julia Statistics.median: sort the sample; for even-length samples return the
 // mean of the two middle elements. Implemented with std::nth_element so the
 // full sort cost is amortized away on large volumes.
-template <typename T>
+template <std::floating_point T>
 inline T median_in_place(std::vector<T>& xs) {
     const std::size_t m = xs.size();
     const std::size_t mid = m / 2;
@@ -44,15 +47,15 @@ inline T median_in_place(std::vector<T>& xs) {
     if (m % 2 == 1) return upper;
     // For even sizes, the left partition's max is the other middle value.
     const T lower = *std::max_element(xs.begin(), xs.begin() + mid);
-    return (upper + lower) / T(2);
+    return std::midpoint(lower, upper);
 }
 
 // Subtract 2π * median(round(wrapped[mask ∧ finite] / 2π)) from every voxel.
 // Ports the `correctglobal` branch of unwrap! in
 // ROMEO.jl src/unwrapping.jl.
-template <typename T>
+template <std::floating_point T>
 inline void apply_correct_global(T* wrapped, std::size_t n, const bool* mask) {
-    constexpr T two_pi = static_cast<T>(2.0L * 3.141592653589793238462643383279502884L);
+    constexpr T two_pi = T(2) * std::numbers::pi_v<T>;
     std::vector<T> rounded;
     rounded.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
@@ -74,7 +77,7 @@ inline void apply_correct_global(T* wrapped, std::size_t n, const bool* mask) {
 // supported; warpkit never requests any other. `merge_regions` and
 // `correct_regions` are intentionally not implemented (warpkit always passes
 // false).
-template <typename T>
+template <std::floating_point T>
 inline void unwrap_3d(T* wrapped, std::size_t nx, std::size_t ny, std::size_t nz, const Unwrap3DOptions<T>& opts) {
     const std::size_t n = nx * ny * nz;
 
@@ -99,19 +102,19 @@ inline void unwrap_3d(T* wrapped, std::size_t nx, std::size_t ny, std::size_t nz
 
     // Grow the MST.
     std::vector<std::uint8_t> visited(n, 0);
-    GrowRegionContext<T> ctx{wrapped,
-                             nx,
-                             ny,
-                             nz,
-                             static_cast<std::ptrdiff_t>(n),
-                             {static_cast<std::ptrdiff_t>(1), static_cast<std::ptrdiff_t>(nx),
-                              static_cast<std::ptrdiff_t>(nx * ny)},
-                             weights.data(),
-                             visited.data(),
-                             opts.wrap_addition,
-                             opts.phase2,
-                             opts.te1,
-                             opts.te2};
+    GrowRegionContext<T> ctx{.wrapped = wrapped,
+                             .nx = nx,
+                             .ny = ny,
+                             .nz = nz,
+                             .n = static_cast<std::ptrdiff_t>(n),
+                             .strides = {static_cast<std::ptrdiff_t>(1), static_cast<std::ptrdiff_t>(nx),
+                                         static_cast<std::ptrdiff_t>(nx * ny)},
+                             .weights = weights.data(),
+                             .visited = visited.data(),
+                             .wrap_addition = opts.wrap_addition,
+                             .phase2 = opts.phase2,
+                             .te1 = opts.te1,
+                             .te2 = opts.te2};
     grow_region_unwrap(ctx, opts.maxseeds);
 
     // Optional global 2π shift.
@@ -137,7 +140,7 @@ inline void unwrap_3d(T* wrapped, std::size_t nx, std::size_t ny, std::size_t nz
 //
 //      Loop order mirrors Julia's `[(template-1):-1:1; (template+1):end]`:
 //      walk outward from template, first descending, then ascending.
-template <typename T>
+template <std::floating_point T>
 inline void unwrap_4d(T* wrapped, std::size_t nx, std::size_t ny, std::size_t nz, std::size_t ne, const T* TEs,
                       const T* mag4d, const bool* mask, bool correct_global, int maxseeds,
                       std::size_t template_echo = 0) {

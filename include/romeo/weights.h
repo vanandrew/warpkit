@@ -4,8 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <numbers>
 #include <vector>
 
 #include "romeo/utility.h"
@@ -33,7 +35,7 @@ inline RomeoWeightFlags romeo_flags_default() {
 // Rescale a raw weight w ∈ [0, 1] to a bin in [1, NBINS]; any other value
 // (including NaN) maps to 0 which means "edge invalid, not enqueued".
 // Matches `rescale(w)` in ROMEO.jl src/weights.jl.
-template <typename T>
+template <std::floating_point T>
 inline int rescale_weight(T w) {
     if (!(w >= T(0)) || !(w <= T(1))) return 0;
     const T raw = (T(1) - w) * T(NBINS - 1);
@@ -45,13 +47,13 @@ inline int rescale_weight(T w) {
 // corresponding one-liners in ROMEO.jl src/weights.jl.
 namespace detail {
 
-template <typename T>
+template <std::floating_point T>
 inline T phase_coherence(T a, T b) {
-    constexpr T pi = static_cast<T>(3.141592653589793238462643383279502884L);
+    constexpr T pi = std::numbers::pi_v<T>;
     return T(1) - std::abs(gamma_fold(a - b) / pi);
 }
 
-template <typename T>
+template <std::floating_point T>
 inline T phase_gradient_coherence(T a, T b, T a2, T b2, T te1, T te2) {
     T g1 = gamma_fold(a - b);
     T g2 = gamma_fold(a2 - b2);
@@ -60,7 +62,7 @@ inline T phase_gradient_coherence(T a, T b, T a2, T b2, T te1, T te2) {
     return std::max<T>(T(0), val);
 }
 
-template <typename T>
+template <std::floating_point T>
 inline T mag_coherence(T small, T big) {
     T r = small / big;
     return r * r;
@@ -75,7 +77,7 @@ inline T mag_coherence(T small, T big) {
 // catches it after the max. C++'s `std::max(0, NaN)` returns 0 (NaN compares
 // as !(<), so the "else" branch wins), which would silently hide the NaN.
 // We therefore check for NaN on the pre-max value.
-template <typename T>
+template <std::floating_point T>
 inline T phase_linearity_triplet(T pi_v, T pj_v, T pk_v) {
     T s = pi_v - T(2) * pj_v + pk_v;
     T r = rem2pi_nearest(s);
@@ -91,7 +93,7 @@ inline T phase_linearity_triplet(T pi_v, T pj_v, T pk_v) {
 // `stride` is the signed step in 1D linear index from `i` to `j`. Because the
 // weight loop visits each dim with a fixed positive stride, `stride` is always
 // +1, +nx, or +nx*ny. `n` is the total buffer length so we can range-check.
-template <typename T>
+template <std::floating_point T>
 inline T phase_linearity(const T* phase, std::ptrdiff_t i, std::ptrdiff_t j, std::ptrdiff_t stride,
                          std::ptrdiff_t n) {
     std::ptrdiff_t h = i - stride;
@@ -110,7 +112,7 @@ inline T phase_linearity(const T* phase, std::ptrdiff_t i, std::ptrdiff_t j, std
 //
 // Mirrors `calculateweights_romeo(wrapped, flags)` + the edge-zeroing tail of
 // `calculateweights` in ROMEO.jl src/weights.jl.
-template <typename OutT, typename T, typename Rescale>
+template <typename OutT, std::floating_point T, typename Rescale>
 inline std::vector<OutT> calculate_weights_romeo_impl(const T* phase, std::size_t nx, std::size_t ny, std::size_t nz,
                                                      const T* mag, const T* phase2, const T* TEs, const bool* mask,
                                                      RomeoWeightFlags flags, Rescale rescale_fn, OutT zero_value) {
@@ -186,7 +188,7 @@ inline std::vector<OutT> calculate_weights_romeo_impl(const T* phase, std::size_
 
 // Integer-bin weights (unwrap path). Returns (3, nx, ny, nz) uint8; 0 = edge
 // invalid / do not enqueue; otherwise weight ∈ [1, NBINS].
-template <typename T>
+template <std::floating_point T>
 inline std::vector<std::uint8_t> calculate_weights_romeo(const T* phase, std::size_t nx, std::size_t ny,
                                                           std::size_t nz, const T* mag, const T* phase2,
                                                           const T* TEs, const bool* mask, RomeoWeightFlags flags) {
@@ -199,7 +201,7 @@ inline std::vector<std::uint8_t> calculate_weights_romeo(const T* phase, std::si
 // Out-of-range / NaN raw weights collapse to 0 — this matches how Julia's
 // `rescale` maps invalid values and keeps the qmap finite without a separate
 // NaN-replacement pass.
-template <typename T>
+template <std::floating_point T>
 inline std::vector<T> calculate_weights_romeo_raw(const T* phase, std::size_t nx, std::size_t ny, std::size_t nz,
                                                     const T* mag, const T* phase2, const T* TEs, const bool* mask,
                                                     RomeoWeightFlags flags) {
