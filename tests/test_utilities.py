@@ -210,18 +210,18 @@ def test_displacement_maps_to_field_maps_flip_sign():
 
 
 def test_displacement_map_to_field_inserts_along_axis():
-    """A scalar displacement map at axis="y" must end up entirely in the y component
-    of the resulting 3-vector field (modulo the warp-format sign flip applied for
-    the default itk output)."""
+    """A scalar displacement map at axis="y" must end up entirely in the y
+    component of the resulting 3-vector field, negated by the NIfTI-RAS ->
+    ITK-LPS y flip that displacement_map_to_field applies at the field boundary."""
     rng = np.random.default_rng(0)
     affine = np.eye(4)
     data = rng.standard_normal((4, 4, 4, 2)).astype(np.float32)
     dmap = nib.Nifti1Image(data, affine)
     field = displacement_map_to_field(dmap, axis="y", format="itk", frame=0)
     field_data = field.get_fdata().squeeze()
-    # itk format applies WARP_ITK_FLIPS["itk"] = [1, 1, 1] → identity; y component
-    # equals the source frame, x and z are zero.
-    assert_allclose(field_data[..., AXIS_MAP["y"]], data[..., 0])
+    # y (RAS axis 1) picks up the RAS->LPS flip → negated source frame; x and z
+    # are zero.
+    assert_allclose(field_data[..., AXIS_MAP["y"]], -data[..., 0])
     assert_allclose(field_data[..., AXIS_MAP["x"]], 0.0)
     assert_allclose(field_data[..., AXIS_MAP["z"]], 0.0)
 
@@ -405,12 +405,16 @@ def test_displacement_field_to_map_clears_vector_intent():
 @pytest.mark.parametrize(
     "pe_dir, expected_sign",
     [
-        ("i", -1.0),  # axis 0: itk LPS x flip
-        ("i-", +1.0),  # axis 0: "-" cancels itk flip
-        ("j", -1.0),  # axis 1: itk LPS y flip
-        ("j-", +1.0),  # axis 1: "-" cancels itk flip
-        ("k", +1.0),  # axis 2: no LPS flip
-        ("k-", -1.0),  # axis 2: just "-"
+        # Data-space convention: displacement = fmap * trt * |voxel|, signed only
+        # by the PE polarity ("-"). The NIfTI-RAS -> ITK-LPS x/y flip is applied
+        # later, at the ITK boundary (invert_displacement_maps /
+        # displacement_map_to_field), so this conversion is orientation-free.
+        ("i", +1.0),  # positive polarity
+        ("i-", -1.0),  # "-" polarity
+        ("j", +1.0),
+        ("j-", -1.0),
+        ("k", +1.0),
+        ("k-", -1.0),
     ],
 )
 def test_field_maps_to_displacement_maps_known_value(pe_dir, expected_sign):
@@ -492,9 +496,10 @@ def test_displacement_field_to_map_drops_off_axis_channels():
     rng = np.random.default_rng(0)
     field_data = rng.standard_normal((4, 4, 4, 3)).astype(np.float32)
     field = nib.Nifti1Image(field_data, affine)
-    # itk format = identity → extracted map equals the chosen channel verbatim.
+    # displacement_field_to_map undoes the RAS->LPS y flip, so the extracted map
+    # is the negated y channel (x and z channels are dropped).
     extracted_y = displacement_field_to_map(field, axis="y", format="itk").get_fdata()
-    assert_allclose(extracted_y, field_data[..., 1], atol=1e-6)
+    assert_allclose(extracted_y, -field_data[..., 1], atol=1e-6)
 
 
 # ---------------------------------------------------------------------------
