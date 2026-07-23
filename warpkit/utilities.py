@@ -247,18 +247,22 @@ def create_brain_mask(
 
 
 def _signed_pe_voxel_size(img: nib.Nifti1Image, phase_encoding_direction: str) -> float:
-    """Voxel size (mm) along the phase-encoding axis, signed for the EPI
-    displacement <-> field-map conversions.
+    """Voxel size (mm) along the phase-encoding axis, signed by the PE polarity.
 
-    The sign carries two conventions: a trailing ``-`` in the phase-encoding
-    direction flips the displacement direction, and the x/y axes are flipped
-    for the ITK (LPS) frame relative to NIfTI RAS.
+    A trailing ``-`` in the phase-encoding direction flips the displacement
+    direction. This is a pure data-space quantity: the displacement magnitude
+    is ``fieldmap * total_readout_time * |voxel|`` along the PE *voxel* axis,
+    with no dependence on the image's orientation.
+
+    The NIfTI-RAS -> ITK-LPS x/y flip is deliberately *not* applied here. That
+    is an ITK-frame concept, and baking it in against the raw ``axis_code`` only
+    holds when the data is stored RAS. It is applied later, at the ITK boundary
+    (``invert_displacement_maps`` / ``displacement_map_to_field``), after the
+    data has been reoriented to RAS where "axis 0 = x, axis 1 = y" is true.
     """
     axis_code = AXIS_MAP[phase_encoding_direction]
     voxel_size = img.header.get_zooms()[axis_code]  # type: ignore
     if "-" in phase_encoding_direction:
-        voxel_size *= -1
-    if axis_code == 0 or axis_code == 1:
         voxel_size *= -1
     return voxel_size
 
@@ -429,32 +433,47 @@ def displacement_map_to_field(
     nib.Nifti1Image
         Displacement field in mm
     """
-    # get the axis displacement map should insert
+    # the (data-space) axis the scalar map is composed along
     axis_code = AXIS_MAP[axis]
     displacement_map = cast(nib.Nifti1Image, displacement_map)
 
-    # check if the displacement map has multiple frames
-    if len(displacement_map.shape) == 4:
-        data = np.asarray(displacement_map.dataobj[..., frame])
+    # An ITK displacement field stores world-space (LPS) vector components, so
+    # the scalar PE displacement must land in the *world* channel for the PE
+    # direction, with the NIfTI-RAS -> ITK-LPS x/y flip applied. Build the field
+    # in RAS so that "axis 0 = x, axis 1 = y" holds, then reorient the field back
+    # to the map's original grid — world-space vector components are invariant
+    # under a pure grid relabel, so as_reoriented carries them across correctly.
+    to_canonical, from_canonical = get_ras_orient_transform(displacement_map)
+    displacement_map_ras = displacement_map.as_reoriented(to_canonical)
+
+    to_canonical_arr = np.asarray(to_canonical)
+    ras_axis_code = int(to_canonical_arr[axis_code, 0])
+    reorient_sign = float(to_canonical_arr[axis_code, 1])
+    lps_sign = -1.0 if ras_axis_code in (0, 1) else 1.0
+
+    # frame-select (spatial reorientation leaves the trailing frame axis intact)
+    if len(displacement_map_ras.shape) == 4:
+        data = np.asarray(displacement_map_ras.dataobj[..., frame])
     else:  # otherwise just get the data
-        data = displacement_map.get_fdata()
+        data = displacement_map_ras.get_fdata()
 
-    # get affine and header info
-    affine = displacement_map.affine
-    header = cast(nib.Nifti1Header, displacement_map.header)
+    header = cast(nib.Nifti1Header, displacement_map_ras.header)
 
-    # create a new array to hold the displacement field
+    # create a new array to hold the displacement field (built in RAS)
     new_data = np.zeros((*data.shape, 3), dtype=np.float32)
 
-    # insert data at axis
-    new_data[..., axis_code] = data  # type: ignore
+    # insert the scalar into the RAS world channel for the PE axis, carrying the
+    # reorient flip and the RAS->LPS flip
+    new_data[..., ras_axis_code] = data * (reorient_sign * lps_sign)  # type: ignore
 
     # set the header to the correct intent code
     # this is needed for ANTs, but has no effect on FSL/AFNI
     header.set_intent("vector")
 
-    # form the image
-    warp = nib.Nifti1Image(new_data, affine, header)
+    # form the RAS field, then return it to the map's original orientation
+    warp = nib.Nifti1Image(new_data, displacement_map_ras.affine, header).as_reoriented(
+        from_canonical
+    )
 
     # convert to whatever format is needed and return
     return convert_warp(warp, in_type="itk", out_type=format)
@@ -490,22 +509,33 @@ def displacement_field_to_map(
     axis_code = AXIS_MAP[axis]
     # Round-trip through itk so we can index the channel axis directly.
     field_itk = convert_warp(displacement_field, in_type=format, out_type="itk")
-    data = field_itk.get_fdata()
+
+    # Inverse of displacement_map_to_field: the ITK field carries world-space
+    # (LPS) components, so reorient to RAS, take the world channel for the PE
+    # direction, and undo the RAS->LPS and reorient flips to recover the
+    # data-space scalar; then reorient that scalar to the field's original grid.
+    to_canonical, from_canonical = get_ras_orient_transform(field_itk)
+    field_itk_ras = field_itk.as_reoriented(to_canonical)
+
+    to_canonical_arr = np.asarray(to_canonical)
+    ras_axis_code = int(to_canonical_arr[axis_code, 0])
+    reorient_sign = float(to_canonical_arr[axis_code, 1])
+    lps_sign = -1.0 if ras_axis_code in (0, 1) else 1.0
+
+    data = field_itk_ras.get_fdata()
     if data.ndim == 5 and data.shape[3] == 1:
         data = data[..., 0, :]
     if data.ndim != 4 or data.shape[-1] != 3:
         raise ValueError(
             f"expected a 4D 3-channel field after itk conversion; got shape {data.shape}"
         )
-    map_data = data[..., axis_code]
+    map_data = data[..., ras_axis_code] * (reorient_sign * lps_sign)
     # Drop the vector intent so downstream tools don't misread the 1-channel
     # result as a field.
-    map_header = cast(nib.Nifti1Header, field_itk.header.copy())
+    map_header = cast(nib.Nifti1Header, field_itk_ras.header.copy())
     map_header.set_intent("none", (), "")
-    return cast(
-        nib.Nifti1Image,
-        nib.Nifti1Image(map_data, field_itk.affine, map_header),
-    )
+    map_ras = nib.Nifti1Image(map_data, field_itk_ras.affine, map_header)
+    return cast(nib.Nifti1Image, map_ras.as_reoriented(from_canonical))
 
 
 def get_x_orient_transform(
@@ -591,7 +621,7 @@ def invert_displacement_maps(
     nib.Nifti1Image
         Inverted displacement maps in mm
     """
-    # get the axis that this displacement map is along
+    # get the axis (in the native data grid) this displacement map is along
     axis_code = AXIS_MAP[axis]
 
     # we convert the data to RAS, for passing into ITK
@@ -600,6 +630,24 @@ def invert_displacement_maps(
 
     # get to RAS orientation
     displacement_maps_ras = displacement_maps.as_reoriented(to_canonical)
+
+    # as_reoriented moves the grid to RAS but carries neither the PE axis index
+    # nor the sign of the (scalar, data-space) displacement values with it, and
+    # the map arriving here has *not* had the RAS->LPS flip applied yet (that
+    # was moved out of the Hz<->mm conversion). Reconstruct both here, in RAS.
+    # to_canonical[q] = (n, f) means native axis q maps to RAS axis n with flip f:
+    #   * ras_axis_code  - the RAS axis the native PE axis (axis_code) maps to.
+    #   * reorient_sign  - if that mapping flipped the axis (f == -1), "+axis"
+    #     now points the other way, so the values need negating to stay in the
+    #     +RAS-axis convention.
+    #   * lps_sign       - the NIfTI-RAS -> ITK-LPS x/y flip, valid now that we
+    #     are in RAS (axis 0 = x, axis 1 = y). Applying it keeps the C++
+    #     inverter's input identical to the historical RAS behaviour.
+    to_canonical_arr = np.asarray(to_canonical)
+    ras_axis_code = int(to_canonical_arr[axis_code, 0])
+    reorient_sign = float(to_canonical_arr[axis_code, 1])
+    lps_sign = -1.0 if ras_axis_code in (0, 1) else 1.0
+    sign = reorient_sign * lps_sign
 
     # get data
     data = displacement_maps_ras.dataobj
@@ -617,17 +665,22 @@ def invert_displacement_maps(
     logging.info("Inverting displacement maps...")
     for i_vol in range(data.shape[-1]):
         logging.info(f"Processing frame: {i_vol}")
-        # pad array with edge values so edge effects of inverse are avoided
-        mod_data = np.pad(data[..., i_vol], pad_width=1)
+        # convert the values to the ITK (LPS, +RAS-axis) convention the inverter
+        # expects, pad to avoid edge effects of the inverse, then convert back to
+        # the native data-space convention on the way out.
+        mod_data = np.pad(data[..., i_vol] * sign, pad_width=1)
 
-        new_data[..., i_vol] = invert_displacement_map_cpp(
-            mod_data,
-            translations,
-            rotations,
-            zooms,
-            axis=axis_code,
-            verbose=verbose,
-        )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
+        new_data[..., i_vol] = (
+            invert_displacement_map_cpp(
+                mod_data,
+                translations,
+                rotations,
+                zooms,
+                axis=ras_axis_code,
+                verbose=verbose,
+            )[1 : data.shape[0] + 1, 1 : data.shape[1] + 1, 1 : data.shape[2] + 1]
+            * sign
+        )
 
     # make new image in original orientation
     inv_displacement_maps = nib.Nifti1Image(
