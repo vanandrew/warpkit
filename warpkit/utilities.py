@@ -457,7 +457,10 @@ def displacement_map_to_field(
     else:  # otherwise just get the data
         data = displacement_map_ras.get_fdata()
 
-    header = cast(nib.Nifti1Header, displacement_map_ras.header)
+    # copy the header before mutating its intent below: as_reoriented can return
+    # the input image unchanged (e.g. already-RAS data), so mutating its header
+    # in place would leak back to the caller's displacement map.
+    header = cast(nib.Nifti1Header, displacement_map_ras.header.copy())
 
     # create a new array to hold the displacement field (built in RAS)
     new_data = np.zeros((*data.shape, 3), dtype=np.float32)

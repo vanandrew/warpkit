@@ -248,7 +248,8 @@ def test_resample_integer_voxel_shift_ras(pe_dir, expected_shift):
     col_in = ramp[6, interior, 8]
     col_out = out[6, interior, 8]
     assert_allclose(col_out - col_in, expected_shift, atol=1e-4)
-    # the off-axis planes are unchanged (no x/z displacement)
-    assert_allclose(
-        out[6, interior, 8], ramp[6, interior, 8] + expected_shift, atol=1e-4
-    )
+    # there really is no x/z displacement — assert it on the field directly,
+    # since the ramp is flat in x/z and can't reveal off-axis motion via resample.
+    field_data = field.get_fdata()
+    assert_allclose(field_data[..., AXIS_MAP["x"]], 0.0, atol=1e-6)
+    assert_allclose(field_data[..., AXIS_MAP["z"]], 0.0, atol=1e-6)
