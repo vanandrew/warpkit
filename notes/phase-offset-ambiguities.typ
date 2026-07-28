@@ -1,6 +1,6 @@
 #set document(
   title: "Phase offset ambiguities in multi-echo field mapping",
-  author: "warpkit",
+  author: "Andrew Van",
 )
 #set page(
   paper: "us-letter",
@@ -39,10 +39,12 @@
   #text(size: 17pt, weight: "bold")[
     Phase offset ambiguities in multi-echo field mapping
   ]
-  #v(0.3em)
+  #v(0.35em)
   #text(size: 11pt)[What can be recovered from wrapped phase, and what cannot]
-  #v(0.2em)
-  #text(size: 9.5pt, style: "italic")[warpkit]
+  #v(0.9em)
+  #text(size: 10.5pt)[Andrew Van]
+  #v(0.15em)
+  #text(size: 9.5pt)[July 27, 2026]
 ]
 
 #v(1em)
@@ -51,22 +53,30 @@
 
 #v(1.2em)
 
-= What this note is about
+= Why the phase offset matters
 
-A gradient-echo image records, at every voxel, a complex number. Its magnitude
-is the familiar anatomical image; its phase carries the local magnetic field.
-Distortion correction needs that field, so it needs the phase — but the phase is
-not the field alone. It is the field plus a fixed contribution from the receive
-coil, and it is only ever measured modulo a full turn.
+Multi-echo field mapping reads the field off the *rate* at which phase
+accumulates across echoes. That rate is the quantity of interest; the constant
+it accumulates from is a nuisance. Every voxel carries a receive-coil phase
+offset $theta$ — present already at $t = 0$, identical on every echo, and set by
+coil geometry rather than by the field.
 
-Those two facts together mean the field cannot be recovered uniquely. Some of
-what is lost can be reconstructed from multiple echoes; some of it provably
-cannot. This note draws that line precisely: it enumerates the ways an answer
-can be wrong, shows which of them leave a trace in the data, and derives what to
-do about each.
+$theta$ cannot simply be ignored. It varies rapidly in space, steeply near coil
+elements and discontinuously between channels, so the measured phase is not
+spatially smooth even where the field is. Spatial unwrapping assumes
+neighbouring voxels differ by less than half a turn, and on raw phase that
+assumption fails. Removing $theta$ first restores the smoothness that everything
+downstream depends on.
 
-No familiarity with any particular pipeline is assumed. Everything below follows
-from the signal model.
+The difficulty is that $theta$ is never measured. It has to be inferred from the
+same wrapped phase it corrupts, and that inference is not unique: several
+distinct $(theta, f)$ pairs explain the same data. Some of the resulting
+ambiguity can be resolved from additional echoes, and some of it provably
+cannot.
+
+This note draws that line. It enumerates the ways an estimate can be wrong,
+shows which of them leave a trace in the data, and derives what to do about
+each. Everything below follows from the signal model.
 
 = The measurement
 
@@ -74,11 +84,8 @@ from the signal model.
 
 Acquire $E$ echoes at times $t_0 < t_1 < ... < t_(E-1)$. Field evolution is
 linear in time, so before wrapping, the phase at echo $e$ would be
-$theta + 2 pi f t_e$, where
-
-- $theta$ is the *coil phase offset* — the phase a voxel already carries at
-  $t = 0$, set by receive-coil geometry and independent of the field, and
-- $f$ is the *field offset* in Hz, the quantity actually wanted.
+$theta + 2 pi f t_e$, with $f$ the *field offset* in Hz — the quantity wanted —
+and $theta$ the coil offset described above.
 
 What is recorded is that value wrapped into a single turn. Writing
 $W(x) = arg(e^(i x))$ for wrapping to $(-pi, pi]$,
