@@ -152,15 +152,17 @@ def test_compute_field_maps_rejects_mismatched_spatial_shape():
 # ---------------------------------------------------------------------------
 
 
-def _patch_scores(monkeypatch, scores):
+def _patch_scores(monkeypatch, scores, fields=None):
     """Stub _evaluate_branch so only the decision rule is under test.
 
-    ``scores`` are intercepts in radians. The selector consults nothing else --
-    no field prior, no tiebreak -- so the remaining tuple slots are unused.
+    ``scores`` are intercepts in radians; ``fields`` are per-branch field maps
+    (constant-valued), consulted only when the consistency test ties.
     """
+    fields = fields or dict.fromkeys(scores, 0.0)
 
     def fake(n_wraps, *args, **kwargs):
-        return scores[n_wraps], None, None, None
+        fmap = np.full((2, 2, 2), fields[n_wraps], dtype=np.float32)
+        return scores[n_wraps], None, fmap, None
 
     monkeypatch.setattr(unwrap_mod, "_evaluate_branch", fake)
 
@@ -234,43 +236,58 @@ def test_branch_selector_corrects_inconsistent_zero(monkeypatch):
     assert best == 1
 
 
-def test_branch_selector_defers_when_two_branches_fit(monkeypatch):
-    """The ds007637 case: N=0 and N=-1 are both through-origin. That is a
-    genuine alias -- both explain the phase exactly -- so the selector must not
-    choose between them. Deferring leaves correct_global's answer in place.
+def test_branch_selector_tie_keeps_zero_when_its_field_is_smaller(monkeypatch):
+    """A healthy ds006131 frame: N=0 and N=-1 are both through-origin, so the
+    field prior decides. N=0 has the smaller |field|, so nothing moves.
 
     A bare argmin on the intercepts would flip between them on numerical noise
     and inject a full wrap of field into the time series.
     """
-    _patch_scores(monkeypatch, {-1: 1.2e-03, 0: 1.9e-03, 1: 0.9324})
-    best, _ = _sel()
+    _patch_scores(
+        monkeypatch,
+        {-1: 9.12e-08, 0: 3.86e-08, 1: 0.9324},
+        fields={-1: -24.29, 0: 16.15, 1: 16.15},
+    )
+    best, _ = _sel(te0=14.2, te1=38.93)
     assert best == 0
 
 
-def test_branch_selector_defers_even_when_zero_looks_wrong(monkeypatch):
-    """N=0 carries an intercept but *two* alternatives fit. Neither is
-    preferable on the evidence, so change nothing rather than pick one.
+def test_branch_selector_tie_recovers_correct_global_flip(monkeypatch):
+    """The ds006131 sub-20828 failure, frame 44.
 
-    This is the case that used to consult the field prior. Measurement showed
-    the prior was right about as often as it was wrong, so it was removed.
+    correct_global's ballot tipped over the half-wrap boundary and the
+    dual-echo field flipped a full wrap, from +16.2 Hz to -22.8 Hz. Branch 0
+    and branch +1 are both through-origin so the intercept cannot rank them,
+    but +1 restores +17.7 Hz against 0's -22.8 Hz and the prior picks it.
+
+    This is the case that motivated keeping the tiebreaker: 19 of 243 frames in
+    that run, each a single-frame ~40 Hz excursion in the field time series.
     """
-    _patch_scores(monkeypatch, {-1: 1.0e-7, 0: 1.8402, 1: 2.0e-7})
-    best, _ = _sel()
-    assert best == 0
+    _patch_scores(
+        monkeypatch,
+        {-1: 0.9324, 0: 8.64e-08, 1: 6.43e-08},
+        fields={-1: -22.78, 0: -22.78, 1: 17.66},
+    )
+    best, _ = _sel(te0=14.2, te1=38.93)
+    assert best == 1
 
 
 def test_branch_selector_noop_when_all_candidates_tie(monkeypatch):
     """Integer TE0/dTE makes the branch a no-op; scores are all ~equal."""
-    _patch_scores(monkeypatch, {-1: 1.1e-8, 0: 2.0e-8, 1: 1.9e-8})
+    _patch_scores(
+        monkeypatch,
+        {-1: 1.1e-8, 0: 2.0e-8, 1: 1.9e-8},
+        fields={-1: -58.8, 0: 0.1, 1: 58.9},
+    )
     best, _ = _sel()
     assert best == 0
 
 
 def test_branch_selector_noop_when_every_candidate_fits_perfectly(monkeypatch):
     """All intercepts are exactly 0, so every candidate is through-origin. The
-    observed scale collapses to 0 and there is no wrong-branch magnitude left to
-    calibrate a cutoff against, so the selector must not act -- an all-way tie is
-    an alias the phase cannot resolve, same as the two-branch case above."""
+    observed scale collapses to 0, leaving no wrong-branch magnitude to calibrate
+    a cutoff against, so the selector bails before the consistency test runs at
+    all -- the field prior never gets to break this tie."""
     _patch_scores(monkeypatch, {-1: 0.0, 0: 0.0, 1: 0.0})
     best, _ = _sel()
     assert best == 0

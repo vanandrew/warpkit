@@ -135,6 +135,17 @@ def _evaluate_branch(
     return intercept, offset, fieldmap, unwrapped_phases
 
 
+def _weighted_median(values: npt.NDArray, weights: npt.NDArray) -> float:
+    """Weighted median of ``values``. Used with magnitude-squared weights so
+    low-SNR voxels do not sway the global field estimate."""
+    order = np.argsort(values)
+    values, weights = values[order], weights[order]
+    cumulative = np.cumsum(weights)
+    if cumulative[-1] <= 0:
+        return float(np.median(values))
+    return float(values[np.searchsorted(cumulative, 0.5 * cumulative[-1])])
+
+
 def _branch_intercept_step(te0: np.float32 | float, te1: np.float32 | float) -> float:
     """Intercept, in radians, that one wrap of branch error introduces.
 
@@ -163,44 +174,43 @@ def _select_branch(
     mask: npt.NDArray[np.bool_],
     score_mask: npt.NDArray[np.bool_],
 ) -> tuple[int, dict[int, float]]:
-    """Pick the global 2*pi branch. Act only when the data is unambiguous.
+    """Pick the global 2*pi branch, in two stages.
 
-    A branch carrying a leftover intercept is not a valid explanation of the
-    data at all, so discard those. If **exactly one** candidate survives it is
-    the answer, whatever its field looks like. In every other case -- nothing
-    fits, or several fit -- return 0 and leave ROMEO's result alone.
+    1. **Consistency.** A branch carrying a leftover intercept is not a valid
+       explanation of the data at all, so discard those. If exactly one
+       candidate survives it is the answer, whatever its field looks like. If
+       none survives, return 0 -- a failed fit is not evidence for any branch.
+    2. **Prior, only to break a tie.** Depending on TE0/dTE several branches can
+       be exactly through-origin; the alias is genuinely reachable and no
+       statistic computed from the phase can separate them. Among the survivors,
+       take the smallest magnitude-weighted median field.
 
-    Deferring on a tie is deliberate. When several branches are exactly
-    through-origin the alias is genuinely reachable: they are equally valid
-    explanations of the phase, and no statistic computed from the phase can
-    separate them. The only tiebreaker available is the smallest-|field| prior,
-    which is what ROMEO's ``correct_global`` has already applied. Re-applying it
-    here with a slightly stricter statistic adds no information and measurably
-    does harm -- on a centre-frequency sweep of real data it changed the answer
-    for the better on 12% of points and for the worse on 12%, including cases
-    where ``correct_global`` had been right. A coin flip is worse than a no-op,
-    because a no-op at least stays consistent with the unwrapper.
+    Stage 2 is the same prior ``correct_global`` already applies, but on a much
+    better conditioned statistic: magnitude-weighted, over an eroded brain mask,
+    on the field itself rather than an unweighted median of rounded wrap counts
+    over a dilated mask. That difference is the whole point. ``correct_global``'s
+    ballot becomes unstable when the global field sits near 1/(2*dTE), and then
+    it flips frame to frame.
 
-    So this only ever fires on a call the data decides on its own; measured
-    separation between fitting and non-fitting branches is 6-9 orders of
-    magnitude. Across every frame of 58 runs from eight OpenNeuro datasets --
-    14090 frames, six distinct TE0/dTE ratios from 0.51 to 0.78 -- it never
-    fired, and the largest branch-0 intercept seen was 1.9e-07 of the cutoff.
+    Measured on `ds006131` sub-20828 (k = 0.5742, wrap 40.44 Hz, half-wrap
+    20.22 Hz), whose field sits at 17.7 Hz -- 2.5 Hz under the boundary. On 19
+    of 243 frames ``correct_global``'s median jumps to +/-1 and the dual-echo
+    field flips from +16.2 Hz to -22.8 Hz, a full wrap, for a single frame at a
+    time. The intercept test detects that something moved (the fitting set goes
+    from {-1, 0} to {0, +1}) but cannot rank the two survivors. The prior can:
+    branch +1 restores +17.7 Hz against branch 0's -22.8 Hz, so it fixes all 19
+    and leaves the other 224 untouched.
 
-    That is expected rather than lucky. ``unwrap_4d`` global-corrects only the
-    template echo, whose unwrapped phase is ``k * unwrapped_diff``; for k < 1
-    the scaling pulls values toward zero, so the rounded median cannot be
-    pushed off it. Every ME-EPI protocol has k < 1, since TE0 is shorter than
-    the echo spacing. The rule is therefore a safety net, not a hot path.
+    The prior is consulted *only* between branches that already fit, so it can
+    never select something the data contradicts.
     """
-    # Only the intercept is needed; drop each candidate's field map and phases
-    # rather than holding three of them per frame across the thread pool.
-    scores = {
+    evaluated = {
         n: _evaluate_branch(
             n, unwrapped_diff, phase0, phase1, mag0, mag1, te0, te1, mask, score_mask
-        )[0]
+        )
         for n in BRANCH_CANDIDATES
     }
+    scores = {n: e[0] for n, e in evaluated.items()}
     # Calibrate "how big is a wrong branch" two ways and take the stricter.
     # The analytic scale depends only on the TEs, so it still calibrates when
     # every candidate happens to fit; the observed scale stays honest when
@@ -223,12 +233,19 @@ def _select_branch(
     # that is most of a wrap out from ever counting as a fit.
     cutoff = scale / 2
     consistent = [n for n, s in scores.items() if s < cutoff]
-    if len(consistent) != 1:
-        # Nothing fits (a failed fit is not evidence for any branch), or several
-        # fit equally well (a genuine alias the phase cannot resolve). Either
-        # way there is no call to make here -- defer to correct_global.
+    if not consistent:
+        # nothing fits; a failed fit is not evidence for any branch
         return 0, scores
-    return consistent[0], scores
+    if len(consistent) == 1:
+        return consistent[0], scores
+    # Tie: every survivor explains the phase equally well, so fall back to the
+    # prior and take the one closest to zero global field.
+    weights = np.square(mag0[score_mask].astype(np.float64))
+    fields = {
+        n: _weighted_median(evaluated[n][2][score_mask].astype(np.float64), weights)
+        for n in consistent
+    }
+    return min(consistent, key=lambda n: abs(fields[n])), scores
 
 
 def mcpc_3d_s(
