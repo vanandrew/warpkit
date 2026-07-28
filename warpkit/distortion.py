@@ -19,7 +19,6 @@ def medic(
     svd_filt: int = 10,
     n_cpus: int = 4,
     debug: bool = False,
-    wrap_limit: bool = False,
 ) -> tuple[nib.Nifti1Image, nib.Nifti1Image, nib.Nifti1Image]:
     """This runs Multi-Echo DIstortion Correction (MEDIC) on a set of phase and magnitude images.
 
@@ -101,7 +100,6 @@ def medic(
             frames=frames,
             n_cpus=n_cpus,
             debug=debug,
-            wrap_limit=wrap_limit,
         )
     except IndexError as e:
         raise IndexError(

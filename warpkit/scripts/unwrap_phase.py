@@ -42,7 +42,6 @@ def unwrap_phase(
     metadata: Sequence[PathLike[str] | str] | None = None,
     noise_frames: int = 0,
     n_cpus: int = 4,
-    wrap_limit: bool = False,
     debug: bool = False,
 ) -> UnwrapPhaseResult:
     """Run ROMEO multi-echo phase unwrapping.
@@ -87,7 +86,6 @@ def unwrap_phase(
         list(tes_ms),
         n_cpus=n_cpus,
         debug=debug,
-        wrap_limit=wrap_limit,
     )
 
     out_prefix_str = str(out_prefix)
@@ -148,11 +146,6 @@ def main():
         action="store_true",
         help="Skip the temporal consistency pass and dump intermediate files.",
     )
-    parser.add_argument(
-        "--wrap-limit",
-        action="store_true",
-        help="Turn off some heuristics for phase unwrapping.",
-    )
 
     args = parser.parse_args()
     setup_logging()
@@ -167,7 +160,6 @@ def main():
             metadata=args.metadata,
             noise_frames=args.noiseframes,
             n_cpus=args.n_cpus,
-            wrap_limit=args.wrap_limit,
             debug=args.debug,
         )
     except ValueError as e:

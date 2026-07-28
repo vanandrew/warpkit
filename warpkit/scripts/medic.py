@@ -42,7 +42,6 @@ def medic(
     metadata: Sequence[PathLike[str] | str] | None = None,
     noise_frames: int = 0,
     n_cpus: int = 4,
-    wrap_limit: bool = False,
     debug: bool = False,
 ) -> MedicResult:
     """Run the full MEDIC pipeline and write the three output NIfTIs.
@@ -99,7 +98,6 @@ def medic(
             border_filt=(1000, 1000),
             svd_filt=1000,
             debug=True,
-            wrap_limit=wrap_limit,
         )
     else:
         fmaps_native, dmaps, fmaps = _medic_distortion(
@@ -111,7 +109,6 @@ def medic(
             n_cpus=n_cpus,
             svd_filt=10,
             border_size=5,
-            wrap_limit=wrap_limit,
         )
 
     return write_medic_outputs(out_prefix, fmaps_native, dmaps, fmaps)
@@ -155,11 +152,6 @@ def main():
     )
     add_n_cpus_arg(parser)
     parser.add_argument("--debug", action="store_true", help="Debug mode")
-    parser.add_argument(
-        "--wrap-limit",
-        action="store_true",
-        help="Turns off some heuristics for phase unwrapping",
-    )
 
     args = parser.parse_args()
     setup_logging()
@@ -176,7 +168,6 @@ def main():
             metadata=args.metadata,
             noise_frames=args.noiseframes,
             n_cpus=args.n_cpus,
-            wrap_limit=args.wrap_limit,
             debug=args.debug,
         )
     except ValueError as e:
