@@ -345,6 +345,80 @@ def test_branch_selector_recovers_injected_wrap(test_data):
         assert best == -injected, f"injected {injected}, got {best} (scores={scores})"
 
 
+def _branch_flip_frame(branch_flip_data, index):
+    """Reconstruct one fixture frame's selector inputs, as mcpc_3d_s would."""
+    from warpkit.utilities import create_brain_mask, rescale_phase
+    from warpkit.warpkit_cpp import romeo_unwrap3d
+
+    phase, mag = branch_flip_data["phase"], branch_flip_data["mag"]
+    tes = np.asarray(branch_flip_data["tes"], dtype=np.float32)
+    mn = min(float(np.asarray(p.dataobj[..., 0]).min()) for p in phase)
+    mx = max(float(np.asarray(p.dataobj[..., 0]).max()) for p in phase)
+    ph = rescale_phase(
+        np.stack([p.dataobj[..., index] for p in phase], axis=-1), min=mn, max=mx
+    ).astype(np.float32)
+    mg = np.stack([m.dataobj[..., index] for m in mag], axis=-1).astype(np.float32)
+    mag0, mag1 = mg[..., 0], mg[..., 1]
+    phase0, phase1 = ph[..., 0], ph[..., 1]
+    mask = create_brain_mask(mag0, 3)
+    score_mask = create_brain_mask(mag0, -2)
+    signal_diff = mag0 * mag1 * np.exp(1j * (phase1 - phase0))
+    unwrapped_diff = romeo_unwrap3d(
+        phase=np.angle(signal_diff).astype(np.float32),
+        weights="romeo",
+        mag=np.abs(signal_diff).astype(np.float32),
+        mask=mask,
+        correct_global=True,
+    )
+    # ordered to splat straight into _select_branch / _evaluate_branch
+    return (
+        unwrapped_diff,
+        phase0,
+        phase1,
+        mag0,
+        mag1,
+        tes[0],
+        tes[1],
+        mask,
+        score_mask,
+    )
+
+
+@pytest.mark.parametrize("index", [0, 1])
+def test_branch_selector_fixes_correct_global_flip(branch_flip_data, index):
+    """Regression: `ds006131` sub-20828, a real ``correct_global`` branch flip.
+
+    Frame 0 is healthy and must be left alone; frame 1 is one of the 19 frames
+    (of 243) where ROMEO's ballot tipped and the dual-echo field jumped a full
+    40.44 Hz wrap. The selector must return +1 there to undo it.
+
+    Before the field prior was in place this run produced 34 wrap-sized steps
+    in the field time series with a 35.9 Hz maximum; afterwards, zero, with a
+    1.5 Hz maximum.
+    """
+    args = _branch_flip_frame(branch_flip_data, index)
+    best, scores = _select_branch(*args)
+    expected = branch_flip_data["expected_branch"][index]
+    assert best == expected, f"frame {index}: got {best}, want {expected} ({scores})"
+
+
+def test_branch_flip_frame_is_a_genuine_tie(branch_flip_data):
+    """The intercept test alone cannot fix the flip -- it needs the field prior.
+
+    On the broken frame, branch 0 and branch +1 are *both* through-origin at
+    ~1e-7 while branch -1 carries most of a step. Any rule that only classifies
+    by intercept has to defer here, which would leave the 40 Hz error in place.
+    This is the evidence for keeping the tiebreaker, so pin it.
+    """
+    args = _branch_flip_frame(branch_flip_data, 1)
+    te0, te1 = args[5], args[6]
+    step = _branch_intercept_step(te0, te1)
+    scores = {n: unwrap_mod._evaluate_branch(n, *args)[0] for n in (-1, 0, 1)}
+    cutoff = min(max(scores.values()), step) / 2
+    fits = sorted(n for n, s in scores.items() if s < cutoff)
+    assert fits == [0, 1], f"expected a 0/+1 tie, got {fits} from {scores}"
+
+
 def test_romeo_unwrap3d_rejects_unknown_weight_preset():
     """`weights` is a preset name string; only "romeo" is supported."""
     from warpkit.warpkit_cpp import romeo_unwrap3d
