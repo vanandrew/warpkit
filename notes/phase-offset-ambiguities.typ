@@ -380,80 +380,44 @@ susceptibility gradients are large. Any statistic that is a *quantile of the
 whole distribution* — the median included — is displaced toward whichever tail
 is heavier.
 
-== Why the median is the wrong estimator
+== Estimating the level
 
 Model the distribution as a mixture of a narrow bulk component and a broad tail
 component,
 
 $
-  p(f) = (1 - epsilon) dot p_"bulk" (f) + epsilon dot p_"tail" (f).
+  p(f) = (1 - epsilon) dot p_"bulk" (f) + epsilon dot p_"tail" (f),
 $
 
-The centre of $p_"bulk"$ is what the shim actually set. For small $epsilon$ the
-*mode* of $p$ is a consistent estimator of that centre; the *median* of $p$ is
-not, and its bias grows with both the tail fraction $epsilon$ and the tail
-asymmetry. Two consequences follow, and they are the same defect seen twice.
+with the centre of $p_"bulk"$ the quantity the shim actually set. Two practical
+consequences follow.
 
 #defn[
 - *Enlarging the mask makes the estimate worse.* Dilating a brain mask admits
-  precisely the voxels populating $p_"tail"$, raising $epsilon$. A median over a
-  generous mask is more biased than the same median over a conservative one —
-  the opposite of the usual intuition that more data is better.
+  precisely the voxels populating $p_"tail"$, raising $epsilon$ and displacing
+  any quantile of $p$ further from the bulk centre. A generous mask is worse
+  than a conservative one — the opposite of the usual intuition that more data
+  helps.
 - *A bias of a fraction of a wrap is decisive.* The prior compares
   $abs(hat(f))$ against the half-wrap $1 slash (2 #dte)$. Estimator bias adds
-  directly to the distance from that boundary, so a subject whose true bulk
-  field lies near the half-wrap can be pushed across it by bias alone. The
-  choice then turns on an artefact of the statistic rather than a property of
-  the data.
+  directly to the distance from that boundary, so a subject whose bulk field
+  lies near the half-wrap can be pushed across it by bias alone, and the choice
+  then turns on an artefact of the statistic rather than a property of the data.
 ]
 
-Weighting voxels by squared magnitude helps, since low-signal voxels are
-over-represented in the tails, but it is a mitigation rather than a fix: the
-estimand is still a quantile of the mixture.
+The estimator used is a magnitude-squared weighted median over an eroded brain
+mask. The erosion and the weighting both reduce $epsilon$: erosion by excluding
+edge voxels geometrically, weighting by suppressing the low-signal voxels that
+are over-represented in the tails.
 
-== Estimating the mode without a tuning parameter
-
-The mode is the right estimand, but histogram and kernel estimators need a bin
-width or a bandwidth — reintroducing exactly the kind of tuned constant a
-principled rule should avoid. The *half-sample mode* needs neither.
-
-#defn[
-Sort the samples. Repeatedly locate the shortest contiguous interval containing
-half the remaining points, and discard everything outside it. Stop when three or
-fewer points remain, and return their mean.
-]
-
-The justification is direct: per unit of value, samples are densest where the
-density is highest, so the shortest half-interval brackets the peak, and
-recursing zooms in on it. Formally, with order statistics
-$x_((1)) <= ... <= x_((n))$ and $h = ceil(n slash 2)$, the retained window is
-
-$
-  [x_((i^*)), space x_((i^* + h - 1))],
-  quad quad i^* = arg min_i (x_((i + h - 1)) - x_((i))),
-$
-
-and all $n - h + 1$ candidate widths follow from one vectorised difference of
-two offset slices of the sorted array.
-
-#defn[
-*Properties.*
-- *Parameter-free.* No bin width, no bandwidth, no threshold.
-- *Cost.* $O(n log n)$, dominated by the initial sort; subsequent passes are
-  linear in a geometrically shrinking array. Cheaper than a weighted median,
-  which must sort a weight array as well.
-- *Convergence.* Near a smooth unimodal peak, halving the sample halves the
-  window width, so the interval contracts geometrically and the result is
-  insensitive to how many passes are taken.
-- *Weight-independent.* Peak location does not depend on how samples are
-  weighted, so none of the weighting choices a median requires are inherited.
-]
-
-#defn[
-*Assumptions.* Unimodality — with a genuinely bimodal distribution the method
-converges on the denser mode. Ties in the arg-min are resolved arbitrarily; on
-continuous data they have measure zero, on quantised or very small samples they
-do not. And the sample must be large enough to resolve the density at all.
+#key[
+*Continuity is the binding requirement.* The estimate feeds a threshold
+comparison against $1 slash (2 #dte)$, and that comparison must give the same
+answer on consecutive frames of the same subject. A median is a continuous
+functional of the data: perturb the samples slightly and it moves slightly.
+Estimators defined by an $arg max$ — modes, in any of their usual forms — are
+not, and near-ties in a multimodal distribution make them flip between frames.
+For this decision, stability across frames outweighs freedom from bias.
 ]
 
 = What remains unresolvable
@@ -502,8 +466,7 @@ the displacement is proportional to echo time — a pure slope change no interce
 test can see.
 
 Where several candidates remain consistent, the prior that decides is that
-*bulk-tissue* field is near zero. That makes the mode of the field distribution,
-not its median, the correct estimand, and the half-sample mode estimates it
-without introducing a tuned constant. Consistency and prior are blind to
-opposite symmetries, so a workable rule needs both.
+*bulk-tissue* field is near zero, estimated by a weighted median over a
+conservative mask. Consistency and prior are blind to opposite symmetries, so a
+workable rule needs both.
 ]
