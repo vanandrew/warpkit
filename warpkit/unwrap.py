@@ -139,12 +139,20 @@ def _weighted_median(values: npt.NDArray, weights: npt.NDArray) -> float:
     """Weighted median of ``values``. Used with magnitude-squared weights so
     low-SNR voxels do not sway the global field estimate.
 
-    Continuity is why this is a median and not a mode. The estimate feeds a
-    threshold comparison against 1/(2*dTE) that has to give the same answer on
-    consecutive frames, and a median moves smoothly with the data. Estimators
-    defined by an argmax do not: field distributions are often bimodal, and a
-    near-tie between peaks makes them flip frame to frame. A half-sample mode
-    was tried here and reverted for exactly that reason.
+    A median, not a mean or an M-estimator. The field distribution over the
+    brain is wide (~2 wraps) and right-skewed, and the 1/(2*dTE) threshold this
+    feeds sits *inside* its bulk, between the 50th and 75th percentiles. So the
+    question the threshold asks -- is most of the brain within half a wrap of
+    zero -- is a question about the 50% point, and the median is the statistic
+    that answers it. Anything pulled toward the mean reads ~2 Hz higher and
+    moves the estimate toward the boundary for no gain in accuracy: a Huber
+    M-estimator tried here cut the worst-case margin from 1.5 Hz to 0.05 Hz.
+
+    Nor an argmax. The threshold comparison has to give the same answer on
+    consecutive frames, and a median moves smoothly with the data; field
+    distributions are often bimodal and a near-tie between peaks makes an
+    argmax flip frame to frame. A half-sample mode was tried and reverted for
+    exactly that reason.
     """
     order = np.argsort(values)
     values, weights = values[order], weights[order]
@@ -191,14 +199,24 @@ def _select_branch(
     2. **Prior, only to break a tie.** Depending on TE0/dTE several branches can
        be exactly through-origin; the alias is genuinely reachable and no
        statistic computed from the phase can separate them. Among the survivors,
-       take the smallest magnitude-weighted median field.
+       take the smallest weighted-median field.
 
     Stage 2 is the same prior ``correct_global`` already applies, but on a much
-    better conditioned statistic: magnitude-weighted, over an eroded brain mask,
-    on the field itself rather than an unweighted median of rounded wrap counts
-    over a dilated mask. That difference is the whole point. ``correct_global``'s
-    ballot becomes unstable when the global field sits near 1/(2*dTE), and then
-    it flips frame to frame.
+    better conditioned statistic: weighted by ``mag1**2``, over an eroded brain
+    mask, on the field itself rather than an unweighted median of rounded wrap
+    counts over a dilated mask. That difference is the whole point.
+    ``correct_global``'s ballot becomes unstable when the global field sits near
+    1/(2*dTE), and then it flips frame to frame.
+
+    The weight is the *second* echo's magnitude because the field comes from
+    ``phase1 - phase0``, whose noise is dominated by the weaker echo. Weighting
+    on ``mag0`` instead lets voxels with fast T2* decay -- a healthy echo 0 and a
+    collapsed echo 1, i.e. exactly the air-tissue interfaces -- carry full
+    weight. Measured over 29 runs, this does not move the decision boundary
+    (that is fixed at 1/(2*dTE)) and barely moves the margin; what it buys is
+    stability. The estimator's offset varies by 0.43 Hz across subjects under
+    ``mag1**2`` against 0.99 Hz under ``mag0**2``, and that between-subject
+    spread, not the per-subject margin, is what predicts a wrap flip.
 
     Measured on `ds006131` sub-20828 (k = 0.5742, wrap 40.44 Hz, half-wrap
     20.22 Hz), whose field sits at 17.7 Hz -- 2.5 Hz under the boundary. On 19
@@ -248,7 +266,7 @@ def _select_branch(
         return consistent[0], scores
     # Tie: every survivor explains the phase equally well, so fall back to the
     # prior and take the one closest to zero global field.
-    weights = np.square(mag0[score_mask].astype(np.float64))
+    weights = np.square(mag1[score_mask].astype(np.float64))
     fields = {
         n: _weighted_median(evaluated[n][2][score_mask].astype(np.float64), weights)
         for n in consistent
