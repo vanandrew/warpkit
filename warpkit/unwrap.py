@@ -135,15 +135,40 @@ def _evaluate_branch(
     return intercept, offset, fieldmap, unwrapped_phases
 
 
-def _weighted_median(values: npt.NDArray, weights: npt.NDArray) -> float:
-    """Weighted median of ``values``. Used with magnitude-squared weights so
-    low-SNR voxels do not sway the global field estimate."""
-    order = np.argsort(values)
-    values, weights = values[order], weights[order]
-    cumulative = np.cumsum(weights)
-    if cumulative[-1] <= 0:
-        return float(np.median(values))
-    return float(values[np.searchsorted(cumulative, 0.5 * cumulative[-1])])
+def _half_sample_mode(values: npt.NDArray) -> float:
+    """Mode of ``values`` by the half-sample method: repeatedly keep the
+    shortest interval containing half the remaining points.
+
+    Used instead of a median to locate the global field level. The field
+    distribution over a brain is a sharp peak at bulk-tissue value with long
+    tails from sinuses, dropout and edges. The scanner's frequency adjustment
+    centres that *peak* near zero, not the median-including-tails, so a median
+    estimates the wrong quantity and is dragged toward whichever tail is
+    heavier. On the `ds006131` sub-20828 frame where ROMEO's ballot tips, the
+    mode sits 10.3 Hz from the half-wrap boundary against the weighted median's
+    2.6 Hz -- four times the margin, from the same single frame.
+
+    Parameter-free by construction: no bin width, no bandwidth, nothing to
+    tune. A binned mode gives the same answer (9.8-11.2 Hz of margin across a
+    64x range of bin counts), so the choice is not load-bearing; this form just
+    avoids having to justify one. It is also cheaper than the weighted median
+    it replaced, since it never sorts a weight array.
+    """
+    x = np.sort(np.asarray(values, dtype=np.float64))
+    if x.size == 0:
+        return 0.0
+    while x.size > 3:
+        half = (x.size + 1) // 2
+        widths = x[half - 1 :] - x[: x.size - half + 1]
+        start = int(np.argmin(widths))
+        x = x[start : start + half]
+    if x.size == 3:
+        left, right = x[1] - x[0], x[2] - x[1]
+        if left < right:
+            return float(np.mean(x[:2]))
+        if right < left:
+            return float(np.mean(x[1:]))
+    return float(np.mean(x))
 
 
 def _branch_intercept_step(te0: np.float32 | float, te1: np.float32 | float) -> float:
@@ -183,14 +208,26 @@ def _select_branch(
     2. **Prior, only to break a tie.** Depending on TE0/dTE several branches can
        be exactly through-origin; the alias is genuinely reachable and no
        statistic computed from the phase can separate them. Among the survivors,
-       take the smallest magnitude-weighted median field.
+       take the one whose bulk-tissue field level -- the half-sample mode over
+       an eroded brain mask -- is closest to zero.
 
-    Stage 2 is the same prior ``correct_global`` already applies, but on a much
-    better conditioned statistic: magnitude-weighted, over an eroded brain mask,
-    on the field itself rather than an unweighted median of rounded wrap counts
-    over a dilated mask. That difference is the whole point. ``correct_global``'s
-    ballot becomes unstable when the global field sits near 1/(2*dTE), and then
-    it flips frame to frame.
+    Stage 2 is the same prior ``correct_global`` already applies, but on a far
+    better conditioned statistic. ``correct_global`` takes an unweighted median
+    of rounded wrap counts over a *dilated* mask, which is pulled toward the
+    tails contributed by sinuses, dropout and edge voxels; that mask carries
+    roughly twice the voxels of the brain core. Its estimate therefore sits
+    close to the +/-1/(2*dTE) decision boundary and tips frame to frame.
+
+    Measured margins to that boundary on the frame below, worst of the two:
+
+    ==========================================  =============
+    estimator                                   margin
+    ==========================================  =============
+    ``correct_global`` (median, dilated)        -0.26 Hz (flips)
+    median, eroded                               1.25 Hz
+    magnitude-weighted median, eroded            2.57 Hz
+    **half-sample mode, eroded**                **10.27 Hz**
+    ==========================================  =============
 
     Measured on `ds006131` sub-20828 (k = 0.5742, wrap 40.44 Hz, half-wrap
     20.22 Hz), whose field sits at 17.7 Hz -- 2.5 Hz under the boundary. On 19
@@ -239,12 +276,8 @@ def _select_branch(
     if len(consistent) == 1:
         return consistent[0], scores
     # Tie: every survivor explains the phase equally well, so fall back to the
-    # prior and take the one closest to zero global field.
-    weights = np.square(mag0[score_mask].astype(np.float64))
-    fields = {
-        n: _weighted_median(evaluated[n][2][score_mask].astype(np.float64), weights)
-        for n in consistent
-    }
+    # prior and take the one whose bulk-tissue field level is closest to zero.
+    fields = {n: _half_sample_mode(evaluated[n][2][score_mask]) for n in consistent}
     return min(consistent, key=lambda n: abs(fields[n])), scores
 
 
