@@ -168,8 +168,8 @@ $
 $ <eq:fit>
 
 and read off two numbers — the *intercept* $c$ and the *slope* $s$. Every
-possible error is a displacement in this $(c, s)$ plane, and exactly three cases
-are of interest.
+possible error is a displacement in this $(c, s)$ plane, and the branch
+ambiguity produces two cases.
 
 #defn[
 #set enum(numbering: "A.")
@@ -177,13 +177,11 @@ are of interest.
   combination that leaves $psi_e$ unchanged. Invisible.
 + *The offset moves alone.* $c$ shifts while $s$ stays correct. Visible as a
   line that misses the origin.
-+ *The field moves alone.* $s$ shifts while $c$ stays exactly zero. Visible as a
-  wrong slope — but *not* as a wrong intercept.
 ]
 
-Each is taken in turn below. The taxonomy matters because a test that measures
-$c$ finds case B and is blind to A and C *by construction* — not through any
-weakness of implementation.
+Both are taken in turn below. The distinction matters because a test that
+measures $c$ finds case B and is blind to case A *by construction* — not through
+any weakness of implementation.
 
 == Ambiguity A: an exact symmetry of the data
 
@@ -264,30 +262,6 @@ and field have become mutually inconsistent, and consistency between them is
 something the data can check.
 ]
 
-== Ambiguity C: the field moves alone
-
-The third case is easy to overlook, because it does not originate in the offset
-estimate at all.
-
-Multi-echo unwrappers commonly unwrap a single *template* echo spatially and
-derive the remaining echoes by temporal unwrapping relative to it, each echo
-referenced to the template scaled by its own echo time. A whole-turn error in
-the template then propagates to echo $e$ scaled by $t_e slash t_0$ — that is,
-*proportionally to echo time*.
-
-A displacement proportional to $t_e$ is, by @eq:fit, a pure change of slope:
-
-$
-  Delta s = (2 pi) / t_0, quad quad Delta c = 0.
-$
-
-#key[
-The intercept is exactly zero here. A test built on the intercept cannot see
-ambiguity C at all — not poorly, but not at all. It surfaces instead as a field
-error of $1 slash t_0$ Hz, a different size from the $1 slash #dte$ of ambiguity
-A, which is the practical way to tell the two apart.
-]
-
 = Detecting ambiguity B
 
 By #link(<prop:offset>)[Prop. 2] a branch error of $M$ wraps places the constant
@@ -349,10 +323,11 @@ inside the unwrapper can map candidates $M$ and $-M$ to equal $abs(f)$.
 ]
 
 #key[
-The two are complementary in a precise sense. The intercept is blind to a
-*sign-preserving* change of the field — that is ambiguity C, and the alias
-direction of A. The magnitude prior is blind to a *sign-reversing* one. Together
-they cover both, which is why a workable rule needs both stages.
+The two are complementary in a precise sense. The intercept is blind to the
+alias direction of A, along which offset and field move together; the magnitude
+prior is blind to a sign reversal, since $+delta$ and $-delta$ are equidistant
+from zero. Together they cover both, which is why a workable rule needs both
+stages.
 ]
 
 The resulting rule: reject candidates whose intercept is inconsistent; if one
@@ -422,7 +397,7 @@ For this decision, stability across frames outweighs freedom from bias.
 
 = What remains unresolvable
 
-Three limits are properties of the acquisition rather than of any algorithm.
+Two limits are properties of the acquisition rather than of any algorithm.
 
 #defn[
 *Ambiguity A cannot be corrected.* By #link(<prop:alias>)[Prop. 1] the data is
@@ -442,14 +417,6 @@ therefore raising the $1 slash (2 #dte)$ threshold. The two effects push the
 same quantity in opposite directions.
 ]
 
-#defn[
-*Ambiguity C needs a different detector.* A whole-turn error in a template echo
-produces a pure slope change with exactly zero intercept, so no refinement of an
-intercept test will find it. Recognising it means looking at the field itself,
-and its characteristic size is $1 slash t_0$ Hz rather than the $1 slash #dte$
-of the other cases.
-]
-
 = Summary
 
 #key[
@@ -457,13 +424,11 @@ Wrapped phase determines the coil offset and the field only up to a family of
 alternatives. Sorting them out means asking, of each candidate, whether the
 offset and the field it implies are mutually consistent.
 
-Three cases exhaust the possibilities. When offset and field are both wrong in a
-matched way (*A*) the data is unchanged, and only a prior can help. When the
-offset is wrong alone (*B*) every echo carries the same constant, so
-extrapolating the echoes back to $t = 0$ exposes it, against a rejection scale
-$abs(W(2 pi k))$ fixed by the echo times. When the field is wrong alone (*C*)
-the displacement is proportional to echo time — a pure slope change no intercept
-test can see.
+Two cases arise. When offset and field are both wrong in a matched way (*A*) the
+data is unchanged, and only a prior can help. When the offset is wrong alone
+(*B*) every echo carries the same constant, so extrapolating the echoes back to
+$t = 0$ exposes it, against a rejection scale $abs(W(2 pi k))$ fixed by the echo
+times.
 
 Where several candidates remain consistent, the prior that decides is that
 *bulk-tissue* field is near zero, estimated by a weighted median over a
