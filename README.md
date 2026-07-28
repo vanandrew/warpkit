@@ -66,9 +66,9 @@ from warpkit.utilities import displacement_map_to_field
 # each list entry is a different echo
 phases = [nib.load(p) for p in phases_paths]
 magnitudes = [nib.load(p) for p in magnitude_paths]
-TEs = [TE1, TE2, ...]                     # milliseconds
-total_readout_time = ...                  # seconds
-phase_encoding_direction = ...            # one of i, j, k, i-, j-, k-, x, y, z, x-, y-, z-
+TEs = [TE1, TE2, ...]  # milliseconds
+total_readout_time = ...  # seconds
+phase_encoding_direction = ...  # one of i, j, k, i-, j-, k-, x, y, z, x-, y-, z-
 
 field_maps_native, displacement_maps, field_maps = medic(
     phases, magnitudes, TEs, total_readout_time, phase_encoding_direction

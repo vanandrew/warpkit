@@ -151,9 +151,9 @@ def rescale_phase(
     ----------
     data : npt.NDArray[Any]
         phase data to be rescaled
-    min : int, optional
+    min : float, optional
         min value that should be mapped to -pi, by default -4096
-    max : int, optional
+    max : float, optional
         max value that should be mapped to pi, by default 4096
 
     Returns

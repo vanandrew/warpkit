@@ -266,12 +266,20 @@ def test_branch_selector_noop_when_all_candidates_tie(monkeypatch):
     assert best == 0
 
 
-def test_branch_selector_noop_when_nothing_fits(monkeypatch):
-    """Degenerate/failed fit: every candidate is bad, so change nothing."""
+def test_branch_selector_noop_when_every_candidate_fits_perfectly(monkeypatch):
+    """All intercepts are exactly 0, so every candidate is through-origin. The
+    observed scale collapses to 0 and there is no wrong-branch magnitude left to
+    calibrate a cutoff against, so the selector must not act -- an all-way tie is
+    an alias the phase cannot resolve, same as the two-branch case above."""
     _patch_scores(monkeypatch, {-1: 0.0, 0: 0.0, 1: 0.0})
     best, _ = _sel()
     assert best == 0
 
+
+def test_branch_selector_noop_when_nothing_fits(monkeypatch):
+    """Every candidate carries roughly a full step of intercept, so none of them
+    explains the phase. A failed fit is not evidence for any branch, so change
+    nothing rather than take the least-bad one."""
     _patch_scores(monkeypatch, {-1: 1.71, 0: 1.80, 1: 1.74})
     best, _ = _sel()
     assert best == 0

@@ -252,9 +252,9 @@ def mcpc_3d_s(
         Phase image for the first echo
     phase1 : npt.NDArray[np.float32]
         Phase image for the second echo
-    te0 : npt.NDArray[np.float32]
+    te0 : np.float32 | float
         Echo time for the first echo
-    te1 : npt.NDArray[np.float32]
+    te1 : np.float32 | float
         Echo time for the second echo
     mask : npt.NDArray[np.bool_]
         Mask of voxels to use for unwrapping
