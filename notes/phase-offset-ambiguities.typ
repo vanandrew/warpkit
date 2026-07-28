@@ -39,8 +39,6 @@
   #text(size: 17pt, weight: "bold")[
     Phase offset ambiguities in multi-echo field mapping
   ]
-  #v(0.35em)
-  #text(size: 11pt)[What can be recovered from wrapped phase, and what cannot]
   #v(0.9em)
   #text(size: 10.5pt)[Andrew Van]
   #v(0.15em)
