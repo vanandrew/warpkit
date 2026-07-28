@@ -151,3 +151,6 @@ warpkit/build-tmp*/
 warpkit/share/
 
 # ignore .secrets
+
+# macOS
+.DS_Store

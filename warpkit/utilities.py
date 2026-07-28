@@ -141,7 +141,7 @@ def corr2_coeff(a: npt.NDArray, b: npt.NDArray) -> npt.NDArray:
 
 
 def rescale_phase(
-    data: npt.NDArray[Any], min: int = -4096, max: int = 4096
+    data: npt.NDArray[Any], min: float = -4096, max: float = 4096
 ) -> npt.NDArray[Any]:
     """Rescale phase data to [-pi, pi]
 
@@ -151,9 +151,9 @@ def rescale_phase(
     ----------
     data : npt.NDArray[Any]
         phase data to be rescaled
-    min : int, optional
+    min : float, optional
         min value that should be mapped to -pi, by default -4096
-    max : int, optional
+    max : float, optional
         max value that should be mapped to pi, by default 4096
 
     Returns
