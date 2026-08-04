@@ -139,7 +139,7 @@ before-build = ["pip install delocate>=0.13.0"]
 
 [tool.codespell]
 # Ref: https://github.com/codespell-project/codespell#using-a-config-file
-skip = '.git,.gitignore,.gitattributes,*.pdf,*.lock,include/romeo,include/itk,build,.venv'
+skip = '.git,.git-meta,.gitignore,.gitattributes,*.pdf,*.lock,include/romeo,include/itk,build,.venv'
 check-hidden = true
 # ignore-words-list rationale:
 #   te,tes    - MR-physics abbreviations (echo time / echo times); see CLAUDE.md
