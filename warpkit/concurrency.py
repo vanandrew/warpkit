@@ -93,7 +93,7 @@ def run_executor(
     for future in as_completed(futures):
         # get the index of the future
         idx = futures[future]
-        # pass thre result of the future to the post_fn
+        # pass the result of the future to the post_fn
         if post_fn is not None:
             post_fn(idx, future.result())
 
