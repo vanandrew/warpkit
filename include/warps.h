@@ -315,7 +315,7 @@ py::array_t<T, py::array::f_style> compute_jacobian_determinant(py::array_t<T, p
     typename DisplacementFieldJacobianDeterminantFilterType::Pointer jacobian_filter =
         DisplacementFieldJacobianDeterminantFilterType::New();
 
-    // Pass displacment fields into jacobian filters
+    // Pass displacement fields into jacobian filters
     jacobian_filter->SetInput(field);
     jacobian_filter->SetUseImageSpacingOff();
 

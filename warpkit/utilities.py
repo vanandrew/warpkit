@@ -286,7 +286,7 @@ def field_maps_to_displacement_maps(
     Returns
     -------
     nib.Nifti1Image
-        Displacment maps in mm
+        Displacement maps in mm
     """
     voxel_size = _signed_pe_voxel_size(field_maps, phase_encoding_direction)
 

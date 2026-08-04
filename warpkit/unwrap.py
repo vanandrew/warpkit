@@ -408,7 +408,7 @@ def unwrap_phase(
             npt.NDArray[np.bool_], binary_dilation(combined_mask, strel, iterations=2)
         )
 
-        # get a dilated verision of the mask
+        # get a dilated version of the mask
         combined_mask_dilated = cast(
             npt.NDArray[np.bool_],
             binary_dilation(combined_mask, strel, iterations=automask_dilation),
@@ -533,7 +533,7 @@ def check_temporal_consistency_corr(
     # get the correlation between the current frame and all other frames
     corr = corr2_coeff(current_frame_data, unwrapped_echo_1[brain_mask, :]).ravel()
 
-    # threhold the RD
+    # threshold the RD
     tmask = corr > threshold
 
     # get indices of mask
@@ -653,7 +653,7 @@ def compute_offset(
     # compute closest multiple of 2pi to the difference
     int_map = np.round(y_diff / (2 * np.pi)).astype(int)
 
-    # compute the most often occuring multiple
+    # compute the most often occurring multiple
     best_offset = mode(int_map, axis=0, keepdims=False).mode
     best_offset = cast(int, best_offset)
 

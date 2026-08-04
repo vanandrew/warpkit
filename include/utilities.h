@@ -10,7 +10,7 @@
 namespace py = pybind11;
 
 /**
- * @brief print sequnce
+ * @brief print sequence
  *
  * @tparam sequence
  * @param seq
