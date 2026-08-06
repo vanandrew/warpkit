@@ -1,0 +1,127 @@
+cff-version: 1.2.0
+title: warpkit
+message: >-
+  If you use this software, please cite both the software itself and the
+  MEDIC paper listed under `preferred-citation`.
+type: software
+abstract: >-
+  A Python library for neuroimaging transforms, focused on the Multi-Echo
+  DIstortion Correction (MEDIC) algorithm.
+authors:
+  - given-names: Andrew N.
+    family-names: Van
+    email: vanandrew77@gmail.com
+    orcid: https://orcid.org/0000-0002-8787-0943
+    affiliation: Washington University in St. Louis
+  - given-names: Vahdeta
+    family-names: Suljic
+    email: suljic@wustl.edu
+    affiliation: Washington University School of Medicine
+repository-code: https://github.com/vanandrew/warpkit
+url: https://github.com/vanandrew/warpkit
+license-url: https://github.com/vanandrew/warpkit/blob/main/LICENSE
+keywords:
+  - neuroimaging
+  - fMRI
+  - distortion correction
+  - MEDIC
+  - field map
+  - phase unwrapping
+preferred-citation:
+  type: article
+  title: Frame-wise multi-echo distortion correction for superior functional MRI
+  journal: Imaging Neuroscience
+  year: 2026
+  volume: 4
+  number: IMAG.a.1262
+  issn: 2837-6056
+  doi: 10.1162/IMAG.a.1262
+  url: https://doi.org/10.1162/IMAG.a.1262
+  authors:
+    - given-names: Andrew N.
+      family-names: Van
+      orcid: https://orcid.org/0000-0002-8787-0943
+    - given-names: David F.
+      family-names: Montez
+    - given-names: Timothy O.
+      family-names: Laumann
+      orcid: https://orcid.org/0000-0002-0428-427X
+    - given-names: Philip N.
+      family-names: Cho
+      orcid: https://orcid.org/0009-0004-2812-6155
+    - given-names: Vahdeta
+      family-names: Suljic
+    - given-names: Thomas
+      family-names: Madison
+      orcid: https://orcid.org/0000-0003-3030-6580
+    - given-names: Noah J.
+      family-names: Baden
+      orcid: https://orcid.org/0000-0003-1928-0025
+    - given-names: Nadeshka
+      family-names: Ramirez-Perez
+    - given-names: Kristen M.
+      family-names: Scheidter
+    - given-names: Julia S.
+      family-names: Monk
+    - given-names: Forrest I.
+      family-names: Whiting
+    - given-names: Babatunde
+      family-names: Adeyemo
+    - given-names: Roselyne J.
+      family-names: Chauvin
+      orcid: https://orcid.org/0000-0001-5786-4705
+    - given-names: Samuel R.
+      family-names: Krimmel
+    - given-names: Athanasia
+      family-names: Metoki
+      orcid: https://orcid.org/0000-0002-8945-269X
+    - given-names: Aishwarya
+      family-names: Rajesh
+      orcid: https://orcid.org/0000-0002-6583-1695
+    - given-names: Jarod L.
+      family-names: Roland
+      orcid: https://orcid.org/0000-0002-1312-8826
+    - given-names: Taylor
+      family-names: Salo
+      orcid: https://orcid.org/0000-0001-9813-3167
+    - given-names: Anxu
+      family-names: Wang
+    - given-names: Kimberly B.
+      family-names: Weldon
+      orcid: https://orcid.org/0000-0003-4349-9916
+    - given-names: Aristeidis
+      family-names: Sotiras
+      orcid: https://orcid.org/0000-0003-0795-8820
+    - given-names: Joshua S.
+      family-names: Shimony
+      orcid: https://orcid.org/0000-0002-6228-776X
+    - given-names: Benjamin P.
+      family-names: Kay
+      orcid: https://orcid.org/0000-0003-3628-8029
+    - given-names: Steven M.
+      family-names: Nelson
+    - given-names: Brenden
+      family-names: Tervo-Clemmens
+      orcid: https://orcid.org/0000-0002-9557-1126
+    - given-names: Scott A.
+      family-names: Marek
+      orcid: https://orcid.org/0000-0003-0032-9052
+    - given-names: Luca
+      family-names: Vizioli
+    - given-names: Essa
+      family-names: Yacoub
+    - given-names: Theodore D.
+      family-names: Satterthwaite
+      orcid: https://orcid.org/0000-0001-7072-9399
+    - given-names: Evan M.
+      family-names: Gordon
+      orcid: https://orcid.org/0000-0002-2276-5237
+    - given-names: Damien A.
+      family-names: Fair
+      orcid: https://orcid.org/0000-0001-8602-393X
+    - given-names: M. Dylan
+      family-names: Tisdall
+      orcid: https://orcid.org/0000-0002-0454-3112
+    - given-names: Nico U. F.
+      family-names: Dosenbach
+      orcid: https://orcid.org/0000-0002-6876-7078
