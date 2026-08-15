@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 
 #include <array>
+#include <concepts>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
@@ -12,7 +13,6 @@
 
 #include "romeo/unwrap.h"
 #include "romeo/voxel_quality.h"
-#include "romeo/volume_view.h"
 #include "romeo/weights.h"
 #include "utilities.h"
 
@@ -36,7 +36,7 @@ namespace romeo {
 // be 0-sized / empty arrays to indicate "not provided"; `TEs` is required
 // only when `phase2` is provided (length 2: [te_phase, te_phase2]).
 // Returns a (3, nx, ny, nz) uint8 array.
-template <typename T>
+template <std::floating_point T>
 py::array_t<std::uint8_t, py::array::f_style> calculate_weights(py::array_t<T, py::array::f_style> phase,
                                                                 py::array_t<T, py::array::f_style> mag,
                                                                 py::array_t<T, py::array::f_style> phase2,
@@ -78,7 +78,7 @@ py::array_t<std::uint8_t, py::array::f_style> calculate_weights(py::array_t<T, p
     return out;
 }
 
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> romeo_voxelquality(py::array_t<T, py::array::f_style> phase,
                                                       py::array_t<T, py::array::f_style> TEs,
                                                       py::array_t<T, py::array::f_style> mag) {
@@ -110,7 +110,7 @@ py::array_t<T, py::array::f_style> romeo_voxelquality(py::array_t<T, py::array::
     return out;
 }
 
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> romeo_unwrap3D(py::array_t<T, py::array::f_style> phase,
                                                   std::string weights,
                                                   py::array_t<T, py::array::f_style> mag,
@@ -163,7 +163,7 @@ py::array_t<T, py::array::f_style> romeo_unwrap3D(py::array_t<T, py::array::f_st
     return out;
 }
 
-template <typename T>
+template <std::floating_point T>
 py::array_t<T, py::array::f_style> romeo_unwrap4D(py::array_t<T, py::array::f_style> phase,
                                                   py::array_t<T, py::array::f_style> TEs,
                                                   std::string weights,

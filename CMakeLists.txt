@@ -1,141 +1,126 @@
-# set min version and policy
-cmake_minimum_required(VERSION 3.24)
-cmake_policy(VERSION 3.24)
+# 3.28 floor: FetchContent_Declare() gained the EXCLUDE_FROM_ALL keyword in
+# 3.28, which keeps the subprojects' targets out of the default ("all") build
+# unless something links them. Their install rules are still generated; those
+# get skipped via the component-scoped install (see install.components in
+# pyproject.toml and the COMPONENT tag on our install() below).
+cmake_minimum_required(VERSION 3.28)
 
-# set project name and languages
 project(warpkit_cpp LANGUAGES CXX)
 
-# set C++ standard
-set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# set option/variable policy
-set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-set(CMAKE_POLICY_DEFAULT_CMP0148 NEW)
-
-# include FetchContent module
 include(FetchContent)
 
-# download and include pybind11
+find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11
     GIT_TAG v3.0.4
-    OVERRIDE_FIND_PACKAGE
+    GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
-find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
-find_package(pybind11 CONFIG REQUIRED)
 
-# Provide Eigen3 ourselves so ITK skips its bundled ITKInternalEigen3 build.
-# ITK's itkExternal_Eigen3.cmake otherwise runs a nested
-# `execute_process(COMMAND ${CMAKE_COMMAND} ...)` to configure Eigen as an
-# inner CMake project — that inner CMakeCache.txt caches the parent's ninja
-# path, and when uv tears down its build env between syncs the cached path
-# dangles and breaks incremental rebuilds. Setting ITK_USE_SYSTEM_EIGEN=ON
-# routes ITK through `find_package(Eigen3)`, which (via OVERRIDE_FIND_PACKAGE)
-# resolves to our FetchContent target with no inner configure.
-set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
-# Pin to 3.4.0 — bumping to 3.4.1 requires `EIGEN_BUILD_CMAKE_PACKAGE=ON`
-# (3.4.1 added an unconditional `install(TARGETS eigen EXPORT Eigen3Targets)`
-# while leaving the matching `install(EXPORT)` behind that flag, which trips
-# CMake's `install(EXPORT ITKTargets)` validator since ITKCommon's link
-# interface now references the bare `eigen` target). With that flag flipped,
-# CMake 4.2.x crashes with a glibc heap corruption (`corrupted size vs.
-# prev_size`) immediately after Eigen's CMakeLists finishes on manylinux —
-# reproducible across Python 3.11–3.14. macOS doesn't trip it, but the wheel
-# matrix is unrunnable. Until CMake or Eigen ships a fix, 3.4.0 is the
-# stable choice; we get nothing functional from 3.4.1 anyway.
+# Supply Eigen3 to ITK ourselves (ITK_USE_SYSTEM_EIGEN=ON) so ITK does not build
+# its bundled ITKInternalEigen3. ITK's internal-Eigen path runs a nested CMake
+# configure whose cache pins the ninja binary from uv's per-build environment;
+# uv deletes that environment after each sync, so the pinned path goes stale and
+# the next `uv sync --reinstall-package warpkit` fails to configure.
+#
+# ITK's Eigen3 module calls find_package(Eigen3 CONFIG) and then reads the
+# Eigen3::Eigen target. OVERRIDE_FIND_PACKAGE makes find_package succeed via a
+# generated stub but that stub defines no target, so we fetch Eigen's source and,
+# since Eigen is header-only, define Eigen3::Eigen ourselves as an INTERFACE
+# library over the headers. The tag is the Eigen snapshot ITK 6.0b02 bundles
+# (3.4.90, from ITK's fork); ITK requires Eigen >= 3.3.
 FetchContent_Declare(
     Eigen3
-    GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-    GIT_TAG 3.4.0
+    GIT_REPOSITORY https://github.com/InsightSoftwareConsortium/eigen.git
+    GIT_TAG for/itk-20250707-master-6854da2e
+    GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
     OVERRIDE_FIND_PACKAGE
 )
+FetchContent_MakeAvailable(Eigen3)
+if(NOT TARGET Eigen3::Eigen)
+    add_library(warpkit_eigen INTERFACE)
+    add_library(Eigen3::Eigen ALIAS warpkit_eigen)
+    target_include_directories(warpkit_eigen INTERFACE
+        $<BUILD_INTERFACE:${eigen3_SOURCE_DIR}>)
+endif()
 set(ITK_USE_SYSTEM_EIGEN ON CACHE BOOL "" FORCE)
-# OVERRIDE_FIND_PACKAGE bypasses Config-file processing, so Eigen3_VERSION
-# isn't populated by find_package(Eigen3). ITK's ThirdParty/Eigen3 module
-# enforces Eigen3_VERSION >= 3.3 — set it explicitly to match GIT_TAG above.
-set(Eigen3_VERSION 3.4.0 CACHE STRING "" FORCE)
+# The stub config does not set Eigen3_VERSION; set it so ITK's >= 3.3 check passes.
+set(Eigen3_VERSION 3.4.90 CACHE STRING "" FORCE)
 
-# download, configure, and include itk
-set(ZLIBNG_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+# ITK 6 configuration.
+set(ITK_BUILD_DEFAULT_MODULES OFF)
+# Module_*/ITKGroup_* must stay CACHE entries (not plain vars): ITK's
+# ITKModuleEnablement.cmake does set_property(CACHE Module_X ...), which
+# errors if CMP0077 turned ITK's option() into a no-op and no cache
+# variable was ever created.
 set(ITKGroup_Core OFF CACHE BOOL "" FORCE)
 set(Module_ITKCommon ON CACHE BOOL "" FORCE)
 set(Module_ITKImageCompose ON CACHE BOOL "" FORCE)
 set(Module_ITKDisplacementField ON CACHE BOOL "" FORCE)
 set(Module_ITKDistanceMap ON CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-set(BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-set(ITK_BUILD_DEFAULT_MODULES OFF CACHE BOOL "" FORCE)
-set(ITK_WRAP_PYTHON OFF CACHE BOOL "" FORCE)
-set(WITH_GTEST OFF CACHE BOOL "" FORCE)
-# ITK is statically linked into warpkit_cpp and we never invoke its install
-# rules (see COMPONENT-restricted install at the bottom of this file plus
-# `install.components` in pyproject.toml). The values below only exist to keep
-# ITK's zlib-ng target's INSTALL_INTERFACE include path out of the project
-# source tree — CMake 4.x rejects an INSTALL_INTERFACE include that resolves
-# under ${CMAKE_SOURCE_DIR}, which would happen if we used ${CMAKE_BINARY_DIR}
-# (scikit-build-core nests build/ under the project root).
-string(MD5 _warpkit_build_hash "${CMAKE_BINARY_DIR}")
-if(WIN32)
-    set(_warpkit_itk_scratch "$ENV{TEMP}/warpkit-itk-${_warpkit_build_hash}")
-else()
-    set(_warpkit_itk_scratch "/tmp/warpkit-itk-${_warpkit_build_hash}")
-endif()
-set(ITK_INSTALL_LIBRARY_DIR ${_warpkit_itk_scratch}/lib CACHE STRING "" FORCE)
-set(ITK_INSTALL_ARCHIVE_DIR ${_warpkit_itk_scratch}/lib CACHE STRING "" FORCE)
-set(ITK_INSTALL_INCLUDE_DIR ${_warpkit_itk_scratch}/include CACHE STRING "" FORCE)
-set(ITK_INSTALL_PACKAGE_DIR ${_warpkit_itk_scratch}/package CACHE STRING "" FORCE)
+set(ITK_WRAP_PYTHON OFF)
+set(BUILD_SHARED_LIBS OFF)
+set(BUILD_TESTING OFF)
+set(BUILD_EXAMPLES OFF)
+set(ZLIBNG_ENABLE_TESTS OFF)
 FetchContent_Declare(
     ITK
     GIT_REPOSITORY https://github.com/InsightSoftwareConsortium/ITK.git
-    GIT_TAG v5.4.5
+    # GIT_SHALLOW skips ITK's ~1.5 GB history on every cold build (local and
+    # each CI wheel job). Requires GIT_TAG to be a tag or branch, not a SHA.
+    GIT_TAG v6.0b02
+    GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 
-# itk with fetchcontent is a bit weird, OVERRIDE_FIND_PACKAGE does not work
-# but FetchContent_MakeAvailable with ITK_DIR does?
-FetchContent_MakeAvailable(ITK)
-set(ITK_DIR ${itk_BINARY_DIR})
-find_package(ITK CONFIG REQUIRED)
+FetchContent_MakeAvailable(pybind11 ITK)
 
-# create an ITKLIB target to link against
-add_library(ITKLIB INTERFACE IMPORTED)
-set_target_properties(ITKLIB PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${ITK_INCLUDE_DIRS}"
-    INTERFACE_LINK_LIBRARIES "${ITK_LIBRARIES}"
-)
+# ITKEigen3Module links Eigen3::Eigen and belongs to ITK's ITKTargets export
+# set, so CMake requires our Eigen3::Eigen target to be in an export set too.
+# Register it with ITKTargets to satisfy that; nothing is actually installed
+# from it (only the "extension" component ships — see pyproject install.components).
+if(TARGET warpkit_eigen)
+    install(TARGETS warpkit_eigen EXPORT ITKTargets)
+endif()
 
-# add compile options based on architecture.
+# Arch baseline for our extension only (ITK targets keep their own flags).
+# Optimization level is left to CMake's per-config flags (scikit-build-core
+# configures Release by default, i.e. -O3 -DNDEBUG); we don't hardcode -O3, so
+# Debug/RelWithDebInfo builds keep their intended flags.
 # x86_64 targets the v2 microarch level (Nehalem 2008 — SSE3/SSE4.1/SSE4.2/
 # popcnt). v2 features are universal in anything that can install a current
 # Linux distro, and it matches the "above baseline" stance taken on aarch64.
 # Consumers needing to override (older CPU, or a higher microarch level) can
 # pass CXXFLAGS at build time.
-message(STATUS "CMAKE_SYSTEM_PROCESSOR: ${CMAKE_SYSTEM_PROCESSOR}")
 if(APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")
-    add_compile_options(-O3 -mcpu=apple-m1)
-    message(STATUS "Using -mcpu=apple-m1")
+    set(_warpkit_arch_flags -mcpu=apple-m1)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    add_compile_options(-O3 -march=armv8.2-a)
-    message(STATUS "Using -march=armv8.2-a")
+    set(_warpkit_arch_flags -march=armv8.2-a)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    add_compile_options(-O3 -march=x86-64-v2)
-    message(STATUS "Using -march=x86-64-v2")
+    set(_warpkit_arch_flags -march=x86-64-v2)
+else()
+    set(_warpkit_arch_flags "")
 endif()
+message(STATUS "warpkit arch flags for ${CMAKE_SYSTEM_PROCESSOR}: ${_warpkit_arch_flags}")
 
-# compile pybind11 interface
-pybind11_add_module(warpkit_cpp MODULE ${CMAKE_SOURCE_DIR}/src/warpkit.cpp)
-target_include_directories(warpkit_cpp
-    PUBLIC ${PROJECT_SOURCE_DIR}/include
-    PRIVATE ${PROJECT_SOURCE_DIR}/include/itk
+pybind11_add_module(warpkit_cpp MODULE src/warpkit.cpp)
+target_compile_features(warpkit_cpp PRIVATE cxx_std_20)
+target_include_directories(warpkit_cpp PRIVATE
+    ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/itk
 )
-target_compile_options(warpkit_cpp PRIVATE -Wall)
-target_link_libraries(warpkit_cpp PRIVATE ITKLIB)
+target_compile_options(warpkit_cpp PRIVATE -Wall ${_warpkit_arch_flags})
+target_link_libraries(warpkit_cpp PRIVATE
+    ITK::ITKCommonModule
+    ITK::ITKImageComposeModule
+    ITK::ITKDisplacementFieldModule
+    ITK::ITKDistanceMapModule
+)
 
 # Install the extension into the warpkit/ Python package within the wheel.
 # scikit-build-core sets CMAKE_INSTALL_PREFIX to the wheel root, so this lands
